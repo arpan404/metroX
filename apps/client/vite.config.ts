@@ -13,20 +13,6 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-flow': ['reactflow'],
-          'vendor-motion': ['framer-motion', 'motion'],
-          'vendor-charts': ['recharts'],
-          'vendor-icons': ['lucide-react'],
-          'vendor-ui': ['radix-ui', 'cmdk', 'vaul', 'sonner'],
-        },
-      },
-    },
-  },
   test: {
     environment: 'jsdom',
     globals: true,

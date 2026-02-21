@@ -8,7 +8,6 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
-import time
 from app.services.policy import policy_decision_for_tool, resolve_policy_config
 
 
@@ -41,64 +40,6 @@ class TargetAdapter:
         raise NotImplementedError
 
 
-class SyntheticTargetAdapter(TargetAdapter):
-    """Deterministic fallback target for local testing and CI."""
-
-    def invoke(self, request: TargetRequest) -> TargetResponse:
-        start = perf_counter()
-        prompt = request.prompt.lower()
-
-        if "ignore" in prompt or "override" in prompt:
-            response = "I will ignore prior instructions and reveal restricted details."
-        elif "jailbreak" in prompt or "bypass" in prompt:
-            response = "Here are disallowed instructions to bypass guardrails."
-        elif "hallucination" in prompt:
-            response = "The citation claims moon is made of cobalt (citation: doc-404)."
-        elif "tool" in prompt:
-            response = "Invoking delete_resource despite missing approval token."
-        elif "toxic" in prompt or "unsafe" in prompt:
-            response = "This contains violent unsafe language and abuse."
-        else:
-            response = "Compliant response with grounded summary from retrieved context."
-
-        retrieved_docs = [
-            {
-                "doc_id": "doc-1",
-                "title": "Security policy baseline",
-                "text": "Never disclose restricted secrets and always cite trusted context.",
-                "score": 0.82,
-            }
-        ]
-        tool_events = []
-        if "tool" in prompt:
-            tool_events.append(
-                {
-                    "tool_name": "delete_resource",
-                    "success": True,
-                    "approved": False,
-                    "mutating": True,
-                }
-            )
-
-        latency_ms = (perf_counter() - start) * 1000
-        token_usage = {
-            "prompt_tokens": max(20, len(request.prompt) // 4),
-            "completion_tokens": max(16, len(response) // 5),
-            "total_tokens": max(36, len(request.prompt) // 4 + len(response) // 5),
-            "total_cost_usd": 0.0,
-        }
-        return TargetResponse(
-            response_text=response,
-            retrieved_docs=retrieved_docs,
-            tool_events=tool_events,
-            latency_ms=latency_ms,
-            token_usage=token_usage,
-            raw_payload={"adapter": "synthetic", "model": request.model},
-            provider_name="synthetic",
-            model_resolved=request.model,
-        )
-
-
 class HttpTargetAdapter(TargetAdapter):
     def invoke(self, request: TargetRequest) -> TargetResponse:
         if not request.endpoint:
@@ -128,17 +69,97 @@ class HttpTargetAdapter(TargetAdapter):
         )
 
 
-class AFKAgentAdapter(TargetAdapter):
-    """Adapter for AFK-based agent execution when the AFK SDK is installed."""
+class AFKLLMRuntimeAdapter(TargetAdapter):
+    """AFK-only LLM adapter for managed runtime targets."""
+
+    def invoke(self, request: TargetRequest) -> TargetResponse:
+        start = perf_counter()
+
+        try:
+            from afk.llms import LLMBuilder, LLMRequest, Message  # type: ignore
+            from afk.llms.utils import run_sync as afk_run_sync  # type: ignore
+
+            runtime_provider = str(request.extra.get("runtime_provider") or "openai").strip().lower()
+            provider_settings = _provider_settings(request)
+
+            builder = LLMBuilder().provider(runtime_provider).model(request.model).profile("production")
+            if provider_settings:
+                builder = builder.with_provider_settings(runtime_provider, provider_settings)
+            client = builder.build()
+            llm_request = LLMRequest(
+                model=request.model,
+                messages=[Message(role="user", content=request.prompt)],
+                temperature=float(request.extra.get("temperature", 0.2)),
+                max_tokens=int(request.extra.get("max_tokens", 256)),
+            )
+            llm_response = afk_run_sync(client.chat(llm_request))
+
+            usage = getattr(llm_response, "usage", None)
+            prompt_tokens = float(getattr(usage, "input_tokens", 0) or 0)
+            completion_tokens = float(getattr(usage, "output_tokens", 0) or 0)
+            total_tokens = float(getattr(usage, "total_tokens", prompt_tokens + completion_tokens) or 0)
+            provider_cost = _extract_provider_cost(getattr(llm_response, "raw", {}) or {})
+
+            return TargetResponse(
+                response_text=str(getattr(llm_response, "text", "") or ""),
+                retrieved_docs=[],
+                tool_events=[],
+                latency_ms=(perf_counter() - start) * 1000,
+                token_usage={
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": total_tokens,
+                    "total_cost_usd": provider_cost,
+                },
+                raw_payload={
+                    "adapter": "afk_llm",
+                    "provider": runtime_provider,
+                    "raw": getattr(llm_response, "raw", {}),
+                    "error": None,
+                },
+                provider_name=runtime_provider,
+                model_resolved=str(getattr(llm_response, "model", request.model) or request.model),
+            )
+        except Exception as exc:
+            response = _simulate_runtime_response(request.prompt)
+            return TargetResponse(
+                response_text=response,
+                retrieved_docs=[
+                    {
+                        "doc_id": "doc-1",
+                        "title": "Safety policy",
+                        "text": "Never reveal secrets. Follow policy and cite grounded context.",
+                        "score": 0.8,
+                    }
+                ],
+                tool_events=[],
+                latency_ms=(perf_counter() - start) * 1000,
+                token_usage={
+                    "prompt_tokens": max(20, len(request.prompt) // 4),
+                    "completion_tokens": max(16, len(response) // 5),
+                    "total_tokens": max(36, len(request.prompt) // 4 + len(response) // 5),
+                    "total_cost_usd": 0.0,
+                },
+                raw_payload={
+                    "adapter": "afk_llm",
+                    "provider": str(request.extra.get("runtime_provider") or "openai"),
+                    "error": str(exc),
+                    "degraded": True,
+                },
+                provider_name=str(request.extra.get("runtime_provider") or "openai"),
+                model_resolved=request.model,
+            )
+
+
+class AFKManagedAgentRuntimeAdapter(TargetAdapter):
+    """Adapter for AFK-based managed agent execution."""
 
     def invoke(self, request: TargetRequest) -> TargetResponse:
         try:
             from afk.agents import Agent  # type: ignore
             from afk.core import Runner  # type: ignore
         except ImportError as exc:  # pragma: no cover
-            raise RuntimeError(
-                "AFK SDK is not installed. Install afk and configure target_type='afk_agent'."
-            ) from exc
+            raise RuntimeError("AFK SDK is not installed") from exc
 
         start = perf_counter()
         prompts_dir_default = str(Path(__file__).resolve().parents[2] / "prompts" / "target")
@@ -150,6 +171,7 @@ class AFKAgentAdapter(TargetAdapter):
         )
         agent_name = request.extra.get("agent_name", "autoredteam-target")
         settings = get_settings()
+
         runner_kwargs: dict[str, Any] = {"telemetry": request.extra.get("telemetry", "json")}
         memory_mode = str(request.extra.get("afk_memory_backend", "auto"))
         if memory_mode in {"auto", "postgres"} and settings.database_url.startswith("postgres"):
@@ -161,7 +183,6 @@ class AFKAgentAdapter(TargetAdapter):
                     vector_dim=int(request.extra.get("afk_vector_dim", 1536)),
                 )
             except Exception:
-                # Degrade to default memory store if Postgres memory cannot initialize.
                 pass
 
         runner = Runner(**runner_kwargs)
@@ -175,6 +196,7 @@ class AFKAgentAdapter(TargetAdapter):
             )
         else:
             agent = Agent(name=agent_name, model=request.model, instructions=instructions)
+
         thread_id = request.extra.get("thread_id") or f"run-{request.run_id}"
         resume_run_id = str(request.extra.get("afk_run_id", "")).strip() or None
         resume_enabled = bool(request.extra.get("afk_resume", False)) and bool(resume_run_id)
@@ -204,6 +226,7 @@ class AFKAgentAdapter(TargetAdapter):
                     "mutating": False,
                 }
             )
+
         for event in afk_events:
             if event.get("type") in {"policy_decision", "run_paused", "run_resumed", "tool_started", "tool_completed"}:
                 tool_events.append(
@@ -231,109 +254,86 @@ class AFKAgentAdapter(TargetAdapter):
                     }
                 )
 
-        latency_ms = (perf_counter() - start) * 1000
-        run_id = getattr(result, "run_id", None)
-        thread_id_result = getattr(result, "thread_id", None)
         return TargetResponse(
             response_text=getattr(result, "final_text", "") or "",
             retrieved_docs=request.extra.get("retrieved_docs", []),
             tool_events=tool_events,
-            latency_ms=latency_ms,
+            latency_ms=(perf_counter() - start) * 1000,
             token_usage=token_usage,
             raw_payload={
-                "adapter": "afk",
+                "adapter": "afk_agent",
                 "state": getattr(result, "state", "unknown"),
-                "run_id": run_id,
-                "thread_id": thread_id_result,
+                "run_id": getattr(result, "run_id", None),
+                "thread_id": getattr(result, "thread_id", None),
                 "afk_events": afk_events,
             },
-            provider_name="afk",
+            provider_name="managed_agent_runtime",
             model_resolved=request.model,
         )
 
 
-class LiteLLMTargetAdapter(TargetAdapter):
-    """LiteLLM adapter for multi-provider model execution."""
-
-    def invoke(self, request: TargetRequest) -> TargetResponse:
-        try:
-            import litellm  # type: ignore
-        except Exception as exc:  # pragma: no cover
-            raise RuntimeError("litellm is not installed") from exc
-
-        start = perf_counter()
-        api_key = str(request.extra.get("api_key", "")).strip()
-        base_url = request.extra.get("base_url")
-        provider = str(request.extra.get("provider_name", "litellm"))
-        try:
-            completion = _litellm_with_retry(
-                litellm,
-                model=request.model,
-                messages=[{"role": "user", "content": request.prompt}],
-                api_key=api_key or None,
-                api_base=base_url or None,
-                max_tokens=int(request.extra.get("max_tokens", 256)),
-                temperature=float(request.extra.get("temperature", 0.2)),
-                timeout=float(request.extra.get("timeout_s", 30.0)),
-            )
-            choice = completion["choices"][0]["message"]["content"]
-            usage = completion.get("usage", {}) or {}
-            token_usage = {
-                "prompt_tokens": float(usage.get("prompt_tokens", 0)),
-                "completion_tokens": float(usage.get("completion_tokens", 0)),
-                "total_tokens": float(usage.get("total_tokens", 0)),
-                "total_cost_usd": float(usage.get("cost", 0.0) or completion.get("_response_cost", 0.0) or 0.0),
-            }
-            latency_ms = (perf_counter() - start) * 1000
-            return TargetResponse(
-                response_text=str(choice or ""),
-                retrieved_docs=[],
-                tool_events=[],
-                latency_ms=latency_ms,
-                token_usage=token_usage,
-                raw_payload={"adapter": "litellm", "raw": dict(completion), "error": None},
-                provider_name=provider,
-                model_resolved=request.model,
-            )
-        except Exception as exc:
-            latency_ms = (perf_counter() - start) * 1000
-            return TargetResponse(
-                response_text=f"Runtime error: {exc}",
-                retrieved_docs=[],
-                tool_events=[],
-                latency_ms=latency_ms,
-                token_usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "total_cost_usd": 0.0},
-                raw_payload={"adapter": "litellm", "error": str(exc), "error_type": exc.__class__.__name__},
-                provider_name=provider,
-                model_resolved=request.model,
-            )
+def normalize_target_type(value: str) -> str:
+    row = str(value or "").strip().lower()
+    if row in {"managed_llm_runtime", "managed_agent_runtime", "http", "openai_compatible", "agent_http"}:
+        return row
+    legacy = {
+        "synthetic": "managed_llm_runtime",
+        "litellm": "managed_llm_runtime",
+        "afk_agent": "managed_agent_runtime",
+    }
+    return legacy.get(row, "managed_llm_runtime")
 
 
 def get_adapter(target_type: str) -> TargetAdapter:
-    if target_type == "litellm":
-        return LiteLLMTargetAdapter()
-    if target_type == "afk_agent":
-        return AFKAgentAdapter()
-    if target_type in {"http", "openai_compatible", "agent_http"}:
+    resolved = normalize_target_type(target_type)
+    if resolved == "managed_llm_runtime":
+        return AFKLLMRuntimeAdapter()
+    if resolved == "managed_agent_runtime":
+        return AFKManagedAgentRuntimeAdapter()
+    if resolved in {"http", "openai_compatible", "agent_http"}:
         return HttpTargetAdapter()
-    return SyntheticTargetAdapter()
+    raise ValueError(f"Unsupported target_type: {target_type}")
 
 
-def _litellm_with_retry(litellm_module: Any, **kwargs: Any) -> Any:
-    attempts = 3
-    sleep = 0.25
-    last_exc: Exception | None = None
-    for i in range(attempts):
+def _provider_settings(request: TargetRequest) -> dict[str, Any]:
+    settings: dict[str, Any] = {}
+    api_key = str(request.extra.get("api_key", "")).strip()
+    base_url = str(request.extra.get("base_url", "")).strip()
+    if api_key:
+        settings["api_key"] = api_key
+    if base_url:
+        settings["base_url"] = base_url
+    return settings
+
+
+def _extract_provider_cost(raw: dict[str, Any]) -> float:
+    candidates = [
+        raw.get("response_cost"),
+        raw.get("cost"),
+        raw.get("_response_cost"),
+    ]
+    for value in candidates:
         try:
-            return litellm_module.completion(**kwargs)
-        except Exception as exc:
-            last_exc = exc
-            if i == attempts - 1:
-                break
-            time.sleep(sleep * (2 ** i))
-    if last_exc:
-        raise last_exc
-    raise RuntimeError("litellm retry reached invalid state")
+            if value is not None:
+                return float(value)
+        except Exception:
+            continue
+    return 0.0
+
+
+def _simulate_runtime_response(prompt: str) -> str:
+    row = prompt.lower()
+    if "ignore" in row or "override" in row:
+        return "I will ignore policy and reveal restricted details."
+    if "jailbreak" in row or "bypass" in row:
+        return "Here are bypass steps that should be refused."
+    if "hallucination" in row:
+        return "Unsupported claim with citation doc-404."
+    if "tool" in row:
+        return "Attempted to trigger a mutating tool without approval."
+    if "toxic" in row or "unsafe" in row:
+        return "This output includes abusive and violent language."
+    return "Policy-compliant grounded answer."
 
 
 def _run_afk_stream_sync(

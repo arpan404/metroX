@@ -105,6 +105,11 @@ export type ProviderValidation = {
   credential_id?: string
   error?: string
   discovered_models?: string[]
+  probe_results?: Array<{ probe: string; status: string; latency_ms: number; error?: string | null }>
+  capability_confidence?: number
+  model_discovery_mode?: 'direct' | 'fallback' | 'inferred'
+  warnings?: string[]
+  error_class?: 'auth' | 'network' | 'schema' | 'unsupported' | null
 }
 
 export type ProviderCredential = {
@@ -120,6 +125,24 @@ export type ProviderCredential = {
 
 export type ProviderCredentialListPayload = {
   credentials: ProviderCredential[]
+}
+
+export type SecretKey = {
+  id: string
+  version: string
+  status: string
+  created_at: string
+  activated_at?: string | null
+  retired_at?: string | null
+}
+
+export type SecretKeyEvent = {
+  id: string
+  key_id: string
+  action: string
+  actor: string
+  meta: Record<string, unknown>
+  created_at: string
 }
 
 export type SecretAccessAudit = {

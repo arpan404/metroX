@@ -89,6 +89,8 @@ def _rates(detections: list[Detection]) -> dict[str, float]:
         "tool_misuse_rate": rate("tool_misuse"),
         "prompt_injection_rate": rate("prompt_injection_success"),
         "jailbreak_rate": rate("jailbreak_success"),
+        "avg_disagreement": float(np.mean([float(d.disagreement_score or 0.0) for d in detections])),
+        "avg_uncertainty": float(np.mean([float(d.uncertainty or 0.0) for d in detections])),
     }
 
 

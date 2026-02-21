@@ -17,6 +17,12 @@ vi.mock('../lib/api', () => ({
         },
       ],
     })),
+    listSecurityKeys: vi.fn(async () => ({ keys: [] })),
+    listSecurityKeyEvents: vi.fn(async () => ({ events: [] })),
+    createSecurityKey: vi.fn(async () => ({ id: 'key-1', version: 'v1', status: 'active', created_at: '2026-02-21T00:00:00Z' })),
+    activateSecurityKey: vi.fn(async () => ({ id: 'key-1', version: 'v1', status: 'active', created_at: '2026-02-21T00:00:00Z' })),
+    reencryptCredentials: vi.fn(async () => ({ key_id: 'key-1', updated: 1, total: 1 })),
+    retireSecurityKey: vi.fn(async () => ({ id: 'key-1', version: 'v1', status: 'retired', created_at: '2026-02-21T00:00:00Z' })),
     createProviderCredential: vi.fn(async () => ({
       id: 'cred-2',
       name: 'new-key',
@@ -40,10 +46,9 @@ vi.mock('../lib/api', () => ({
       provider_type: 'openai_compatible',
       model: 'gpt-4.1-mini',
       discovered_models: ['gpt-4.1-mini'],
-    })),
-    getProviderCredentialAudits: vi.fn(async () => ({
-      credential_id: 'cred-1',
-      audits: [],
+      capability_confidence: 0.9,
+      model_discovery_mode: 'direct',
+      probe_results: [{ probe: 'models', status: 'ok', latency_ms: 50 }],
     })),
   },
 }))
@@ -53,15 +58,16 @@ describe('ProvidersPage', () => {
     render(<ProvidersPage />)
 
     await waitFor(() => {
-      expect(screen.getByText(/provider credentials/i)).toBeInTheDocument()
+      expect(screen.getByText(/credential registry/i)).toBeInTheDocument()
       expect(screen.getAllByText(/main-openai/i).length).toBeGreaterThan(0)
     })
 
-    await userEvent.click(screen.getByRole('button', { name: /validate provider/i }))
+    await userEvent.click(screen.getByRole('tab', { name: /validation/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^validate$/i }))
 
     await waitFor(() => {
       expect(screen.getByText(/status: valid/i)).toBeInTheDocument()
-      expect(screen.getByText(/discovered models/i)).toBeInTheDocument()
+      expect(screen.getByText(/confidence:/i)).toBeInTheDocument()
     })
   })
 })

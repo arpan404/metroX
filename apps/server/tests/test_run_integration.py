@@ -62,7 +62,7 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
             "session_id": session_id,
             "name": "integration-profile",
             "target_config": {
-                "target_type": "synthetic",
+                "target_type": "managed_llm_runtime",
                 "endpoint": None,
                 "auth_headers": {},
                 "model": "gpt-4.1-mini",
@@ -214,7 +214,7 @@ def test_resume_continues_from_checkpoint_without_duplicate_executions(integrate
             "session_id": session_id,
             "name": "resume-profile",
             "target_config": {
-                "target_type": "synthetic",
+                "target_type": "managed_llm_runtime",
                 "endpoint": None,
                 "auth_headers": {},
                 "model": "gpt-4.1-mini",
@@ -328,8 +328,8 @@ def test_nightly_live_placeholder() -> None:
 def test_nightly_multi_provider_smoke_matrix() -> None:
     import os
 
-    provider = os.getenv("AUTOREDTEAM_NIGHTLY_PROVIDER", "litellm")
-    if provider == "litellm":
+    provider = os.getenv("AUTOREDTEAM_NIGHTLY_PROVIDER", "managed_llm_runtime")
+    if provider == "managed_llm_runtime":
         key = os.getenv("AUTOREDTEAM_LIVE_PROVIDER_KEY")
         model = os.getenv("AUTOREDTEAM_NIGHTLY_MODEL", "gpt-4.1-mini")
         if not key:
@@ -338,7 +338,7 @@ def test_nightly_multi_provider_smoke_matrix() -> None:
 
         out = validate_provider(
             {
-                "provider_type": "litellm",
+                "provider_type": "managed_llm_runtime",
                 "api_key": key,
                 "model": model,
             }

@@ -37,7 +37,7 @@ def test_scorecard_and_gate(db_session):
         ex = Execution(
             run_id=run.id,
             attack_case_id="case",
-            target_type="synthetic",
+            target_type="managed_llm_runtime",
             prompt=f"prompt {idx}",
             response="response",
             latency_ms=10,
@@ -113,7 +113,7 @@ def test_cost_and_inference_gate_thresholds(db_session):
     ex = Execution(
         run_id=run.id,
         attack_case_id="case",
-        target_type="synthetic",
+        target_type="managed_llm_runtime",
         prompt="prompt",
         response="response",
         latency_ms=1.0,

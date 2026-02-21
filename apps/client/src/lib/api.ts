@@ -12,6 +12,8 @@ import type {
   ProviderCredential,
   ProviderCredentialListPayload,
   ProviderValidation,
+  SecretKey,
+  SecretKeyEvent,
   RiskCards,
   RunTelemetryPayload,
   RunOut,
@@ -99,6 +101,40 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     })
+  },
+
+  createSecurityKey(payload: { version: string; key_material: string; actor?: string }) {
+    return request<SecretKey>('/v1/security/keys', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  listSecurityKeys() {
+    return request<{ keys: SecretKey[] }>('/v1/security/keys')
+  },
+
+  activateSecurityKey(keyId: string, actor = 'ui') {
+    return request<SecretKey>(`/v1/security/keys/${keyId}/activate?actor=${encodeURIComponent(actor)}`, {
+      method: 'POST',
+    })
+  },
+
+  reencryptCredentials(keyId: string, actor = 'ui') {
+    return request<{ key_id: string; updated: number; total: number }>(
+      `/v1/security/keys/${keyId}/reencrypt-credentials?actor=${encodeURIComponent(actor)}`,
+      { method: 'POST' },
+    )
+  },
+
+  retireSecurityKey(keyId: string, actor = 'ui') {
+    return request<SecretKey>(`/v1/security/keys/${keyId}/retire?actor=${encodeURIComponent(actor)}`, {
+      method: 'POST',
+    })
+  },
+
+  listSecurityKeyEvents() {
+    return request<{ events: SecretKeyEvent[] }>('/v1/security/keys/events')
   },
 
   createOrchestrationProfile(payload: {
@@ -217,6 +253,10 @@ export const api = {
 
   getFeatures(runId: string) {
     return request<{ run_id: string; features: Array<Record<string, number | string>> }>(`/v1/runs/${runId}/features`)
+  },
+
+  getDetectorVotes(runId: string) {
+    return request<{ run_id: string; votes: Array<Record<string, unknown>> }>(`/v1/runs/${runId}/detector-votes`)
   },
 
   compareRuns(baselineRunId: string, candidateRunId: string) {

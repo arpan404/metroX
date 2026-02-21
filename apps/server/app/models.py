@@ -195,7 +195,24 @@ class Detection(Base):
     failure_flags: Mapped[dict[str, bool]] = mapped_column(JSON, default=dict)
     severity: Mapped[str] = mapped_column(String(40), default="low")
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    disagreement_score: Mapped[float] = mapped_column(Float, default=0.0)
+    uncertainty: Mapped[float] = mapped_column(Float, default=0.0)
     evidence: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class DetectionVote(Base):
+    __tablename__ = "detection_votes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    execution_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("executions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    detector_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    failure_flags: Mapped[dict[str, bool]] = mapped_column(JSON, default=dict)
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    latency_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, nullable=False)
 
 
 class ProbabilisticLabel(Base):
@@ -427,6 +444,31 @@ class ProviderCredential(Base):
     status: Mapped[str] = mapped_column(String(40), default="active")
     last_rotated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_validated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, nullable=False)
+
+
+class SecretKey(Base):
+    __tablename__ = "secret_keys"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    version: Mapped[str] = mapped_column(String(40), nullable=False)
+    encrypted_material: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(40), default="retiring")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, nullable=False)
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class SecretKeyEvent(Base):
+    __tablename__ = "secret_key_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    key_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("secret_keys.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    action: Mapped[str] = mapped_column(String(80), nullable=False)
+    actor: Mapped[str] = mapped_column(String(120), default="system")
+    meta: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, nullable=False)
 
 

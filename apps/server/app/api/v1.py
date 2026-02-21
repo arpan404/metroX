@@ -21,11 +21,14 @@ from app.models import (
     ConfigProfile,
     ConfigSnapshot,
     Detection,
+    DetectionVote,
     EvaluationSession,
     Execution,
     ExecutionCost,
     OrchestrationProfile,
     ProviderCredential,
+    SecretKey,
+    SecretKeyEvent,
     SecretAccessAudit,
     RunCostAggregate,
     Run,
@@ -54,6 +57,9 @@ from app.schemas import (
     RunCreate,
     RunOut,
     RunReportOut,
+    SecretKeyCreate,
+    SecretKeyEventOut,
+    SecretKeyOut,
     SecretAccessAuditOut,
     ScoreCardOut,
     SessionCreate,
@@ -75,7 +81,16 @@ from app.services.providers import provider_capabilities, validate_provider
 from app.services.reporting import generate_markdown_report
 from app.services.risk import risk_cards
 from app.services.run_queue import RUN_QUEUE
-from app.services.security import SecretCipher
+from app.services.adapters import normalize_target_type
+from app.services.security import (
+    SecretCipher,
+    activate_key,
+    create_key,
+    list_key_events,
+    list_keys,
+    reencrypt_credentials,
+    retire_key,
+)
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(auth_dependency)])
 
@@ -90,22 +105,24 @@ def _run_pipeline_background(run_id: str) -> None:
 
 
 def _provider_key_ref(db: Session, provider_type: str, api_key: str) -> str:
-    cipher = SecretCipher()
+    cipher = SecretCipher(db)
     existing = (
         db.query(ProviderCredential)
         .filter(ProviderCredential.name == f"default-{provider_type}")
         .one_or_none()
     )
+    encrypted_secret, key_version = cipher.encrypt(api_key)
     if existing:
-        existing.encrypted_secret = cipher.encrypt(api_key)
+        existing.encrypted_secret = encrypted_secret
+        existing.key_version = key_version
         db.commit()
         return existing.id
 
     row = ProviderCredential(
         name=f"default-{provider_type}",
         provider_type=provider_type,
-        encrypted_secret=cipher.encrypt(api_key),
-        key_version="v1",
+        encrypted_secret=encrypted_secret,
+        key_version=key_version,
         status="active",
     )
     db.add(row)
@@ -145,7 +162,7 @@ def _read_provider_api_key(db: Session, payload: ProviderValidateRequest) -> str
     if not row:
         return ""
     try:
-        key = SecretCipher().decrypt(row.encrypted_secret)
+        key = SecretCipher(db).decrypt(row.encrypted_secret)
         _audit_secret_access(
             db,
             provider_credential_id=row.id,
@@ -264,10 +281,16 @@ def validate_provider_config(payload: ProviderValidateRequest, db: Session = Dep
             }
     api_key = _read_provider_api_key(db, payload)
     check_payload = payload.model_dump()
+    check_payload["provider_type"] = str(payload.provider_type)
     check_payload["api_key"] = api_key
     result = validate_provider(check_payload)
     if result.get("valid") and api_key:
-        result["api_key_ref"] = _provider_key_ref(db, payload.provider_type, api_key)
+        try:
+            result["api_key_ref"] = _provider_key_ref(db, str(payload.provider_type), api_key)
+        except ValueError as exc:
+            warnings = list(result.get("warnings") or [])
+            warnings.append(str(exc))
+            result["warnings"] = warnings
     if payload.credential_id:
         result["credential_id"] = payload.credential_id
         row = db.query(ProviderCredential).filter(ProviderCredential.id == payload.credential_id).one_or_none()
@@ -282,11 +305,15 @@ def create_provider_credential(payload: ProviderCredentialCreate, db: Session = 
     settings = get_settings()
     if len(payload.api_key or "") < settings.credential_min_key_length:
         raise HTTPException(status_code=400, detail=f"api_key must be at least {settings.credential_min_key_length} chars")
+    try:
+        encrypted_secret, key_version = SecretCipher(db).encrypt(payload.api_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     row = ProviderCredential(
         name=payload.name,
-        provider_type=payload.provider_type,
-        encrypted_secret=SecretCipher().encrypt(payload.api_key),
-        key_version="v1",
+        provider_type=str(payload.provider_type),
+        encrypted_secret=encrypted_secret,
+        key_version=key_version,
         status=payload.status,
         last_rotated_at=datetime.now(timezone.utc),
     )
@@ -333,9 +360,15 @@ def rotate_provider_credential(
     if payload.key_version and payload.key_version == row.key_version:
         raise HTTPException(status_code=400, detail="key_version must advance on rotation")
 
-    row.encrypted_secret = SecretCipher().encrypt(payload.api_key)
+    try:
+        encrypted_secret, active_version = SecretCipher(db).encrypt(payload.api_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    row.encrypted_secret = encrypted_secret
     if payload.key_version:
         row.key_version = payload.key_version
+    else:
+        row.key_version = active_version
     if payload.status:
         row.status = payload.status
     row.last_rotated_at = datetime.now(timezone.utc)
@@ -366,6 +399,58 @@ def list_provider_credential_audits(credential_id: str, db: Session = Depends(ge
         "credential_id": credential_id,
         "audits": [SecretAccessAuditOut.model_validate(item, from_attributes=True).model_dump() for item in audits],
     }
+
+
+@router.post("/security/keys", response_model=SecretKeyOut)
+def create_security_key(payload: SecretKeyCreate, db: Session = Depends(get_db)) -> SecretKeyOut:
+    try:
+        row = create_key(db, version=payload.version, key_material=payload.key_material, actor=payload.actor)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SecretKeyOut.model_validate(row, from_attributes=True)
+
+
+@router.get("/security/keys")
+def get_security_keys(db: Session = Depends(get_db)) -> dict:
+    rows = list_keys(db)
+    return {"keys": [SecretKeyOut.model_validate(item, from_attributes=True).model_dump() for item in rows]}
+
+
+@router.post("/security/keys/{key_id}/activate", response_model=SecretKeyOut)
+def activate_security_key(key_id: str, actor: str = Query(default="api"), db: Session = Depends(get_db)) -> SecretKeyOut:
+    try:
+        row = activate_key(db, key_id=key_id, actor=actor)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SecretKeyOut.model_validate(row, from_attributes=True)
+
+
+@router.post("/security/keys/{key_id}/reencrypt-credentials")
+def reencrypt_security_credentials(
+    key_id: str,
+    actor: str = Query(default="api"),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        result = reencrypt_credentials(db, key_id=key_id, actor=actor)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"key_id": key_id, **result}
+
+
+@router.post("/security/keys/{key_id}/retire", response_model=SecretKeyOut)
+def retire_security_key(key_id: str, actor: str = Query(default="api"), db: Session = Depends(get_db)) -> SecretKeyOut:
+    try:
+        row = retire_key(db, key_id=key_id, actor=actor)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SecretKeyOut.model_validate(row, from_attributes=True)
+
+
+@router.get("/security/keys/events")
+def get_security_key_events(db: Session = Depends(get_db)) -> dict:
+    rows = list_key_events(db)
+    return {"events": [SecretKeyEventOut.model_validate(item, from_attributes=True).model_dump() for item in rows]}
 
 
 @router.post("/orchestration-profiles", response_model=OrchestrationProfileOut)
@@ -506,12 +591,21 @@ def create_profile(payload: ConfigProfileCreate, db: Session = Depends(get_db)) 
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    normalized_target_type = normalize_target_type(payload.target_config.target_type)
+    if payload.target_config.target_type != normalized_target_type:
+        raise HTTPException(
+            status_code=400,
+            detail="Legacy target_type is not accepted on write. Use managed_llm_runtime or managed_agent_runtime.",
+        )
+    target_config = payload.target_config.model_dump()
+    target_config["target_type"] = normalized_target_type
+
     row = ConfigProfile(
         session_id=payload.session_id,
         name=payload.name,
         strictness_mode=payload.scoring_config.strictness_mode,
         orchestration_profile_id=payload.orchestration_profile_id,
-        target_config=payload.target_config.model_dump(),
+        target_config=target_config,
         benchmark_config={
             **payload.benchmark_config.model_dump(),
             "afk_orchestration": orchestration_cfg,
@@ -531,6 +625,9 @@ def get_profile(profile_id: str, db: Session = Depends(get_db)) -> ConfigProfile
     row = db.query(ConfigProfile).filter(ConfigProfile.id == profile_id).one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="Config profile not found")
+    if isinstance(row.target_config, dict):
+        current = str(row.target_config.get("target_type", "")).strip()
+        row.target_config = {**row.target_config, "target_type": normalize_target_type(current)}
     return ConfigProfileOut.model_validate(row, from_attributes=True)
 
 
@@ -761,6 +858,35 @@ def get_features(run_id: str, db: Session = Depends(get_db)) -> FeatureOut:
     return FeatureOut(run_id=run_id, features=feature_table_for_run(db, run_id))
 
 
+@router.get("/runs/{run_id}/detector-votes")
+def get_detector_votes(run_id: str, db: Session = Depends(get_db)) -> dict:
+    execution_ids = [row[0] for row in db.query(Execution.id).filter(Execution.run_id == run_id).all()]
+    if not execution_ids:
+        return {"run_id": run_id, "votes": []}
+    rows = (
+        db.query(DetectionVote)
+        .filter(DetectionVote.execution_id.in_(execution_ids))
+        .order_by(DetectionVote.created_at.desc())
+        .all()
+    )
+    return {
+        "run_id": run_id,
+        "votes": [
+            {
+                "id": row.id,
+                "execution_id": row.execution_id,
+                "detector_name": row.detector_name,
+                "failure_flags": row.failure_flags,
+                "confidence": row.confidence,
+                "evidence": row.evidence,
+                "latency_ms": row.latency_ms,
+                "created_at": row.created_at.isoformat(),
+            }
+            for row in rows
+        ],
+    }
+
+
 @router.get("/runs/{run_id}/clusters")
 def get_clusters(run_id: str, db: Session = Depends(get_db)) -> dict:
     return {"run_id": run_id, "clusters": list_clusters(db, run_id)}
@@ -779,7 +905,7 @@ def get_attack_summary(run_id: str, db: Session = Depends(get_db)) -> dict:
         .all()
     )
     if not execution_rows:
-        return {"run_id": run_id, "attack_types": []}
+        return {"run_id": run_id, "attack_types": [], "detector_summary": {"avg_disagreement": 0.0, "avg_uncertainty": 0.0}}
 
     attack_type_by_execution = {execution_id: attack_type for execution_id, attack_type in execution_rows}
     detections = (
@@ -822,7 +948,17 @@ def get_attack_summary(run_id: str, db: Session = Depends(get_db)) -> dict:
         row["avg_confidence"] = float(row["avg_confidence"]) / total
         ordered.append(row)
 
-    return {"run_id": run_id, "attack_types": ordered}
+    avg_disagreement = float(sum(float(item.disagreement_score or 0.0) for item in detections) / max(len(detections), 1))
+    avg_uncertainty = float(sum(float(item.uncertainty or 0.0) for item in detections) / max(len(detections), 1))
+    return {
+        "run_id": run_id,
+        "attack_types": ordered,
+        "detector_summary": {
+            "avg_disagreement": avg_disagreement,
+            "avg_uncertainty": avg_uncertainty,
+            "count": len(detections),
+        },
+    }
 
 
 @router.get("/runs/{run_id}/node-telemetry")
@@ -978,11 +1114,26 @@ def get_run_telemetry(run_id: str, db: Session = Depends(get_db)) -> dict:
         .group_by(RunEvent.event_type)
         .all()
     )
+    execution_ids = [row[0] for row in db.query(Execution.id).filter(Execution.run_id == run_id).all()]
+    detection_rows = (
+        db.query(Detection).filter(Detection.execution_id.in_(execution_ids)).all() if execution_ids else []
+    )
+    avg_disagreement = float(
+        sum(float(item.disagreement_score or 0.0) for item in detection_rows) / max(len(detection_rows), 1)
+    )
+    avg_uncertainty = float(
+        sum(float(item.uncertainty or 0.0) for item in detection_rows) / max(len(detection_rows), 1)
+    )
     return {
         "run_id": run_id,
         "status": run.status,
         "progress": {"completed": run.completed_attacks, "total": run.total_attacks},
         "event_counts": {event_type: int(count) for event_type, count in rows},
+        "detector_summary": {
+            "avg_disagreement": avg_disagreement,
+            "avg_uncertainty": avg_uncertainty,
+            "count": len(detection_rows),
+        },
         "cost": {
             "spent_usd": float(run.budget_spent_usd or 0.0),
             "projected_final_usd": float(run.estimated_final_cost_usd or 0.0),

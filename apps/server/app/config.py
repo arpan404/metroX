@@ -12,8 +12,6 @@ class Settings(BaseSettings):
     )
     api_key: str = Field(default="local-dev-key")
     redis_url: str = Field(default="redis://localhost:6379/0")
-    allow_synthetic_targets: bool = Field(default=True)
-
     quick_attack_count: int = Field(default=100)
     standard_attack_count: int = Field(default=2000)
     deep_attack_count: int = Field(default=12000)

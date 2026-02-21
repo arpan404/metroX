@@ -13,12 +13,13 @@ from app.models import (
     ConfigProfile,
     ConfigSnapshot,
     Detection,
+    DetectionVote,
     Execution,
     ProbabilisticLabel,
     Run,
     ScoreCard,
 )
-from app.services.adapters import TargetRequest, get_adapter
+from app.services.adapters import TargetRequest, get_adapter, normalize_target_type
 from app.services.advanced_analytics import (
     build_cooccurrence_graph,
     build_forecast,
@@ -148,7 +149,7 @@ class RunOrchestrator:
             )
 
             target_cfg = profile.target_config
-            adapter = get_adapter(target_cfg.get("target_type", "synthetic"))
+            adapter = get_adapter(target_cfg.get("target_type", "managed_llm_runtime"))
             runtime_cfg = profile.runtime_config or {}
             budget_usd = float(runtime_cfg.get("budget_usd", 0.0) or 0.0)
             abort_on_cost_breach = bool(runtime_cfg.get("abort_on_cost_breach", False))
@@ -200,7 +201,7 @@ class RunOrchestrator:
                     run_id=run.id,
                     attack_id=case.id,
                     prompt=case.prompt,
-                    target_type=target_cfg.get("target_type", "synthetic"),
+                    target_type=normalize_target_type(target_cfg.get("target_type", "managed_llm_runtime")),
                     endpoint=target_cfg.get("endpoint"),
                     auth_headers=target_cfg.get("auth_headers", {}),
                     model=target_cfg.get("model", "gpt-4.1-mini"),
@@ -211,7 +212,8 @@ class RunOrchestrator:
                         "thread_id": run.thread_id,
                         "policy_profile": policy_cfg["name"],
                         "allowed_tools": sorted(policy_cfg["allowed_tools"]),
-                        "afk_resume": resume_requested and target_cfg.get("target_type") == "afk_agent",
+                        "afk_resume": resume_requested
+                        and normalize_target_type(str(target_cfg.get("target_type", ""))) == "managed_agent_runtime",
                         "afk_run_id": last_afk_run_id,
                     },
                 )
@@ -239,17 +241,20 @@ class RunOrchestrator:
                 self.db.add(execution)
                 self.db.flush()
 
-                detection = detect_failures(
+                detection, votes, adjudication_candidate = detect_failures(
                     execution_id=execution.id,
                     attack_type=case.attack_type,
                     prompt=case.prompt,
                     response=response.response_text,
                     retrieved_docs=response.retrieved_docs,
                     tool_events=response.tool_events,
+                    scoring_config=profile.scoring_config,
                 )
                 label = fuse_labels(detection)
 
                 self.db.add(detection)
+                for vote in votes:
+                    self.db.add(vote)
                 self.db.add(label)
                 executions.append(execution)
                 processed_case_ids.add(case.id)
@@ -276,7 +281,10 @@ class RunOrchestrator:
                     "projected_final_usd": run.estimated_final_cost_usd,
                 }
 
-                if self.settings.low_confidence_min <= detection.confidence < self.settings.low_confidence_max:
+                if (
+                    self.settings.low_confidence_min <= detection.confidence < self.settings.low_confidence_max
+                    or adjudication_candidate
+                ):
                     low_confidence.append(execution.id)
 
                 for event in afk_events:

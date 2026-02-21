@@ -2,146 +2,157 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import json
 import os
-from dataclasses import dataclass
-from typing import Protocol
+from datetime import datetime, timezone
 
-from app.config import get_settings
+from sqlalchemy.orm import Session
 
-
-@dataclass
-class CipherKey:
-    version: str
-    material: bytes
-
-
-class KeyResolver:
-    """Versioned key resolver for rotation-ready secret encryption."""
-
-    def __init__(self) -> None:
-        settings = get_settings()
-        self.active_version = settings.secret_active_key_version
-        raw = (settings.secret_keys_json or "").strip()
-        self.keys: dict[str, CipherKey] = {}
-        if raw:
-            try:
-                payload = json.loads(raw)
-                for version, value in payload.items():
-                    self.keys[str(version)] = CipherKey(
-                        version=str(version),
-                        material=hashlib.sha256(str(value).encode("utf-8")).digest(),
-                    )
-            except Exception:
-                self.keys = {}
-
-        if not self.keys:
-            seed = os.getenv("AUTOREDTEAM_SECRET_KEY") or settings.api_key
-            self.keys = {
-                self.active_version: CipherKey(
-                    version=self.active_version,
-                    material=hashlib.sha256(seed.encode("utf-8")).digest(),
-                )
-            }
-
-        if self.active_version not in self.keys:
-            first_version = next(iter(self.keys.keys()))
-            self.active_version = first_version
-
-    def get(self, version: str) -> CipherKey:
-        if version not in self.keys:
-            raise ValueError(f"Unknown key version: {version}")
-        return self.keys[version]
-
-    def current(self) -> CipherKey:
-        return self.get(self.active_version)
-
-
-class SecretBackend(Protocol):
-    def encrypt(self, plaintext: str) -> str:
-        ...
-
-    def decrypt(self, ciphertext: str) -> str:
-        ...
-
-
-class LocalEnvelopeBackend:
-    def __init__(self) -> None:
-        self.resolver = KeyResolver()
-
-    def encrypt(self, plaintext: str) -> str:
-        key = self.resolver.current()
-        data = plaintext.encode("utf-8")
-        encrypted = bytes([byte ^ key.material[i % len(key.material)] for i, byte in enumerate(data)])
-        payload = base64.urlsafe_b64encode(encrypted).decode("utf-8")
-        return f"kver:{key.version}:{payload}"
-
-    def decrypt(self, ciphertext: str) -> str:
-        if ciphertext.startswith("kver:"):
-            _, version, payload = ciphertext.split(":", 2)
-            key = self.resolver.get(version)
-            raw = base64.urlsafe_b64decode(payload.encode("utf-8"))
-            decrypted = bytes([byte ^ key.material[i % len(key.material)] for i, byte in enumerate(raw)])
-            return decrypted.decode("utf-8")
-
-        key = self.resolver.current()
-        raw = base64.urlsafe_b64decode(ciphertext.encode("utf-8"))
-        decrypted = bytes([byte ^ key.material[i % len(key.material)] for i, byte in enumerate(raw)])
-        return decrypted.decode("utf-8")
-
-
-class AwsKmsBackend:
-    def __init__(self, key_id: str, region: str) -> None:
-        if not key_id:
-            raise ValueError("aws_kms_key_id is required for kms backend")
-        self.key_id = key_id
-        try:
-            import boto3  # type: ignore
-        except Exception as exc:  # pragma: no cover
-            raise RuntimeError("boto3 is required for kms backend") from exc
-        self.client = boto3.client("kms", region_name=region)
-
-    def encrypt(self, plaintext: str) -> str:
-        blob = plaintext.encode("utf-8")
-        out = self.client.encrypt(KeyId=self.key_id, Plaintext=blob)
-        ciphertext_blob = out["CiphertextBlob"]
-        payload = base64.urlsafe_b64encode(ciphertext_blob).decode("utf-8")
-        return f"kms:{payload}"
-
-    def decrypt(self, ciphertext: str) -> str:
-        if not ciphertext.startswith("kms:"):
-            raise ValueError("ciphertext is not kms payload")
-        payload = ciphertext.split(":", 1)[1]
-        blob = base64.urlsafe_b64decode(payload.encode("utf-8"))
-        out = self.client.decrypt(CiphertextBlob=blob)
-        return out["Plaintext"].decode("utf-8")
+from app.models import ProviderCredential, SecretKey, SecretKeyEvent
 
 
 class SecretCipher:
-    """Envelope-style cipher with key version prefix.
+    """DB-managed key encryption for provider credentials."""
 
-    Format: `kver:<version>:<b64_payload>`
-    This is rotation-ready and KMS-provider swappable in V2.
-    """
+    def __init__(self, db: Session):
+        self.db = db
 
-    def __init__(self) -> None:
-        settings = get_settings()
-        self.backend: SecretBackend
-        if settings.secret_backend == "kms":
-            try:
-                self.backend = AwsKmsBackend(settings.aws_kms_key_id, settings.aws_region)
-            except Exception:
-                if settings.secret_backend_strict:
-                    raise
-                # Safe fallback for local/dev and test environments.
-                self.backend = LocalEnvelopeBackend()
-        else:
-            self.backend = LocalEnvelopeBackend()
-
-    def encrypt(self, plaintext: str) -> str:
-        return self.backend.encrypt(plaintext)
+    def encrypt(self, plaintext: str) -> tuple[str, str]:
+        key = _active_key(self.db)
+        if not key:
+            raise ValueError("No active secret key. Create and activate a key via /v1/security/keys")
+        material = _unwrap_material(key.encrypted_material)
+        cipher = _xor_encrypt(plaintext.encode("utf-8"), material)
+        payload = base64.urlsafe_b64encode(cipher).decode("utf-8")
+        return f"dbk:{key.id}:{key.version}:{payload}", key.version
 
     def decrypt(self, ciphertext: str) -> str:
-        if ciphertext.startswith("kms:"):
-            return self.backend.decrypt(ciphertext)
-        return LocalEnvelopeBackend().decrypt(ciphertext)
+        if not ciphertext.startswith("dbk:"):
+            raise ValueError("Unsupported ciphertext format; credential must be re-encrypted")
+
+        _, key_id, version, payload = ciphertext.split(":", 3)
+        key = self.db.query(SecretKey).filter(SecretKey.id == key_id).one_or_none()
+        if not key:
+            raise ValueError("Secret key not found")
+        if key.status == "retired":
+            raise ValueError("Secret key is retired")
+        if key.version != version:
+            raise ValueError("Secret key version mismatch")
+
+        material = _unwrap_material(key.encrypted_material)
+        raw = base64.urlsafe_b64decode(payload.encode("utf-8"))
+        plain = _xor_encrypt(raw, material)
+        return plain.decode("utf-8")
+
+
+def list_keys(db: Session) -> list[SecretKey]:
+    return db.query(SecretKey).order_by(SecretKey.created_at.desc()).all()
+
+
+def create_key(db: Session, *, version: str, key_material: str, actor: str) -> SecretKey:
+    existing = db.query(SecretKey).filter(SecretKey.version == version).one_or_none()
+    if existing:
+        raise ValueError("key version already exists")
+    active = _active_key(db)
+    row = SecretKey(
+        version=version,
+        encrypted_material=_wrap_material(key_material.encode("utf-8")),
+        status="retiring" if active else "active",
+        activated_at=datetime.now(timezone.utc) if not active else None,
+    )
+    db.add(row)
+    db.flush()
+    _log_key_event(db, key_id=row.id, action="create", actor=actor, meta={"version": version})
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def activate_key(db: Session, *, key_id: str, actor: str) -> SecretKey:
+    row = db.query(SecretKey).filter(SecretKey.id == key_id).one_or_none()
+    if not row:
+        raise ValueError("key not found")
+    if row.status == "retired":
+        raise ValueError("cannot activate retired key")
+
+    now = datetime.now(timezone.utc)
+    for key in db.query(SecretKey).filter(SecretKey.status == "active").all():
+        key.status = "retiring"
+    row.status = "active"
+    row.activated_at = now
+    _log_key_event(db, key_id=row.id, action="activate", actor=actor, meta={})
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def reencrypt_credentials(db: Session, *, key_id: str, actor: str) -> dict[str, int]:
+    key = db.query(SecretKey).filter(SecretKey.id == key_id).one_or_none()
+    if not key:
+        raise ValueError("key not found")
+    if key.status != "active":
+        raise ValueError("key must be active before re-encryption")
+
+    cipher = SecretCipher(db)
+    rows = db.query(ProviderCredential).all()
+    updated = 0
+    for row in rows:
+        try:
+            plaintext = cipher.decrypt(row.encrypted_secret)
+            encrypted, version = cipher.encrypt(plaintext)
+            row.encrypted_secret = encrypted
+            row.key_version = version
+            row.last_rotated_at = datetime.now(timezone.utc)
+            updated += 1
+        except Exception:
+            continue
+    _log_key_event(db, key_id=key_id, action="reencrypt_credentials", actor=actor, meta={"updated": updated})
+    db.commit()
+    return {"updated": updated, "total": len(rows)}
+
+
+def retire_key(db: Session, *, key_id: str, actor: str) -> SecretKey:
+    row = db.query(SecretKey).filter(SecretKey.id == key_id).one_or_none()
+    if not row:
+        raise ValueError("key not found")
+    if row.status == "active":
+        raise ValueError("cannot retire active key")
+    row.status = "retired"
+    row.retired_at = datetime.now(timezone.utc)
+    _log_key_event(db, key_id=row.id, action="retire", actor=actor, meta={})
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def list_key_events(db: Session) -> list[SecretKeyEvent]:
+    return db.query(SecretKeyEvent).order_by(SecretKeyEvent.created_at.desc()).limit(200).all()
+
+
+def _active_key(db: Session) -> SecretKey | None:
+    return (
+        db.query(SecretKey)
+        .filter(SecretKey.status == "active")
+        .order_by(SecretKey.activated_at.desc(), SecretKey.created_at.desc())
+        .first()
+    )
+
+
+def _log_key_event(db: Session, *, key_id: str, action: str, actor: str, meta: dict) -> None:
+    db.add(SecretKeyEvent(key_id=key_id, action=action, actor=actor, meta=meta))
+
+
+def _wrap_material(material: bytes) -> str:
+    master = hashlib.sha256((os.getenv("AUTOREDTEAM_MASTER_WRAP_KEY") or "autoredteam-dev-wrap").encode("utf-8")).digest()
+    wrapped = _xor_encrypt(material, master)
+    return base64.urlsafe_b64encode(wrapped).decode("utf-8")
+
+
+def _unwrap_material(encrypted_material: str) -> bytes:
+    master = hashlib.sha256((os.getenv("AUTOREDTEAM_MASTER_WRAP_KEY") or "autoredteam-dev-wrap").encode("utf-8")).digest()
+    wrapped = base64.urlsafe_b64decode(encrypted_material.encode("utf-8"))
+    return _xor_encrypt(wrapped, master)
+
+
+def _xor_encrypt(data: bytes, key_material: bytes) -> bytes:
+    key = hashlib.sha256(key_material).digest()
+    return bytes([byte ^ key[i % len(key)] for i, byte in enumerate(data)])

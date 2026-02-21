@@ -60,7 +60,7 @@ def _create_session_and_profile(client: TestClient) -> tuple[str, str]:
             "session_id": session_id,
             "name": "contract-profile",
             "target_config": {
-                "target_type": "synthetic",
+                "target_type": "managed_llm_runtime",
                 "endpoint": None,
                 "auth_headers": {},
                 "model": "gpt-4.1-mini",
@@ -168,7 +168,7 @@ def test_provider_and_pricing_contract(api_client) -> None:
     provider = client.post(
         "/v1/providers/validate",
         json={
-            "provider_type": "synthetic",
+            "provider_type": "managed_llm_runtime",
             "model": "gpt-4.1-mini",
             "api_key": "dummy-key",
         },
@@ -204,6 +204,12 @@ def test_provider_and_pricing_contract(api_client) -> None:
 
 def test_provider_credential_lifecycle(api_client) -> None:
     client, _ = api_client
+    key = client.post(
+        "/v1/security/keys",
+        json={"version": "v1", "key_material": "contract-key-material", "actor": "test"},
+        headers=_headers(),
+    )
+    assert key.status_code == 200
     created = client.post(
         "/v1/providers/credentials",
         json={
@@ -319,7 +325,7 @@ def test_config_profile_binds_orchestration_snapshot(api_client) -> None:
             "session_id": session_id,
             "name": "snapshot-profile",
             "orchestration_profile_id": orchestration_id,
-            "target_config": {"target_type": "synthetic", "model": "gpt-4.1-mini", "extra": {}},
+            "target_config": {"target_type": "managed_llm_runtime", "model": "gpt-4.1-mini", "extra": {}},
             "benchmark_config": {"taxonomy": ["prompt_injection"], "afk_orchestration": {"graph": {"nodes": [{"id": "attacker"}], "edges": []}}},
             "scoring_config": {"strictness_mode": "balanced"},
             "runtime_config": {"preset": "quick"},

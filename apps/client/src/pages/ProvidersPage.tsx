@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api } from '../lib/api'
-import type { ProviderCredential, ProviderValidation } from '../lib/types'
 
-type ProviderType = 'synthetic' | 'litellm' | 'openai_compatible' | 'afk_agent'
+import { api } from '../lib/api'
+import type { ProviderCredential, ProviderValidation, SecretKey, SecretKeyEvent } from '../lib/types'
+import { Badge } from '../components/ui/badge'
+import { Button } from '../components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+import { Input } from '../components/ui/input'
+import { Label } from '../components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 
 function formatTime(value?: string | null): string {
   if (!value) return 'n/a'
@@ -12,65 +19,115 @@ function formatTime(value?: string | null): string {
 
 export default function ProvidersPage() {
   const [credentials, setCredentials] = useState<ProviderCredential[]>([])
-  const [selectedId, setSelectedId] = useState('')
-  const [providerType, setProviderType] = useState<ProviderType>('openai_compatible')
+  const [selectedCredentialId, setSelectedCredentialId] = useState('')
+  const [providerType, setProviderType] = useState<'managed_llm_runtime' | 'openai_compatible'>('managed_llm_runtime')
   const [credentialName, setCredentialName] = useState('provider-key-main')
   const [apiKey, setApiKey] = useState('')
   const [keyVersion, setKeyVersion] = useState('v1')
+
+  const [secretKeys, setSecretKeys] = useState<SecretKey[]>([])
+  const [selectedKeyId, setSelectedKeyId] = useState('')
+  const [keyMaterial, setKeyMaterial] = useState('')
+  const [keyEvents, setKeyEvents] = useState<SecretKeyEvent[]>([])
+
   const [model, setModel] = useState('gpt-4.1-mini')
   const [baseUrl, setBaseUrl] = useState('')
-  const [busy, setBusy] = useState(false)
   const [validation, setValidation] = useState<ProviderValidation | null>(null)
-  const [audits, setAudits] = useState<Array<Record<string, unknown>>>([])
-  const [error, setError] = useState<string | null>(null)
 
-  const selected = useMemo(
-    () => credentials.find((row) => row.id === selectedId) ?? null,
-    [credentials, selectedId],
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<string | null>(null)
+
+  const selectedCredential = useMemo(
+    () => credentials.find((row) => row.id === selectedCredentialId) ?? null,
+    [credentials, selectedCredentialId],
   )
 
-  async function loadCredentials() {
+  async function loadAll() {
     setBusy(true)
-    setError(null)
     try {
-      const payload = await api.listProviderCredentials()
-      setCredentials(payload.credentials)
-      if (!selectedId && payload.credentials.length > 0) {
-        setSelectedId(payload.credentials[0].id)
-      }
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Failed to load credentials')
+      const [creds, keys, events] = await Promise.all([
+        api.listProviderCredentials(),
+        api.listSecurityKeys(),
+        api.listSecurityKeyEvents(),
+      ])
+      setCredentials(creds.credentials)
+      setSecretKeys(keys.keys)
+      setKeyEvents(events.events)
+      if (!selectedCredentialId && creds.credentials.length > 0) setSelectedCredentialId(creds.credentials[0].id)
+      if (!selectedKeyId && keys.keys.length > 0) setSelectedKeyId(keys.keys[0].id)
     } finally {
       setBusy(false)
     }
   }
 
   useEffect(() => {
-    void loadCredentials()
+    void loadAll()
   }, [])
 
-  useEffect(() => {
-    if (!selectedId) {
-      setAudits([])
+  async function createKey() {
+    setError(null)
+    setStatus(null)
+    if (!keyMaterial.trim()) {
+      setError('Key material is required')
       return
     }
-    void (async () => {
-      try {
-        const payload = await api.getProviderCredentialAudits(selectedId)
-        setAudits(payload.audits)
-      } catch {
-        setAudits([])
-      }
-    })()
-  }, [selectedId])
+    try {
+      await api.createSecurityKey({ version: keyVersion, key_material: keyMaterial, actor: 'ui' })
+      setStatus(`Created key ${keyVersion}`)
+      setKeyMaterial('')
+      await loadAll()
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : 'Failed to create key')
+    }
+  }
+
+  async function activateKey() {
+    if (!selectedKeyId) return
+    setError(null)
+    setStatus(null)
+    try {
+      await api.activateSecurityKey(selectedKeyId)
+      setStatus('Key activated')
+      await loadAll()
+    } catch (activateError) {
+      setError(activateError instanceof Error ? activateError.message : 'Failed to activate key')
+    }
+  }
+
+  async function reencryptKey() {
+    if (!selectedKeyId) return
+    setError(null)
+    setStatus(null)
+    try {
+      const out = await api.reencryptCredentials(selectedKeyId)
+      setStatus(`Re-encrypted ${out.updated}/${out.total} credentials`)
+      await loadAll()
+    } catch (reencryptError) {
+      setError(reencryptError instanceof Error ? reencryptError.message : 'Failed to re-encrypt credentials')
+    }
+  }
+
+  async function retireKey() {
+    if (!selectedKeyId) return
+    setError(null)
+    setStatus(null)
+    try {
+      await api.retireSecurityKey(selectedKeyId)
+      setStatus('Key retired')
+      await loadAll()
+    } catch (retireError) {
+      setError(retireError instanceof Error ? retireError.message : 'Failed to retire key')
+    }
+  }
 
   async function createCredential() {
-    if (!apiKey) {
+    if (!apiKey.trim()) {
       setError('API key is required')
       return
     }
-    setBusy(true)
     setError(null)
+    setStatus(null)
     try {
       const created = await api.createProviderCredential({
         name: credentialName,
@@ -78,216 +135,219 @@ export default function ProvidersPage() {
         api_key: apiKey,
         status: 'active',
       })
-      await loadCredentials()
-      setSelectedId(created.id)
       setApiKey('')
+      setSelectedCredentialId(created.id)
+      setStatus('Credential created')
+      await loadAll()
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : 'Failed to create credential')
-    } finally {
-      setBusy(false)
     }
   }
 
   async function rotateCredential() {
-    if (!selectedId) {
-      setError('Select a credential first')
+    if (!selectedCredentialId || !apiKey.trim()) {
+      setError('Select credential and provide new API key')
       return
     }
-    if (!apiKey) {
-      setError('New API key is required for rotation')
-      return
-    }
-    setBusy(true)
     setError(null)
+    setStatus(null)
     try {
-      await api.rotateProviderCredential(selectedId, {
-        api_key: apiKey,
-        key_version: keyVersion || undefined,
-      })
-      await loadCredentials()
+      await api.rotateProviderCredential(selectedCredentialId, { api_key: apiKey, key_version: keyVersion })
       setApiKey('')
+      setStatus('Credential rotated')
+      await loadAll()
     } catch (rotateError) {
       setError(rotateError instanceof Error ? rotateError.message : 'Failed to rotate credential')
-    } finally {
-      setBusy(false)
     }
   }
 
   async function validateProvider() {
-    setBusy(true)
     setError(null)
+    setStatus(null)
     setValidation(null)
     try {
-      const payload = await api.validateProvider({
+      const out = await api.validateProvider({
         provider_type: providerType,
         model: model || undefined,
         base_url: baseUrl || undefined,
-        credential_id: selectedId || undefined,
-        api_key: !selectedId ? apiKey || undefined : undefined,
+        credential_id: selectedCredentialId || undefined,
+        api_key: !selectedCredentialId ? apiKey || undefined : undefined,
       })
-      setValidation(payload)
-    } catch (validateError) {
-      setError(validateError instanceof Error ? validateError.message : 'Failed to validate provider')
-    } finally {
-      setBusy(false)
+      setValidation(out)
+      setStatus(out.valid ? 'Validation succeeded' : 'Validation failed')
+    } catch (validationError) {
+      setError(validationError instanceof Error ? validationError.message : 'Provider validation failed')
     }
   }
 
   return (
-    <section className="stack-lg">
-      <div className="panel stack-md">
-        <div className="row between wrap">
-          <h2>Provider Credentials</h2>
-          <button type="button" className="ghost" disabled={busy} onClick={loadCredentials}>
-            {busy ? 'Refreshing...' : 'Refresh'}
-          </button>
-        </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Provider</th>
-                <th>Version</th>
-                <th>Status</th>
-                <th>Last Validated</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {credentials.map((row) => (
-                <tr
-                  key={row.id}
-                  className={row.id === selectedId ? 'table-row-active' : ''}
-                  onClick={() => setSelectedId(row.id)}
-                >
-                  <td>{row.name}</td>
-                  <td>{row.provider_type}</td>
-                  <td>{row.key_version}</td>
-                  <td>{row.status}</td>
-                  <td>{formatTime(row.last_validated_at)}</td>
-                  <td>{formatTime(row.created_at)}</td>
-                </tr>
-              ))}
-              {credentials.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="caption">
-                    No credentials saved.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </div>
+    <Tabs defaultValue="credentials" className="space-y-4">
+      <TabsList>
+        <TabsTrigger value="credentials">Credentials</TabsTrigger>
+        <TabsTrigger value="keys">Key Lifecycle</TabsTrigger>
+        <TabsTrigger value="validation">Validation</TabsTrigger>
+      </TabsList>
 
-      <div className="grid two">
-        <div className="panel stack-md">
-          <h2>Create / Rotate</h2>
-          <label>
-            Provider Type
-            <select value={providerType} onChange={(event) => setProviderType(event.target.value as ProviderType)}>
-              <option value="openai_compatible">openai_compatible</option>
-              <option value="litellm">litellm</option>
-              <option value="afk_agent">afk_agent</option>
-              <option value="synthetic">synthetic</option>
-            </select>
-          </label>
-          <label>
-            Credential Name
-            <input value={credentialName} onChange={(event) => setCredentialName(event.target.value)} />
-          </label>
-          <label>
-            Key Version
-            <input value={keyVersion} onChange={(event) => setKeyVersion(event.target.value)} placeholder="v1" />
-          </label>
-          <label>
-            API Key (write-only)
-            <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-..." />
-          </label>
-          <div className="row gap-lg wrap">
-            <button type="button" className="primary" disabled={busy} onClick={createCredential}>
-              Create Credential
-            </button>
-            <button type="button" className="ghost" disabled={busy || !selectedId} onClick={rotateCredential}>
-              Rotate Selected
-            </button>
-          </div>
-          <p className="caption">Selected ID: {selectedId || 'none'}</p>
-          {selected ? (
-            <p className="caption">
-              Selected: {selected.name} ({selected.provider_type}/{selected.key_version})
-            </p>
-          ) : null}
-        </div>
-
-        <div className="panel stack-md">
-          <h2>Validation</h2>
-          <label>
-            Model
-            <input value={model} onChange={(event) => setModel(event.target.value)} />
-          </label>
-          <label>
-            Base URL (for openai_compatible)
-            <input
-              value={baseUrl}
-              onChange={(event) => setBaseUrl(event.target.value)}
-              placeholder="https://api.openai.com/v1"
-            />
-          </label>
-          <button type="button" className="primary" disabled={busy} onClick={validateProvider}>
-            Validate Provider
-          </button>
-          {validation ? (
-            <div className="callout">
-              <p>Status: {validation.valid ? 'valid' : 'invalid'}</p>
-              {validation.error ? <p>Error: {validation.error}</p> : null}
-              {validation.discovered_models?.length ? (
-                <p>Discovered Models: {validation.discovered_models.slice(0, 5).join(', ')}</p>
-              ) : null}
+      <TabsContent value="credentials" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Credential Registry</CardTitle>
+            <CardDescription>Encrypted provider credentials bound to active local key version.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Provider</TableHead>
+                    <TableHead>Version</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Validated</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {credentials.map((row) => (
+                    <TableRow key={row.id} onClick={() => setSelectedCredentialId(row.id)} className="cursor-pointer">
+                      <TableCell>{row.name}</TableCell>
+                      <TableCell>{row.provider_type}</TableCell>
+                      <TableCell>{row.key_version}</TableCell>
+                      <TableCell>{row.status}</TableCell>
+                      <TableCell>{formatTime(row.last_validated_at)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
-          ) : (
-            <p className="caption">Validation report appears here.</p>
-          )}
-        </div>
-      </div>
 
-      <div className="panel stack-md">
-        <h2>Credential Audit Trail</h2>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Action</th>
-                <th>Actor</th>
-                <th>Success</th>
-                <th>Error</th>
-                <th>Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {audits.map((row, idx) => (
-                <tr key={`${String(row.id)}-${idx}`}>
-                  <td>{String(row.action ?? 'unknown')}</td>
-                  <td>{String(row.actor ?? 'system')}</td>
-                  <td>{Boolean(row.success) ? 'yes' : 'no'}</td>
-                  <td>{String(row.error ?? '')}</td>
-                  <td>{formatTime(String(row.created_at ?? ''))}</td>
-                </tr>
-              ))}
-              {audits.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="caption">
-                    No audit records for selected credential.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Provider Type</Label>
+                <Select value={providerType} onValueChange={(value) => setProviderType(value as 'managed_llm_runtime' | 'openai_compatible')}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="managed_llm_runtime">managed_llm_runtime</SelectItem>
+                    <SelectItem value="openai_compatible">openai_compatible</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Credential Name</Label>
+                <Input value={credentialName} onChange={(event) => setCredentialName(event.target.value)} />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>API Key</Label>
+                <Input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={createCredential}>Create Credential</Button>
+              <Button variant="secondary" onClick={rotateCredential}>Rotate Selected</Button>
+              <Button variant="outline" onClick={loadAll} disabled={busy}>Refresh</Button>
+            </div>
+            {selectedCredential ? <p className="text-sm text-muted-foreground">Selected: {selectedCredential.name}</p> : null}
+          </CardContent>
+        </Card>
+      </TabsContent>
 
-      {error ? <p className="error">{error}</p> : null}
-    </section>
+      <TabsContent value="keys" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Secret Key Lifecycle</CardTitle>
+            <CardDescription>Create, activate, re-encrypt credentials, and retire local DB keys.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-2"><Label>Version</Label><Input value={keyVersion} onChange={(event) => setKeyVersion(event.target.value)} /></div>
+              <div className="space-y-2 md:col-span-2"><Label>Key Material</Label><Input type="password" value={keyMaterial} onChange={(event) => setKeyMaterial(event.target.value)} /></div>
+            </div>
+            <div className="flex gap-2"><Button onClick={createKey}>Create Key</Button></div>
+
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Version</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Activated</TableHead>
+                    <TableHead>Retired</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {secretKeys.map((row) => (
+                    <TableRow key={row.id} onClick={() => setSelectedKeyId(row.id)} className="cursor-pointer">
+                      <TableCell>{row.version}</TableCell>
+                      <TableCell><Badge variant={row.status === 'active' ? 'default' : 'secondary'}>{row.status}</Badge></TableCell>
+                      <TableCell>{formatTime(row.activated_at)}</TableCell>
+                      <TableCell>{formatTime(row.retired_at)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={activateKey} disabled={!selectedKeyId}>Activate</Button>
+              <Button variant="secondary" onClick={reencryptKey} disabled={!selectedKeyId}>Re-encrypt Credentials</Button>
+              <Button variant="outline" onClick={retireKey} disabled={!selectedKeyId}>Retire</Button>
+            </div>
+
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Action</TableHead>
+                    <TableHead>Actor</TableHead>
+                    <TableHead>Time</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {keyEvents.map((event) => (
+                    <TableRow key={event.id}>
+                      <TableCell>{event.action}</TableCell>
+                      <TableCell>{event.actor}</TableCell>
+                      <TableCell>{formatTime(event.created_at)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      <TabsContent value="validation" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Provider Validation</CardTitle>
+            <CardDescription>Multi-probe validation with capability confidence and normalized errors.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2"><Label>Model</Label><Input value={model} onChange={(event) => setModel(event.target.value)} /></div>
+              <div className="space-y-2"><Label>Base URL (openai_compatible)</Label><Input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://api..." /></div>
+            </div>
+            <Button onClick={validateProvider}>Validate</Button>
+
+            {validation ? (
+              <div className="space-y-2 rounded-md border p-4 text-sm">
+                <p>Status: {validation.valid ? 'valid' : 'invalid'}</p>
+                <p>Confidence: {(validation.capability_confidence ?? 0).toFixed(2)}</p>
+                <p>Discovery: {validation.model_discovery_mode ?? 'inferred'}</p>
+                <p>Error Class: {validation.error_class ?? 'none'}</p>
+                <div className="space-y-1">
+                  {validation.probe_results?.map((probe) => (
+                    <p key={`${probe.probe}-${probe.status}`}>{probe.probe}: {probe.status} ({Math.round(probe.latency_ms)}ms)</p>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      {status ? <p className="text-sm text-emerald-600 dark:text-emerald-400">{status}</p> : null}
+      {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
+    </Tabs>
   )
 }

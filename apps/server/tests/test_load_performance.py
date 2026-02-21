@@ -29,8 +29,8 @@ def test_cost_aggregate_hot_path_10k(tmp_path) -> None:
             execution = Execution(
                 run_id=run_id,
                 attack_case_id=str(uuid4()),
-                target_type="synthetic",
-                provider_name="synthetic",
+                target_type="managed_llm_runtime",
+                provider_name="managed_llm_runtime",
                 model_resolved="gpt-4.1-mini",
                 prompt="prompt",
                 response="response",
@@ -46,7 +46,7 @@ def test_cost_aggregate_hot_path_10k(tmp_path) -> None:
                 ExecutionCost(
                     run_id=run_id,
                     execution_id=execution.id,
-                    provider_name="synthetic",
+                    provider_name="managed_llm_runtime",
                     model="gpt-4.1-mini",
                     prompt_tokens=30,
                     completion_tokens=22,

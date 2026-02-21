@@ -43,13 +43,12 @@ class ScoringWeights(BaseModel):
 
 class TargetConfig(BaseModel):
     target_type: Literal[
-        "synthetic",
+        "managed_llm_runtime",
+        "managed_agent_runtime",
         "http",
         "openai_compatible",
         "agent_http",
-        "afk_agent",
-        "litellm",
-    ] = "synthetic"
+    ] = "managed_llm_runtime"
     endpoint: str | None = None
     auth_headers: dict[str, str] = Field(default_factory=dict)
     model: str = "gpt-4.1-mini"
@@ -150,6 +149,18 @@ class ScoringConfig(BaseModel):
     weights: ScoringWeights = Field(default_factory=ScoringWeights)
     weak_supervision: bool = True
     active_adjudication: bool = True
+    detectors: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "enabled": ["rule", "retrieval_consistency", "afk_judge"],
+            "weights": {"rule": 0.45, "retrieval_consistency": 0.25, "afk_judge": 0.30},
+        }
+    )
+    fusion: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "disagreement_threshold": 0.35,
+            "uncertainty_threshold": 0.45,
+        }
+    )
 
 
 class ConfigProfileCreate(BaseModel):
@@ -300,7 +311,7 @@ class RunReportOut(BaseModel):
 
 
 class ProviderValidateRequest(BaseModel):
-    provider_type: Literal["synthetic", "litellm", "openai_compatible", "afk_agent"] = "synthetic"
+    provider_type: Literal["managed_llm_runtime", "openai_compatible"] = "managed_llm_runtime"
     model: str | None = None
     base_url: str | None = None
     api_key: str | None = None
@@ -309,7 +320,7 @@ class ProviderValidateRequest(BaseModel):
 
 class ProviderCredentialCreate(BaseModel):
     name: str
-    provider_type: Literal["synthetic", "litellm", "openai_compatible", "afk_agent"]
+    provider_type: Literal["managed_llm_runtime", "openai_compatible"]
     api_key: str
     status: Literal["active", "disabled"] = "active"
 
@@ -338,6 +349,30 @@ class SecretAccessAuditOut(BaseModel):
     actor: str
     success: bool
     error: str | None
+    created_at: datetime
+
+
+class SecretKeyCreate(BaseModel):
+    version: str
+    key_material: str
+    actor: str = "api"
+
+
+class SecretKeyOut(BaseModel):
+    id: str
+    version: str
+    status: str
+    created_at: datetime
+    activated_at: datetime | None
+    retired_at: datetime | None
+
+
+class SecretKeyEventOut(BaseModel):
+    id: str
+    key_id: str
+    action: str
+    actor: str
+    meta: dict[str, Any]
     created_at: datetime
 
 

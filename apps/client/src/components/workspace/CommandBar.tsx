@@ -4,7 +4,6 @@ import {
   BarChart3,
   Settings2,
   Boxes,
-  ListOrdered,
   Crosshair,
   Brain,
   Eye,
@@ -18,7 +17,6 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Badge } from '@/components/ui/badge'
 import { useWorkspace, type PanelId, type CanvasMode } from '@/stores/workspace-store'
 import { cn } from '@/lib/utils'
 import { createStudioNodeData } from '@/lib/studio-defaults'
@@ -63,7 +61,7 @@ export function CommandBar() {
       )}
       data-onboarding="command-bar"
     >
-      {/* Mode toggle */}
+      {/* Primary actions: labeled */}
       <div className="flex items-center gap-0">
         <Tooltip>
           <TooltipTrigger asChild>
@@ -99,32 +97,31 @@ export function CommandBar() {
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">Workflow builder</TooltipContent>
         </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                'h-7 px-2.5 text-[11px] rounded-lg',
+                isActive('config') && 'bg-primary/15 text-primary',
+              )}
+              onClick={() => togglePanel('config')}
+              data-onboarding="config-trigger"
+            >
+              <Sliders className="h-3.5 w-3.5 mr-1" />
+              Configure
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">
+            Configuration <kbd className="ml-1 font-mono text-[10px]">1</kbd>
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       <div className="h-5 w-px bg-border/40" />
 
-      {/* Panel toggles */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn(
-              'h-7 px-2.5 text-[11px] rounded-lg',
-              isActive('config') && 'bg-primary/15 text-primary',
-            )}
-            onClick={() => togglePanel('config')}
-            data-onboarding="config-trigger"
-          >
-            <Sliders className="h-3.5 w-3.5 mr-1" />
-            Configure
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="text-xs">
-          Configuration <kbd className="ml-1 font-mono text-[10px]">1</kbd>
-        </TooltipContent>
-      </Tooltip>
-
+      {/* Secondary actions: icon-only */}
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -190,25 +187,6 @@ export function CommandBar() {
         </TooltipContent>
       </Tooltip>
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn('h-7 w-7 relative', state.eventsOpen && 'bg-primary/15 text-primary')}
-            onClick={toggleEvents}
-          >
-            <ListOrdered className="h-3.5 w-3.5" />
-            {state.isStreaming && (
-              <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            )}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="text-xs">
-          Events <kbd className="ml-1 font-mono text-[10px]">E</kbd>
-        </TooltipContent>
-      </Tooltip>
-
       {/* Studio mode — node add buttons */}
       {state.canvasMode === 'studio' && (
         <>
@@ -247,15 +225,26 @@ export function CommandBar() {
         </>
       )}
 
-      {/* Event count badge */}
-      {state.events.length > 0 && (
-        <>
-          <div className="h-5 w-px bg-border/40" />
-          <Badge variant="secondary" className="text-[10px] h-5 px-2 font-mono">
+      <div className="h-5 w-px bg-border/40" />
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn(
+              'h-7 px-2.5 text-[11px] rounded-lg font-mono',
+              state.eventsOpen && 'bg-primary/15 text-primary',
+            )}
+            onClick={toggleEvents}
+          >
+            {state.isStreaming && <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />}
             {state.events.length} events
-          </Badge>
-        </>
-      )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">
+          Events <kbd className="ml-1 font-mono text-[10px]">E</kbd>
+        </TooltipContent>
+      </Tooltip>
     </motion.div>
   )
 }

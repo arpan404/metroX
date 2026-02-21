@@ -142,6 +142,12 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
     clusters = client.get(f"/v1/runs/{run_id}/clusters", headers=_headers())
     attack_summary = client.get(f"/v1/runs/{run_id}/attack-summary", headers=_headers())
     drift = client.get(f"/v1/runs/{run_id}/drift", headers=_headers())
+    cost_summary = client.get(f"/v1/runs/{run_id}/cost-summary", headers=_headers())
+    cost_series = client.get(f"/v1/runs/{run_id}/cost-timeseries", headers=_headers())
+    inference = client.get(f"/v1/runs/{run_id}/inference", headers=_headers())
+    calibration = client.get(f"/v1/runs/{run_id}/calibration", headers=_headers())
+    cooccurrence = client.get(f"/v1/runs/{run_id}/cooccurrence-graph", headers=_headers())
+    forecast = client.get(f"/v1/runs/{run_id}/forecast", headers=_headers())
     report = client.post(f"/v1/reports/{run_id}/generate", headers=_headers())
 
     assert run_out.status_code == 200
@@ -166,6 +172,18 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
 
     assert drift.status_code == 200
     assert "drift_signals" in drift.json()
+    assert cost_summary.status_code == 200
+    assert "totals" in cost_summary.json()
+    assert cost_series.status_code == 200
+    assert isinstance(cost_series.json()["points"], list)
+    assert inference.status_code == 200
+    assert "tests" in inference.json()
+    assert calibration.status_code == 200
+    assert "reports" in calibration.json()
+    assert cooccurrence.status_code == 200
+    assert "edges" in cooccurrence.json()
+    assert forecast.status_code == 200
+    assert "forecasts" in forecast.json()
 
     assert report.status_code == 200
     assert report.json()["run_id"] == run_id

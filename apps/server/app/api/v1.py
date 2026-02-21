@@ -11,12 +11,15 @@ from sqlalchemy.orm import Session
 from app.auth import auth_dependency
 from app.db import SessionLocal, get_db
 from app.models import (
+    AFKRunState,
     Adjudication,
     AttackCase,
     ConfigProfile,
     Detection,
     EvaluationSession,
     Execution,
+    ProviderCredential,
+    RunCostAggregate,
     Run,
     RunEvent,
     ScoreCard,
@@ -31,6 +34,8 @@ from app.schemas import (
     FeatureOut,
     MitigationExperimentCreate,
     MitigationExperimentOut,
+    PricingProfileCreate,
+    ProviderValidateRequest,
     RiskCardOut,
     RunCreate,
     RunOut,
@@ -41,12 +46,16 @@ from app.schemas import (
 )
 from app.services.clustering import list_clusters
 from app.services.compare import compare_runs
+from app.services.costing import cost_timeseries, pricing_profile_payload, rebuild_run_cost_aggregate, upsert_pricing_profile
 from app.services.drift import drift_payload
 from app.services.features import feature_table_for_run
 from app.services.mitigation import create_mitigation_experiment, mitigation_payload
 from app.services.orchestrator import RunOrchestrator
+from app.services.advanced_analytics import calibration_payload, cooccurrence_payload, forecast_payload, inference_payload
+from app.services.providers import provider_capabilities, validate_provider
 from app.services.reporting import generate_markdown_report
 from app.services.risk import risk_cards
+from app.services.security import SecretCipher
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(auth_dependency)])
 
@@ -60,10 +69,40 @@ def _run_pipeline_background(run_id: str) -> None:
         db.close()
 
 
+def _provider_key_ref(db: Session, provider_type: str, api_key: str) -> str:
+    cipher = SecretCipher()
+    existing = (
+        db.query(ProviderCredential)
+        .filter(ProviderCredential.name == f"default-{provider_type}")
+        .one_or_none()
+    )
+    if existing:
+        existing.encrypted_secret = cipher.encrypt(api_key)
+        db.commit()
+        return existing.id
+
+    row = ProviderCredential(
+        name=f"default-{provider_type}",
+        provider_type=provider_type,
+        encrypted_secret=cipher.encrypt(api_key),
+        key_version="v1",
+        status="active",
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row.id
+
+
 @router.get("/afk/capabilities")
 def get_afk_capabilities() -> dict:
     return {
         "version": "v1",
+        "interaction_mode_default": "headless",
+        "supported_interaction_modes": ["headless", "external", "interactive"],
+        "subagent_router_strategies": ["taxonomy", "difficulty", "provider_slice", "round_robin"],
+        "policy_profiles": ["strict_readonly", "balanced_eval", "live_exploratory"],
+        "memory": {"backend": "postgres", "resume_supported": True, "threading_supported": True},
         "high_impact_features": [
             {
                 "id": "multi_agent_join_policy",
@@ -130,6 +169,40 @@ def get_afk_capabilities() -> dict:
             },
         },
     }
+
+
+@router.get("/providers/capabilities")
+def get_provider_capabilities() -> dict:
+    return provider_capabilities()
+
+
+@router.post("/providers/validate")
+def validate_provider_config(payload: ProviderValidateRequest, db: Session = Depends(get_db)) -> dict:
+    result = validate_provider(payload.model_dump())
+    if result.get("valid") and payload.api_key:
+        result["api_key_ref"] = _provider_key_ref(db, payload.provider_type, payload.api_key)
+    return result
+
+
+@router.post("/pricing-profiles")
+def create_pricing_profile(payload: PricingProfileCreate, db: Session = Depends(get_db)) -> dict:
+    row = upsert_pricing_profile(
+        db,
+        name=payload.name,
+        currency=payload.currency,
+        fallback_policy=payload.fallback_policy,
+        models=payload.models,
+        notes=payload.notes,
+    )
+    return pricing_profile_payload(db, row.id)
+
+
+@router.get("/pricing-profiles/{profile_id}")
+def get_pricing_profile(profile_id: str, db: Session = Depends(get_db)) -> dict:
+    try:
+        return pricing_profile_payload(db, profile_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/sessions", response_model=SessionOut)
@@ -216,6 +289,31 @@ def get_run(run_id: str, db: Session = Depends(get_db)) -> RunOut:
     run = db.query(Run).filter(Run.id == run_id).one_or_none()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
+    return RunOut.model_validate(run, from_attributes=True)
+
+
+@router.post("/runs/{run_id}/resume", response_model=RunOut)
+def resume_run(run_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)) -> RunOut:
+    run = db.query(Run).filter(Run.id == run_id).one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.status == "completed":
+        raise HTTPException(status_code=400, detail="Run already completed")
+
+    run.status = "queued"
+    db.commit()
+    db.add(
+        AFKRunState(
+            run_id=run.id,
+            thread_id=run.thread_id or f"run-{run.id}",
+            state="resumed",
+            step=0,
+            checkpoint={"resume_requested_at": datetime.now(timezone.utc).isoformat()},
+        )
+    )
+    db.commit()
+    background_tasks.add_task(_run_pipeline_background, run.id)
+    db.refresh(run)
     return RunOut.model_validate(run, from_attributes=True)
 
 
@@ -346,6 +444,84 @@ def get_attack_summary(run_id: str, db: Session = Depends(get_db)) -> dict:
 def get_drift(run_id: str, db: Session = Depends(get_db)) -> DriftOut:
     payload = drift_payload(db, run_id)
     return DriftOut.model_validate(payload)
+
+
+@router.get("/runs/{run_id}/cost-summary")
+def get_cost_summary(run_id: str, db: Session = Depends(get_db)) -> dict:
+    run = db.query(Run).filter(Run.id == run_id).one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    payload = rebuild_run_cost_aggregate(db, run_id)
+    payload["budget_usd"] = (run.summary_metrics or {}).get("budget_usd", None)
+    payload["cost_gate"] = run.cost_gate_result or {}
+    return payload
+
+
+@router.get("/runs/{run_id}/cost-timeseries")
+def get_cost_timeseries(run_id: str, db: Session = Depends(get_db)) -> dict:
+    run = db.query(Run).filter(Run.id == run_id).one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return cost_timeseries(db, run_id)
+
+
+@router.get("/runs/{run_id}/policy-events")
+def get_policy_events(run_id: str, db: Session = Depends(get_db)) -> dict:
+    run = db.query(Run).filter(Run.id == run_id).one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    rows = (
+        db.query(RunEvent)
+        .filter(RunEvent.run_id == run_id, RunEvent.event_type.in_(["policy_decision", "run_paused", "run_resumed"]))
+        .order_by(RunEvent.id.asc())
+        .all()
+    )
+    return {
+        "run_id": run_id,
+        "events": [
+            {
+                "id": row.id,
+                "event_type": row.event_type,
+                "step": row.step,
+                "message": row.message,
+                "data": row.data,
+                "created_at": row.created_at.isoformat(),
+            }
+            for row in rows
+        ],
+    }
+
+
+@router.get("/runs/{run_id}/calibration")
+def get_calibration(run_id: str, db: Session = Depends(get_db)) -> dict:
+    run = db.query(Run).filter(Run.id == run_id).one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return calibration_payload(db, run_id)
+
+
+@router.get("/runs/{run_id}/inference")
+def get_inference(run_id: str, db: Session = Depends(get_db)) -> dict:
+    run = db.query(Run).filter(Run.id == run_id).one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return inference_payload(db, run_id)
+
+
+@router.get("/runs/{run_id}/cooccurrence-graph")
+def get_cooccurrence(run_id: str, db: Session = Depends(get_db)) -> dict:
+    run = db.query(Run).filter(Run.id == run_id).one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return cooccurrence_payload(db, run_id)
+
+
+@router.get("/runs/{run_id}/forecast")
+def get_forecast(run_id: str, db: Session = Depends(get_db)) -> dict:
+    run = db.query(Run).filter(Run.id == run_id).one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return forecast_payload(db, run_id)
 
 
 @router.post("/adjudications", response_model=AdjudicationOut)

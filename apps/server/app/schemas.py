@@ -38,10 +38,20 @@ class ScoringWeights(BaseModel):
 
 
 class TargetConfig(BaseModel):
-    target_type: Literal["synthetic", "http", "openai_compatible", "agent_http", "afk_agent"] = "synthetic"
+    target_type: Literal[
+        "synthetic",
+        "http",
+        "openai_compatible",
+        "agent_http",
+        "afk_agent",
+        "litellm",
+    ] = "synthetic"
     endpoint: str | None = None
     auth_headers: dict[str, str] = Field(default_factory=dict)
     model: str = "gpt-4.1-mini"
+    provider_name: str | None = None
+    base_url: str | None = None
+    api_key_ref: str | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -68,9 +78,16 @@ class BenchmarkConfig(BaseModel):
             "prompts_dir": str(Path(__file__).resolve().parents[1] / "prompts" / "agentic"),
             "coordinator_instruction_file": "coordinator.md",
             "join_policy": "all_required",
+            "interaction_mode": "headless",
+            "approval_fallback": "deny",
+            "input_fallback": "deny",
+            "subagent_router_strategy": "taxonomy",
             "max_concurrent_subagents": 3,
+            "threading": {"enabled": True, "strategy": "run_thread"},
             "runner": {
                 "interaction_mode": "headless",
+                "approval_fallback": "deny",
+                "input_fallback": "deny",
                 "max_parallel_subagents_per_parent": 4,
                 "subagent_queue_backpressure_limit": 256,
                 "background_tools_enabled": True,
@@ -116,6 +133,9 @@ class RuntimeConfig(BaseModel):
     preset: Literal["quick", "standard", "deep"] = "standard"
     max_concurrency: int = 8
     budget_usd: float = 5.0
+    cost_tracking_enabled: bool = True
+    cost_gate_usd: float | None = None
+    abort_on_cost_breach: bool = False
     deterministic_seed: int = 1234
     live_mode: bool = False
 
@@ -168,10 +188,14 @@ class RunOut(BaseModel):
     mode: str
     strictness: str
     status: str
+    thread_id: str | None
     total_attacks: int
     completed_attacks: int
+    budget_spent_usd: float
+    estimated_final_cost_usd: float
     summary_metrics: dict[str, Any]
     gate_result: dict[str, Any]
+    cost_gate_result: dict[str, Any]
     created_at: datetime
 
 
@@ -267,3 +291,18 @@ class RunReportOut(BaseModel):
     run_id: str
     markdown: str
     path: str
+
+
+class ProviderValidateRequest(BaseModel):
+    provider_type: Literal["synthetic", "litellm", "openai_compatible", "afk_agent"] = "synthetic"
+    model: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+
+
+class PricingProfileCreate(BaseModel):
+    name: str
+    currency: str = "USD"
+    fallback_policy: Literal["hybrid", "provider_only", "manual_only"] = "hybrid"
+    notes: str | None = None
+    models: list[dict[str, Any]] = Field(default_factory=list)

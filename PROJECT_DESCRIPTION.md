@@ -58,6 +58,14 @@ It evaluates not only final answers, but full agent contracts:
   - drift intelligence
 - Compare baseline vs candidate runs
 - Generate markdown reports
+- Cost intelligence panels:
+  - effective/provider/fallback spend
+  - run cost burn and projected completion cost
+- Advanced DS analytics panels:
+  - inference diagnostics (effect sizes + adjusted p-values)
+  - calibration payloads
+  - cooccurrence graph payloads
+  - forecast payloads
 
 ## 5. Data Science Layers
 1. Feature store with versioned definitions
@@ -65,6 +73,9 @@ It evaluates not only final answers, but full agent contracts:
 3. Predictive risk models with calibration and uncertainty
 4. Drift detection via PSI/KS/KL and change-point alerts
 5. Counterfactual/ablation mitigation analysis
+6. Inference rigor layer (effect size, p-value adjustment, power/MDE)
+7. Failure path graph layer (cooccurrence edges for failures/tools)
+8. Forecast intelligence layer for reliability and cost trend projection
 
 ## 6. Architecture Overview
 - Backend: FastAPI + SQLAlchemy + Postgres + Redis-ready worker model
@@ -77,7 +88,11 @@ It evaluates not only final answers, but full agent contracts:
 - Sessions and config profiles
 - Run orchestration and event streaming
 - AFK capability registry endpoint for orchestration tuning
+- Provider and pricing APIs (`/v1/providers/*`, `/v1/pricing-profiles/*`)
 - Scorecards, risk cards, features, clusters, drift
+- Cost APIs (`/v1/runs/{id}/cost-summary`, `/v1/runs/{id}/cost-timeseries`)
+- Advanced DS APIs (`/v1/runs/{id}/inference`, `/v1/runs/{id}/calibration`, `/v1/runs/{id}/cooccurrence-graph`, `/v1/runs/{id}/forecast`)
+- Resume endpoint (`POST /v1/runs/{id}/resume`) with AFK run-state tracking
 - Adjudication workflow
 - Mitigation experiments and comparisons
 - Report generation

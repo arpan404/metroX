@@ -92,3 +92,52 @@ export type ClusterPayload = {
     size: number
   }>
 }
+
+export type ProviderValidation = {
+  valid: boolean
+  provider_type: string
+  model?: string
+  api_key_ref?: string
+  error?: string
+  discovered_models?: string[]
+}
+
+export type PricingProfilePayload = {
+  id: string
+  name: string
+  currency: string
+  fallback_policy: string
+  models: Array<{
+    provider_name: string
+    model: string
+    input_per_1k: number
+    output_per_1k: number
+    reasoning_per_1k: number
+  }>
+}
+
+export type CostSummaryPayload = {
+  run_id: string
+  totals: {
+    prompt_tokens: number
+    completion_tokens: number
+    provider_cost: number
+    estimated_cost: number
+    effective_cost: number
+  }
+  breakdown: Record<string, { cost: number; tokens: number; count: number }>
+  sources: { provider: number; fallback: number; mixed: number }
+  cost_gate: { pass?: boolean; budget_usd?: number; spent_usd?: number; projected_final_usd?: number }
+}
+
+export type CostTimeseriesPayload = {
+  run_id: string
+  points: Array<{
+    step: number
+    execution_id: string
+    cost_usd: number
+    cumulative_cost_usd: number
+    source: string
+    created_at: string
+  }>
+}

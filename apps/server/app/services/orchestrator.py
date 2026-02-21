@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import (
+    AFKRunState,
     ConfigProfile,
     ConfigSnapshot,
     Detection,
@@ -16,9 +17,15 @@ from app.models import (
     ScoreCard,
 )
 from app.services.adapters import TargetRequest, get_adapter
+from app.services.advanced_analytics import (
+    build_cooccurrence_graph,
+    build_forecast,
+    build_inference_and_calibration,
+)
 from app.services.benchmark import create_benchmark
 from app.services.clustering import build_clusters
 from app.services.common import log_event
+from app.services.costing import compute_execution_cost, rebuild_run_cost_aggregate, reset_run_cost
 from app.services.detection import detect_failures, fuse_labels
 from app.services.drift import compute_drift
 from app.services.features import ensure_feature_definitions, rebuild_features_for_run
@@ -57,11 +64,15 @@ class RunOrchestrator:
         self.db.refresh(snapshot)
 
         run.config_snapshot_id = snapshot.id
+        run.thread_id = f"run-{run.id}"
         run.status = "running"
         run.started_at = datetime.now(timezone.utc)
         self.db.commit()
+        reset_run_cost(self.db, run.id)
 
         log_event(self.db, run_id=run.id, event_type="run_started", step=0, message="Run started")
+        self.db.add(AFKRunState(run_id=run.id, thread_id=run.thread_id, state="running", step=0, checkpoint={}))
+        self.db.commit()
 
         try:
             attack_count = self._attack_count(run.preset)
@@ -85,6 +96,10 @@ class RunOrchestrator:
 
             target_cfg = profile.target_config
             adapter = get_adapter(target_cfg.get("target_type", "synthetic"))
+            runtime_cfg = profile.runtime_config or {}
+            budget_usd = float(runtime_cfg.get("budget_usd", 0.0) or 0.0)
+            abort_on_cost_breach = bool(runtime_cfg.get("abort_on_cost_breach", False))
+            pricing_profile_id = target_cfg.get("extra", {}).get("pricing_profile_id")
 
             executions: list[Execution] = []
             low_confidence = []
@@ -98,7 +113,11 @@ class RunOrchestrator:
                     endpoint=target_cfg.get("endpoint"),
                     auth_headers=target_cfg.get("auth_headers", {}),
                     model=target_cfg.get("model", "gpt-4.1-mini"),
-                    extra=target_cfg.get("extra", {}),
+                    extra={
+                        **target_cfg.get("extra", {}),
+                        "provider_name": target_cfg.get("provider_name", target_cfg.get("target_type", "unknown")),
+                        "base_url": target_cfg.get("base_url"),
+                    },
                 )
                 response = adapter.invoke(request)
 
@@ -106,6 +125,8 @@ class RunOrchestrator:
                     run_id=run.id,
                     attack_case_id=case.id,
                     target_type=request.target_type,
+                    provider_name=response.provider_name,
+                    model_resolved=response.model_resolved,
                     prompt=case.prompt,
                     response=response.response_text,
                     latency_ms=response.latency_ms,
@@ -130,8 +151,28 @@ class RunOrchestrator:
                 self.db.add(detection)
                 self.db.add(label)
                 executions.append(execution)
+                compute_execution_cost(
+                    self.db,
+                    run_id=run.id,
+                    execution=execution,
+                    provider_name=response.provider_name,
+                    model=response.model_resolved,
+                    pricing_profile_id=pricing_profile_id,
+                )
 
                 run.completed_attacks = idx
+                cost_summary = rebuild_run_cost_aggregate(self.db, run.id)
+                run.budget_spent_usd = float(cost_summary["totals"]["effective_cost"])
+                completion_ratio = idx / max(len(attack_cases), 1)
+                run.estimated_final_cost_usd = (
+                    run.budget_spent_usd / completion_ratio if completion_ratio > 0 else run.budget_spent_usd
+                )
+                run.cost_gate_result = {
+                    "pass": budget_usd <= 0 or run.budget_spent_usd <= budget_usd,
+                    "budget_usd": budget_usd,
+                    "spent_usd": run.budget_spent_usd,
+                    "projected_final_usd": run.estimated_final_cost_usd,
+                }
 
                 if self.settings.low_confidence_min <= detection.confidence < self.settings.low_confidence_max:
                     low_confidence.append(execution.id)
@@ -144,8 +185,24 @@ class RunOrchestrator:
                         event_type="progress",
                         step=2,
                         message=f"Processed {idx}/{len(attack_cases)}",
-                        data={"completed": idx, "total": len(attack_cases)},
+                        data={
+                            "completed": idx,
+                            "total": len(attack_cases),
+                            "spent_usd": run.budget_spent_usd,
+                            "projected_final_usd": run.estimated_final_cost_usd,
+                        },
                     )
+
+                if abort_on_cost_breach and budget_usd > 0 and run.budget_spent_usd > budget_usd:
+                    log_event(
+                        self.db,
+                        run_id=run.id,
+                        event_type="cost_gate_breached",
+                        step=2,
+                        message="Run stopped due to cost gate breach",
+                        data={"spent_usd": run.budget_spent_usd, "budget_usd": budget_usd},
+                    )
+                    break
 
             ensure_feature_definitions(self.db)
             rebuild_features_for_run(self.db, run.id, executions)
@@ -156,6 +213,10 @@ class RunOrchestrator:
 
             build_risk_models(self.db, run.id)
             log_event(self.db, run_id=run.id, event_type="risk_ready", step=5, message="Risk models and cards computed")
+            build_inference_and_calibration(self.db, run.id)
+            build_cooccurrence_graph(self.db, run.id)
+            build_forecast(self.db, run.id)
+            log_event(self.db, run_id=run.id, event_type="advanced_ds_ready", step=5, message="Inference/graph/forecast computed")
 
             baseline_metrics = None
             if run.baseline_run_id:
@@ -180,6 +241,16 @@ class RunOrchestrator:
             run.ended_at = datetime.now(timezone.utc)
             run.status = "completed"
             self.db.commit()
+            self.db.add(
+                AFKRunState(
+                    run_id=run.id,
+                    thread_id=run.thread_id or f"run-{run.id}",
+                    state="completed",
+                    step=8,
+                    checkpoint={"completed_attacks": run.completed_attacks, "total_attacks": run.total_attacks},
+                )
+            )
+            self.db.commit()
 
             log_event(
                 self.db,
@@ -193,6 +264,16 @@ class RunOrchestrator:
         except Exception as exc:
             run.status = "failed"
             run.ended_at = datetime.now(timezone.utc)
+            self.db.commit()
+            self.db.add(
+                AFKRunState(
+                    run_id=run.id,
+                    thread_id=run.thread_id or f"run-{run.id}",
+                    state="failed",
+                    step=99,
+                    checkpoint={"error": str(exc)},
+                )
+            )
             self.db.commit()
             log_event(
                 self.db,

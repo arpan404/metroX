@@ -160,3 +160,43 @@ def test_afk_capabilities_contract(api_client) -> None:
     assert payload["version"] == "v1"
     assert isinstance(payload["high_impact_features"], list)
     assert "ci_strict" in payload["recommended_profiles"]
+
+
+def test_provider_and_pricing_contract(api_client) -> None:
+    client, _ = api_client
+
+    provider = client.post(
+        "/v1/providers/validate",
+        json={
+            "provider_type": "synthetic",
+            "model": "gpt-4.1-mini",
+            "api_key": "dummy-key",
+        },
+        headers=_headers(),
+    )
+    assert provider.status_code == 200
+    assert provider.json()["valid"] is True
+
+    pricing = client.post(
+        "/v1/pricing-profiles",
+        json={
+            "name": "contract-pricing",
+            "currency": "USD",
+            "fallback_policy": "hybrid",
+            "models": [
+                {
+                    "provider_name": "generic",
+                    "model": "*",
+                    "input_per_1k": 0.001,
+                    "output_per_1k": 0.002,
+                    "reasoning_per_1k": 0.0,
+                }
+            ],
+        },
+        headers=_headers(),
+    )
+    assert pricing.status_code == 200
+    profile_id = pricing.json()["id"]
+    got = client.get(f"/v1/pricing-profiles/{profile_id}", headers=_headers())
+    assert got.status_code == 200
+    assert got.json()["id"] == profile_id

@@ -72,6 +72,11 @@ class OrchestrationConfig:
     prompts_dir: str
     coordinator_instruction_file: str | None
     coordinator_instructions: str
+    interaction_mode: str
+    approval_fallback: str
+    input_fallback: str
+    subagent_router_strategy: str
+    threading: dict[str, Any]
 
 
 class MultiAgentAttackOrchestrator:
@@ -109,6 +114,11 @@ class MultiAgentAttackOrchestrator:
             "fail_safe": self.orchestration.fail_safe,
             "prompts_dir": self.orchestration.prompts_dir,
             "coordinator_instruction_file": self.orchestration.coordinator_instruction_file,
+            "interaction_mode": self.orchestration.interaction_mode,
+            "approval_fallback": self.orchestration.approval_fallback,
+            "input_fallback": self.orchestration.input_fallback,
+            "subagent_router_strategy": self.orchestration.subagent_router_strategy,
+            "threading": self.orchestration.threading,
         }
 
     def generate(self, seed: AttackSeed, deterministic_seed: int) -> AttackArtifact:
@@ -146,13 +156,20 @@ class MultiAgentAttackOrchestrator:
         from afk.core import Runner, RunnerConfig  # type: ignore
 
         fail_safe = _build_fail_safe(FailSafeConfig, self.orchestration.fail_safe)
-        runner_cfg = _build_runner_config(RunnerConfig, self.orchestration.runner)
+        runner_payload = {
+            "interaction_mode": self.orchestration.interaction_mode,
+            "approval_fallback": self.orchestration.approval_fallback,
+            "input_fallback": self.orchestration.input_fallback,
+            **self.orchestration.runner,
+        }
+        runner_cfg = _build_runner_config(RunnerConfig, runner_payload)
 
         runner = Runner(telemetry=self.orchestration.telemetry, config=runner_cfg)
 
         role_agents: dict[str, Any] = {}
         subagents = []
-        for role in self.orchestration.roles:
+        routed_roles = _route_roles(self.orchestration.roles, seed.attack_type, self.orchestration.subagent_router_strategy)
+        for role in routed_roles:
             if not role.enabled:
                 continue
             agent = Agent(
@@ -304,6 +321,11 @@ def _parse_orchestration_config(config: Any, *, default_model: str) -> Orchestra
         fail_safe=payload.get("fail_safe") if isinstance(payload.get("fail_safe"), dict) else {},
         runner=payload.get("runner") if isinstance(payload.get("runner"), dict) else {},
         roles=roles,
+        interaction_mode=str(payload.get("interaction_mode", "headless")),
+        approval_fallback=str(payload.get("approval_fallback", "deny")),
+        input_fallback=str(payload.get("input_fallback", "deny")),
+        subagent_router_strategy=str(payload.get("subagent_router_strategy", "taxonomy")),
+        threading=payload.get("threading") if isinstance(payload.get("threading"), dict) else {"enabled": True, "strategy": "run_thread"},
         prompts_dir=str(payload.get("prompts_dir", str(DEFAULT_PROMPTS_DIR))),
         coordinator_instruction_file=(
             str(payload.get("coordinator_instruction_file", DEFAULT_COORDINATOR_PROMPT_FILE)).strip()
@@ -372,6 +394,19 @@ def _build_runner_config(runner_config_cls: Any, payload: dict[str, Any]) -> Any
     }
     kwargs = {key: value for key, value in payload.items() if key in allowed}
     return runner_config_cls(**kwargs)
+
+
+def _route_roles(roles: list[RoleConfig], attack_type: str, strategy: str) -> list[RoleConfig]:
+    if strategy == "difficulty":
+        return sorted(roles, key=lambda role: role.name in {"verifier", "analyst"})
+    if strategy == "provider_slice":
+        return sorted(roles, key=lambda role: role.name)
+    if strategy == "round_robin":
+        if not roles:
+            return roles
+        offset = len(attack_type) % len(roles)
+        return roles[offset:] + roles[:offset]
+    return roles
 
 
 def _runner_text(runner: Any, agent: Any, message: str) -> str:

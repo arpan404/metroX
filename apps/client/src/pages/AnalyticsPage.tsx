@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { api } from '../lib/api'
 import { loadState } from '../lib/state'
-import type { ClusterPayload, DriftPayload, RiskCards, Scorecard } from '../lib/types'
+import type { ClusterPayload, CostSummaryPayload, CostTimeseriesPayload, DriftPayload, RiskCards, Scorecard } from '../lib/types'
 
 export default function AnalyticsPage() {
   const persisted = useMemo(() => loadState(), [])
@@ -13,6 +13,12 @@ export default function AnalyticsPage() {
   const [riskCards, setRiskCards] = useState<RiskCards | null>(null)
   const [clusters, setClusters] = useState<ClusterPayload | null>(null)
   const [drift, setDrift] = useState<DriftPayload | null>(null)
+  const [costSummary, setCostSummary] = useState<CostSummaryPayload | null>(null)
+  const [costTimeseries, setCostTimeseries] = useState<CostTimeseriesPayload | null>(null)
+  const [inference, setInference] = useState<Record<string, unknown> | null>(null)
+  const [calibration, setCalibration] = useState<Record<string, unknown> | null>(null)
+  const [cooccurrence, setCooccurrence] = useState<Record<string, unknown> | null>(null)
+  const [forecast, setForecast] = useState<Record<string, unknown> | null>(null)
   const [comparison, setComparison] = useState<Record<string, unknown> | null>(null)
   const [reportPath, setReportPath] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
@@ -21,16 +27,28 @@ export default function AnalyticsPage() {
     if (!runId) return
     setError(null)
     try {
-      const [sc, risks, cl, dr] = await Promise.all([
+      const [sc, risks, cl, dr, cost, series, inf, cal, co, fc] = await Promise.all([
         api.getScorecard(runId),
         api.getRiskCards(runId),
         api.getClusters(runId),
         api.getDrift(runId),
+        api.getCostSummary(runId),
+        api.getCostTimeseries(runId),
+        api.getInference(runId),
+        api.getCalibration(runId),
+        api.getCooccurrence(runId),
+        api.getForecast(runId),
       ])
       setScorecard(sc)
       setRiskCards(risks)
       setClusters(cl)
       setDrift(dr)
+      setCostSummary(cost)
+      setCostTimeseries(series)
+      setInference(inf)
+      setCalibration(cal)
+      setCooccurrence(co)
+      setForecast(fc)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load analytics')
     }
@@ -165,6 +183,42 @@ export default function AnalyticsPage() {
         ) : (
           <p className="caption">No drift baseline linked or no drift signals available.</p>
         )}
+      </div>
+
+      <div className="grid two">
+        <div className="panel stack-md">
+          <h2>Cost Intelligence</h2>
+          {costSummary ? (
+            <>
+              <p>Effective Cost: ${costSummary.totals.effective_cost.toFixed(4)}</p>
+              <p>Provider Cost: ${costSummary.totals.provider_cost.toFixed(4)}</p>
+              <p>Estimated Cost: ${costSummary.totals.estimated_cost.toFixed(4)}</p>
+              <p>
+                Sources: provider {costSummary.sources.provider}, fallback {costSummary.sources.fallback}, mixed {costSummary.sources.mixed}
+              </p>
+            </>
+          ) : (
+            <p className="caption">No cost summary loaded.</p>
+          )}
+          {costTimeseries && <p className="caption">Cost points: {costTimeseries.points.length}</p>}
+        </div>
+
+        <div className="panel stack-md">
+          <h2>Inference + Calibration</h2>
+          {inference && <pre className="json">{JSON.stringify(inference, null, 2)}</pre>}
+          {calibration && <pre className="json">{JSON.stringify(calibration, null, 2)}</pre>}
+        </div>
+      </div>
+
+      <div className="grid two">
+        <div className="panel stack-md">
+          <h2>Failure Path Graph</h2>
+          {cooccurrence ? <pre className="json">{JSON.stringify(cooccurrence, null, 2)}</pre> : <p className="caption">No graph payload loaded.</p>}
+        </div>
+        <div className="panel stack-md">
+          <h2>Forecast</h2>
+          {forecast ? <pre className="json">{JSON.stringify(forecast, null, 2)}</pre> : <p className="caption">No forecast payload loaded.</p>}
+        </div>
       </div>
 
       <div className="panel stack-md">

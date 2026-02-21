@@ -54,6 +54,22 @@ The product must function as **unit tests for AI behavior**, not as a prompt dem
 - Drift reports must separate signal magnitude from statistical significance.
 - Mitigation recommendations must include expected impact and implementation cost.
 
+## AFK-Native Runtime Requirements
+- Treat AFK Runner lifecycle states as canonical run state telemetry.
+- Persist AFK run state checkpoints (`running`, `completed`, `failed`, `resumed`) with thread lineage.
+- Default interaction mode is `headless` with explicit `approval_fallback` and `input_fallback`.
+- Multi-agent attacking must support coordinator + routing strategy + join policy controls.
+- Policy-sensitive operations must emit auditable run events (`policy_decision`, `run_paused`, `run_resumed` when present).
+
+## Provider and Cost Intelligence Requirements
+- Support `litellm` and `openai_compatible` provider configuration from frontend.
+- API keys must be encrypted at rest (single-tenant envelope cipher in V1.6 baseline).
+- Cost computation policy is hybrid:
+  - prefer provider-reported usage/cost
+  - fallback to configurable token pricing tables
+  - persist provenance (`provider`, `fallback`, `mixed`) and confidence.
+- Runs must expose cost summary, timeseries, and budget/cost-gate state.
+
 ## Frontend and DX Rules
 - Full run configuration must be possible from UI (no mandatory CLI edits).
 - Guided wizard remains primary path for new users.

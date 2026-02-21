@@ -1,4 +1,17 @@
-import type { AttackSummaryPayload, ClusterPayload, ConfigProfileOut, DriftPayload, RiskCards, RunOut, Scorecard, SessionOut } from './types'
+import type {
+  AttackSummaryPayload,
+  ClusterPayload,
+  ConfigProfileOut,
+  CostSummaryPayload,
+  CostTimeseriesPayload,
+  DriftPayload,
+  PricingProfilePayload,
+  ProviderValidation,
+  RiskCards,
+  RunOut,
+  Scorecard,
+  SessionOut,
+} from './types'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 const API_KEY = import.meta.env.VITE_API_KEY ?? 'local-dev-key'
@@ -43,6 +56,28 @@ export const api = {
     })
   },
 
+  validateProvider(payload: Record<string, unknown>) {
+    return request<ProviderValidation>('/v1/providers/validate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  getProviderCapabilities() {
+    return request<{ providers: Array<Record<string, unknown>> }>('/v1/providers/capabilities')
+  },
+
+  createPricingProfile(payload: Record<string, unknown>) {
+    return request<PricingProfilePayload>('/v1/pricing-profiles', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  getPricingProfile(profileId: string) {
+    return request<PricingProfilePayload>(`/v1/pricing-profiles/${profileId}`)
+  },
+
   getConfigProfile(profileId: string) {
     return request<ConfigProfileOut>(`/v1/config-profiles/${profileId}`)
   },
@@ -76,6 +111,38 @@ export const api = {
 
   getAttackSummary(runId: string) {
     return request<AttackSummaryPayload>(`/v1/runs/${runId}/attack-summary`)
+  },
+
+  getCostSummary(runId: string) {
+    return request<CostSummaryPayload>(`/v1/runs/${runId}/cost-summary`)
+  },
+
+  getCostTimeseries(runId: string) {
+    return request<CostTimeseriesPayload>(`/v1/runs/${runId}/cost-timeseries`)
+  },
+
+  getPolicyEvents(runId: string) {
+    return request<{ run_id: string; events: Array<Record<string, unknown>> }>(`/v1/runs/${runId}/policy-events`)
+  },
+
+  getCalibration(runId: string) {
+    return request<{ run_id: string; reports: Array<Record<string, unknown>>; bins: Array<Record<string, unknown>> }>(`/v1/runs/${runId}/calibration`)
+  },
+
+  getInference(runId: string) {
+    return request<{ run_id: string; tests: Array<Record<string, unknown>> }>(`/v1/runs/${runId}/inference`)
+  },
+
+  getCooccurrence(runId: string) {
+    return request<{ run_id: string; nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> }>(`/v1/runs/${runId}/cooccurrence-graph`)
+  },
+
+  getForecast(runId: string) {
+    return request<{ run_id: string; forecasts: Array<Record<string, unknown>> }>(`/v1/runs/${runId}/forecast`)
+  },
+
+  resumeRun(runId: string) {
+    return request<RunOut>(`/v1/runs/${runId}/resume`, { method: 'POST' })
   },
 
   getFeatures(runId: string) {

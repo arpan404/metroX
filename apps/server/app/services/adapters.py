@@ -28,6 +28,8 @@ class TargetResponse:
     latency_ms: float
     token_usage: dict[str, Any]
     raw_payload: dict[str, Any]
+    provider_name: str = "unknown"
+    model_resolved: str = "unknown"
 
 
 class TargetAdapter:
@@ -79,6 +81,7 @@ class SyntheticTargetAdapter(TargetAdapter):
             "prompt_tokens": max(20, len(request.prompt) // 4),
             "completion_tokens": max(16, len(response) // 5),
             "total_tokens": max(36, len(request.prompt) // 4 + len(response) // 5),
+            "total_cost_usd": 0.0,
         }
         return TargetResponse(
             response_text=response,
@@ -87,6 +90,8 @@ class SyntheticTargetAdapter(TargetAdapter):
             latency_ms=latency_ms,
             token_usage=token_usage,
             raw_payload={"adapter": "synthetic", "model": request.model},
+            provider_name="synthetic",
+            model_resolved=request.model,
         )
 
 
@@ -114,6 +119,8 @@ class HttpTargetAdapter(TargetAdapter):
             latency_ms=body.get("latency_ms", latency_ms),
             token_usage=body.get("token_usage", {}),
             raw_payload=body,
+            provider_name=str(body.get("provider_name", request.extra.get("provider_name", "http"))),
+            model_resolved=str(body.get("model_resolved", request.model)),
         )
 
 
@@ -177,10 +184,56 @@ class AFKAgentAdapter(TargetAdapter):
             latency_ms=latency_ms,
             token_usage=token_usage,
             raw_payload={"adapter": "afk", "state": getattr(result, "state", "unknown")},
+            provider_name="afk",
+            model_resolved=request.model,
+        )
+
+
+class LiteLLMTargetAdapter(TargetAdapter):
+    """LiteLLM adapter for multi-provider model execution."""
+
+    def invoke(self, request: TargetRequest) -> TargetResponse:
+        try:
+            import litellm  # type: ignore
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError("litellm is not installed") from exc
+
+        start = perf_counter()
+        api_key = str(request.extra.get("api_key", "")).strip()
+        base_url = request.extra.get("base_url")
+        provider = str(request.extra.get("provider_name", "litellm"))
+        completion = litellm.completion(
+            model=request.model,
+            messages=[{"role": "user", "content": request.prompt}],
+            api_key=api_key or None,
+            api_base=base_url or None,
+            max_tokens=int(request.extra.get("max_tokens", 256)),
+            temperature=float(request.extra.get("temperature", 0.2)),
+        )
+        choice = completion["choices"][0]["message"]["content"]
+        usage = completion.get("usage", {}) or {}
+        token_usage = {
+            "prompt_tokens": float(usage.get("prompt_tokens", 0)),
+            "completion_tokens": float(usage.get("completion_tokens", 0)),
+            "total_tokens": float(usage.get("total_tokens", 0)),
+            "total_cost_usd": float(usage.get("cost", 0.0) or completion.get("_response_cost", 0.0) or 0.0),
+        }
+        latency_ms = (perf_counter() - start) * 1000
+        return TargetResponse(
+            response_text=str(choice or ""),
+            retrieved_docs=[],
+            tool_events=[],
+            latency_ms=latency_ms,
+            token_usage=token_usage,
+            raw_payload={"adapter": "litellm", "raw": dict(completion)},
+            provider_name=provider,
+            model_resolved=request.model,
         )
 
 
 def get_adapter(target_type: str) -> TargetAdapter:
+    if target_type == "litellm":
+        return LiteLLMTargetAdapter()
     if target_type == "afk_agent":
         return AFKAgentAdapter()
     if target_type in {"http", "openai_compatible", "agent_http"}:

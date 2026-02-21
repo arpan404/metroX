@@ -20,9 +20,16 @@ export default function WizardPage() {
   const [sessionName, setSessionName] = useState('Primary Reliability Session')
   const [sessionOwner, setSessionOwner] = useState('platform-team')
 
-  const [targetType, setTargetType] = useState<'synthetic' | 'http' | 'openai_compatible' | 'agent_http' | 'afk_agent'>('synthetic')
+  const [targetType, setTargetType] = useState<'synthetic' | 'litellm' | 'http' | 'openai_compatible' | 'agent_http' | 'afk_agent'>('synthetic')
   const [endpoint, setEndpoint] = useState('')
   const [model, setModel] = useState('gpt-4.1-mini')
+  const [providerName, setProviderName] = useState('openai')
+  const [baseUrl, setBaseUrl] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [apiKeyRef, setApiKeyRef] = useState('')
+  const [pricingProfileId, setPricingProfileId] = useState('')
+  const [inputPer1k, setInputPer1k] = useState(0.001)
+  const [outputPer1k, setOutputPer1k] = useState(0.002)
 
   const [taxonomy, setTaxonomy] = useState<string[]>([...TAXONOMY])
   const [seed, setSeed] = useState(42)
@@ -64,7 +71,15 @@ export default function WizardPage() {
           endpoint: endpoint || null,
           auth_headers: {},
           model,
-          extra: {},
+          provider_name: providerName || null,
+          base_url: baseUrl || null,
+          api_key_ref: apiKeyRef || null,
+          extra: {
+            pricing_profile_id: pricingProfileId || undefined,
+            api_key: apiKey || undefined,
+            base_url: baseUrl || undefined,
+            provider_name: providerName || undefined,
+          },
         },
         benchmark_config: {
           dataset_name: 'autoredteam-core',
@@ -167,6 +182,7 @@ export default function WizardPage() {
               Target Type
               <select value={targetType} onChange={(event) => setTargetType(event.target.value as typeof targetType)}>
                 <option value="synthetic">Synthetic (local demo)</option>
+                <option value="litellm">LiteLLM Multi-Provider</option>
                 <option value="http">HTTP API</option>
                 <option value="openai_compatible">OpenAI-compatible API</option>
                 <option value="agent_http">Agent HTTP Endpoint</option>
@@ -180,6 +196,80 @@ export default function WizardPage() {
             <label className="span-2">
               Endpoint (required for HTTP targets)
               <input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} placeholder="https://api.example.com/eval" />
+            </label>
+            <label>
+              Provider Name
+              <input value={providerName} onChange={(event) => setProviderName(event.target.value)} placeholder="openai" />
+            </label>
+            <label>
+              Base URL (OpenAI-compatible)
+              <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://api.openai.com/v1" />
+            </label>
+            <label className="span-2">
+              API Key
+              <input value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-..." />
+            </label>
+            <label>
+              Pricing Profile ID
+              <input value={pricingProfileId} onChange={(event) => setPricingProfileId(event.target.value)} placeholder="auto/default" />
+            </label>
+            <div className="span-2 row gap-lg wrap">
+              <button
+                type="button"
+                className="ghost"
+                onClick={async () => {
+                  const providerType = targetType === 'litellm' ? 'litellm' : targetType === 'openai_compatible' ? 'openai_compatible' : 'synthetic'
+                  const result = await api.validateProvider({
+                    provider_type: providerType,
+                    model,
+                    base_url: baseUrl || undefined,
+                    api_key: apiKey || undefined,
+                  })
+                  if (result.valid) {
+                    setApiKeyRef(result.api_key_ref ?? '')
+                    setError(null)
+                  } else {
+                    setError(result.error ?? 'Provider validation failed')
+                  }
+                }}
+              >
+                Validate Provider
+              </button>
+              <button
+                type="button"
+                className="ghost"
+                onClick={async () => {
+                  const profile = await api.createPricingProfile({
+                    name: `wizard-${Date.now()}`,
+                    currency: 'USD',
+                    fallback_policy: 'hybrid',
+                    models: [
+                      {
+                        provider_name: providerName || 'generic',
+                        model: model || '*',
+                        input_per_1k: inputPer1k,
+                        output_per_1k: outputPer1k,
+                        reasoning_per_1k: 0,
+                      },
+                    ],
+                  })
+                  setPricingProfileId(profile.id)
+                }}
+              >
+                Create Pricing Profile
+              </button>
+            </div>
+            <label>
+              Input USD / 1K
+              <input type="number" min={0} step={0.0001} value={inputPer1k} onChange={(event) => setInputPer1k(Number(event.target.value))} />
+            </label>
+            <label>
+              Output USD / 1K
+              <input type="number" min={0} step={0.0001} value={outputPer1k} onChange={(event) => setOutputPer1k(Number(event.target.value))} />
+            </label>
+            <label className="span-2">
+              API Key Ref
+              <input value={apiKeyRef} onChange={(event) => setApiKeyRef(event.target.value)} placeholder="credential ref after validation" />
             </label>
           </div>
         )}

@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api'
 import { loadState, saveState } from '../lib/state'
-import type { ProviderCredential } from '../lib/types'
+import type { OrchestrationProfile, ProviderCredential } from '../lib/types'
 import ReactFlow, {
   addEdge,
   Background,
@@ -30,6 +30,74 @@ type StudioNodeData = {
   label: string
   role: string
   model: string
+}
+
+const NODE_TEMPLATES: Array<{ id: string; label: string; role: string; model: string }> = [
+  { id: 'attacker', label: 'Attacker', role: 'attacker', model: 'gpt-4.1-mini' },
+  { id: 'critic', label: 'Critic', role: 'critic', model: 'gpt-4.1-mini' },
+  { id: 'verifier', label: 'Verifier', role: 'verifier', model: 'gpt-4.1-mini' },
+  { id: 'analyst', label: 'Analyst', role: 'analyst', model: 'gpt-4.1-mini' },
+  { id: 'tool-auditor', label: 'Tool Auditor', role: 'tool_auditor', model: 'gpt-4.1-mini' },
+  { id: 'cost-optimizer', label: 'Cost Optimizer', role: 'cost_optimizer', model: 'gpt-4.1-mini' },
+]
+
+function validateStudioGraph(nodes: Node<StudioNodeData>[], edges: Edge[]): string[] {
+  const issues: string[] = []
+  const ids = new Set(nodes.map((node) => node.id))
+  const roleNodes = nodes.filter((node) => node.id !== 'coordinator')
+  if (!nodes.some((node) => node.id === 'coordinator')) {
+    issues.push('Missing coordinator node')
+  }
+  if (!roleNodes.length) {
+    issues.push('Add at least one specialist role node')
+  }
+  const roleNames = roleNodes.map((node) => node.data.role.trim()).filter(Boolean)
+  if (roleNames.length !== new Set(roleNames).size) {
+    issues.push('Role names must be unique')
+  }
+  edges.forEach((edge) => {
+    if (!ids.has(edge.source) || !ids.has(edge.target)) {
+      issues.push(`Invalid edge ${edge.id}: source/target missing`)
+    }
+    if (edge.source === edge.target) {
+      issues.push(`Invalid edge ${edge.id}: self-loop is not allowed`)
+    }
+  })
+  return Array.from(new Set(issues))
+}
+
+function computeStudioDiff(
+  base: Record<string, unknown> | null,
+  candidate: Record<string, unknown>,
+): Array<{ label: string; value: string }> {
+  if (!base) return []
+  const diffs: Array<{ label: string; value: string }> = []
+  const baseJoin = String(base.join_policy ?? '')
+  const candJoin = String(candidate.join_policy ?? '')
+  if (baseJoin !== candJoin) diffs.push({ label: 'join_policy', value: `${baseJoin} -> ${candJoin}` })
+
+  const baseRouter = String(base.subagent_router_strategy ?? '')
+  const candRouter = String(candidate.subagent_router_strategy ?? '')
+  if (baseRouter !== candRouter) diffs.push({ label: 'router', value: `${baseRouter} -> ${candRouter}` })
+
+  const baseMax = Number(base.max_concurrent_subagents ?? 0)
+  const candMax = Number(candidate.max_concurrent_subagents ?? 0)
+  if (baseMax !== candMax) diffs.push({ label: 'max_subagents', value: `${baseMax} -> ${candMax}` })
+
+  const baseRoles = Array.isArray(base.roles) ? base.roles.length : 0
+  const candRoles = Array.isArray(candidate.roles) ? candidate.roles.length : 0
+  if (baseRoles !== candRoles) diffs.push({ label: 'roles', value: `${baseRoles} -> ${candRoles}` })
+
+  const baseGraph = (base.graph as Record<string, unknown> | undefined) ?? {}
+  const candGraph = (candidate.graph as Record<string, unknown> | undefined) ?? {}
+  const baseNodes = Array.isArray(baseGraph.nodes) ? baseGraph.nodes.length : 0
+  const candNodes = Array.isArray(candGraph.nodes) ? candGraph.nodes.length : 0
+  const baseEdges = Array.isArray(baseGraph.edges) ? baseGraph.edges.length : 0
+  const candEdges = Array.isArray(candGraph.edges) ? candGraph.edges.length : 0
+  if (baseNodes !== candNodes) diffs.push({ label: 'graph.nodes', value: `${baseNodes} -> ${candNodes}` })
+  if (baseEdges !== candEdges) diffs.push({ label: 'graph.edges', value: `${baseEdges} -> ${candEdges}` })
+
+  return diffs
 }
 
 function StudioNode({ data }: NodeProps<StudioNodeData>) {
@@ -77,9 +145,11 @@ export default function WizardPage() {
   const [credentialName, setCredentialName] = useState('default-provider-key')
   const [credentialKeyVersion, setCredentialKeyVersion] = useState('v1')
   const [credentialsBusy, setCredentialsBusy] = useState(false)
-  const [orchestrationProfiles, setOrchestrationProfiles] = useState<Array<{ id: string; name: string; config: Record<string, unknown> }>>([])
+  const [orchestrationProfiles, setOrchestrationProfiles] = useState<OrchestrationProfile[]>([])
   const [orchestrationProfileName, setOrchestrationProfileName] = useState('default-afk-studio')
   const [selectedOrchestrationProfileId, setSelectedOrchestrationProfileId] = useState('')
+  const [selectedTemplateId, setSelectedTemplateId] = useState('attacker')
+  const [profileVersionNext, setProfileVersionNext] = useState('v2')
   const [joinPolicy, setJoinPolicy] = useState('all_required')
   const [routerStrategy, setRouterStrategy] = useState('taxonomy')
   const [maxSubagents, setMaxSubagents] = useState(3)
@@ -146,11 +216,40 @@ export default function WizardPage() {
     }
   }, [joinPolicy, maxSubagents, routerStrategy, studioEdges, studioNodes])
 
+  const studioValidationIssues = useMemo(() => validateStudioGraph(studioNodes, studioEdges), [studioEdges, studioNodes])
+  const selectedOrchestrationProfile = useMemo(
+    () => orchestrationProfiles.find((profile) => profile.id === selectedOrchestrationProfileId) ?? null,
+    [orchestrationProfiles, selectedOrchestrationProfileId],
+  )
+  const studioDiff = useMemo(
+    () => computeStudioDiff((selectedOrchestrationProfile?.config as Record<string, unknown> | undefined) ?? null, studioConfig as Record<string, unknown>),
+    [selectedOrchestrationProfile, studioConfig],
+  )
+
   const onStudioConnect = (params: Connection) =>
     setStudioEdges((current) => addEdge({ ...params, markerEnd: { type: MarkerType.ArrowClosed } }, current))
 
+  function addNodeFromTemplate() {
+    const template = NODE_TEMPLATES.find((item) => item.id === selectedTemplateId)
+    if (!template) return
+    const id = `${template.id}-${Date.now()}`
+    setStudioNodes((current) => [
+      ...current,
+      {
+        id,
+        type: 'studioNode',
+        position: { x: 220 + Math.random() * 520, y: 80 + Math.random() * 260 },
+        data: { label: template.label, role: template.role, model: template.model || model || 'gpt-4.1-mini' },
+      },
+    ])
+  }
+
   async function onSubmit(event: FormEvent) {
     event.preventDefault()
+    if (studioValidationIssues.length > 0) {
+      setError(`Studio validation failed: ${studioValidationIssues.join('; ')}`)
+      return
+    }
     setBusy(true)
     setError(null)
 
@@ -257,7 +356,7 @@ export default function WizardPage() {
     void (async () => {
       try {
         const payload = await api.listOrchestrationProfiles()
-        setOrchestrationProfiles(payload.profiles as Array<{ id: string; name: string; config: Record<string, unknown> }>)
+        setOrchestrationProfiles(payload.profiles)
       } catch {
         // Non-blocking for first-use UX.
       }

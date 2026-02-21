@@ -970,11 +970,6 @@ export function ConfigPanel() {
       position="left"
       title="Run Setup"
       icon={<Sliders className="h-4 w-4" />}
-      badge={
-        <Badge variant={readinessPercent === 100 ? 'default' : 'secondary'} className="text-[10px] h-4">
-          {readinessPercent.toFixed(0)}%
-        </Badge>
-      }
       width="w-[400px] lg:w-[440px]"
       footer={
         <div className="space-y-2">

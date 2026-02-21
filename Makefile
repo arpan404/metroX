@@ -1,4 +1,4 @@
-.PHONY: server-install server-test server-run server-worker client-install client-test client-build dev dev-server dev-client server client
+.PHONY: server-install server-test server-run server-worker client-install client-test client-build dev dev-server dev-client dev-backend dev-frontend dev-test-agents server client backend frontend test-agents test_agents
 
 server-install:
 	cd apps/server && uv sync --dev
@@ -22,18 +22,23 @@ client-build:
 	cd apps/client && npm run build
 
 # Developer mode selectors:
-# - `make dev`         -> run server + client
-# - `make dev server`  -> run only server
-# - `make dev client`  -> run only client
+# - `make dev`                   -> run backend + frontend + test-agents
+# - `make dev backend|server`    -> run only backend API
+# - `make dev frontend|client`   -> run only frontend
+# - `make dev test-agents`       -> run only test-agents runtime
 dev:
-	@if echo "$(MAKECMDGOALS)" | grep -qw "server"; then \
-		$(MAKE) dev-server; \
-	elif echo "$(MAKECMDGOALS)" | grep -qw "client"; then \
-		$(MAKE) dev-client; \
+	@if echo "$(MAKECMDGOALS)" | grep -Eqw "backend|server"; then \
+		$(MAKE) dev-backend; \
+	elif echo "$(MAKECMDGOALS)" | grep -Eqw "frontend|client"; then \
+		$(MAKE) dev-frontend; \
+	elif echo "$(MAKECMDGOALS)" | grep -Eqw "test-agents|test_agents"; then \
+		$(MAKE) dev-test-agents; \
 	else \
-		echo "Starting backend and frontend in developer mode..."; \
-		( $(MAKE) dev-server ) & \
-		( $(MAKE) dev-client ) & \
+		echo "Starting backend, frontend, and test-agents in developer mode..."; \
+		trap 'kill 0' INT TERM EXIT; \
+		( $(MAKE) dev-backend ) & \
+		( $(MAKE) dev-frontend ) & \
+		( $(MAKE) dev-test-agents ) & \
 		wait; \
 	fi
 
@@ -43,9 +48,28 @@ dev-server:
 dev-client:
 	cd apps/client && npm run dev
 
-# Goal shims so `make dev server` / `make dev client` works without "No rule to make target".
+dev-backend: dev-server
+
+dev-frontend: dev-client
+
+dev-test-agents:
+	cd apps/test-agents && uv run uvicorn main:app --reload --host 127.0.0.1 --port 8001
+
+# Goal shims so selector invocations work without "No rule to make target".
 server:
 	@:
 
 client:
+	@:
+
+backend:
+	@:
+
+frontend:
+	@:
+
+test-agents:
+	@:
+
+test_agents:
 	@:

@@ -24,14 +24,19 @@ Data-driven reliability testing platform for LLMs and agent systems.
 
 ## Dev Commands
 ```bash
-# both
+# backend + frontend + test-agents
 make dev
 
-# server only
+# backend only
 make dev server
+make dev backend
 
-# client only
+# frontend only
 make dev client
+make dev frontend
+
+# test-agents only
+make dev test-agents
 ```
 
 ## Tests

@@ -1,6 +1,7 @@
 import { FormEvent, useMemo, useState } from 'react'
 import { api } from '../lib/api'
 import { loadState, saveState } from '../lib/state'
+import type { ProviderCredential } from '../lib/types'
 
 const TAXONOMY = [
   'prompt_injection',
@@ -28,8 +29,17 @@ export default function WizardPage() {
   const [apiKey, setApiKey] = useState('')
   const [apiKeyRef, setApiKeyRef] = useState('')
   const [pricingProfileId, setPricingProfileId] = useState('')
+  const [policyProfile, setPolicyProfile] = useState<'strict_readonly' | 'balanced_eval' | 'live_exploratory'>(
+    'balanced_eval',
+  )
+  const [allowedToolsCsv, setAllowedToolsCsv] = useState('')
   const [inputPer1k, setInputPer1k] = useState(0.001)
   const [outputPer1k, setOutputPer1k] = useState(0.002)
+  const [credentials, setCredentials] = useState<ProviderCredential[]>([])
+  const [selectedCredentialId, setSelectedCredentialId] = useState('')
+  const [credentialName, setCredentialName] = useState('default-provider-key')
+  const [credentialKeyVersion, setCredentialKeyVersion] = useState('v1')
+  const [credentialsBusy, setCredentialsBusy] = useState(false)
 
   const [taxonomy, setTaxonomy] = useState<string[]>([...TAXONOMY])
   const [seed, setSeed] = useState(42)
@@ -79,6 +89,11 @@ export default function WizardPage() {
             api_key: apiKey || undefined,
             base_url: baseUrl || undefined,
             provider_name: providerName || undefined,
+            policy_profile: policyProfile,
+            allowed_tools: allowedToolsCsv
+              .split(',')
+              .map((value) => value.trim())
+              .filter(Boolean),
           },
         },
         benchmark_config: {
@@ -146,6 +161,8 @@ export default function WizardPage() {
     }
   }
 
+  const providerType = targetType === 'litellm' ? 'litellm' : targetType === 'openai_compatible' ? 'openai_compatible' : 'synthetic'
+
   function toggleTaxonomy(value: string) {
     setTaxonomy((current) =>
       current.includes(value) ? current.filter((item) => item !== value) : [...current, value],
@@ -207,7 +224,31 @@ export default function WizardPage() {
             </label>
             <label className="span-2">
               API Key
-              <input value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-..." />
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(event) => setApiKey(event.target.value)}
+                placeholder="sk-..."
+              />
+            </label>
+            <label>
+              Policy Profile
+              <select
+                value={policyProfile}
+                onChange={(event) => setPolicyProfile(event.target.value as typeof policyProfile)}
+              >
+                <option value="strict_readonly">strict_readonly</option>
+                <option value="balanced_eval">balanced_eval</option>
+                <option value="live_exploratory">live_exploratory</option>
+              </select>
+            </label>
+            <label>
+              Allowed Tools (comma-separated)
+              <input
+                value={allowedToolsCsv}
+                onChange={(event) => setAllowedToolsCsv(event.target.value)}
+                placeholder="search_docs,web_fetch"
+              />
             </label>
             <label>
               Pricing Profile ID
@@ -218,12 +259,12 @@ export default function WizardPage() {
                 type="button"
                 className="ghost"
                 onClick={async () => {
-                  const providerType = targetType === 'litellm' ? 'litellm' : targetType === 'openai_compatible' ? 'openai_compatible' : 'synthetic'
                   const result = await api.validateProvider({
                     provider_type: providerType,
                     model,
                     base_url: baseUrl || undefined,
                     api_key: apiKey || undefined,
+                    credential_id: selectedCredentialId || undefined,
                   })
                   if (result.valid) {
                     setApiKeyRef(result.api_key_ref ?? '')
@@ -258,6 +299,25 @@ export default function WizardPage() {
               >
                 Create Pricing Profile
               </button>
+              <button
+                type="button"
+                className="ghost"
+                disabled={credentialsBusy}
+                onClick={async () => {
+                  setCredentialsBusy(true)
+                  try {
+                    const response = await api.listProviderCredentials()
+                    setCredentials(response.credentials)
+                    setError(null)
+                  } catch (loadError) {
+                    setError(loadError instanceof Error ? loadError.message : 'Failed to load provider credentials')
+                  } finally {
+                    setCredentialsBusy(false)
+                  }
+                }}
+              >
+                {credentialsBusy ? 'Loading...' : 'Load Credentials'}
+              </button>
             </div>
             <label>
               Input USD / 1K
@@ -271,6 +331,85 @@ export default function WizardPage() {
               API Key Ref
               <input value={apiKeyRef} onChange={(event) => setApiKeyRef(event.target.value)} placeholder="credential ref after validation" />
             </label>
+            <div className="span-2 panel stack-sm">
+              <h3>Provider Credentials</h3>
+              <div className="grid two">
+                <label>
+                  Credential Name
+                  <input value={credentialName} onChange={(event) => setCredentialName(event.target.value)} />
+                </label>
+                <label>
+                  Key Version
+                  <input value={credentialKeyVersion} onChange={(event) => setCredentialKeyVersion(event.target.value)} />
+                </label>
+              </div>
+              <div className="row gap-lg wrap">
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={async () => {
+                    if (!apiKey) {
+                      setError('Enter API key before creating credential')
+                      return
+                    }
+                    const credential = await api.createProviderCredential({
+                      name: credentialName,
+                      provider_type: providerType,
+                      api_key: apiKey,
+                      status: 'active',
+                    })
+                    setSelectedCredentialId(credential.id)
+                    setApiKeyRef(credential.id)
+                    const response = await api.listProviderCredentials()
+                    setCredentials(response.credentials)
+                    setError(null)
+                  }}
+                >
+                  Create Credential
+                </button>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={async () => {
+                    if (!selectedCredentialId) {
+                      setError('Select a credential first')
+                      return
+                    }
+                    if (!apiKey) {
+                      setError('Enter a new API key to rotate credential')
+                      return
+                    }
+                    await api.rotateProviderCredential(selectedCredentialId, {
+                      api_key: apiKey,
+                      key_version: credentialKeyVersion || undefined,
+                    })
+                    const response = await api.listProviderCredentials()
+                    setCredentials(response.credentials)
+                    setError(null)
+                  }}
+                >
+                  Rotate Credential
+                </button>
+              </div>
+              <label>
+                Selected Credential
+                <select
+                  value={selectedCredentialId}
+                  onChange={(event) => {
+                    const next = event.target.value
+                    setSelectedCredentialId(next)
+                    if (next) setApiKeyRef(next)
+                  }}
+                >
+                  <option value="">none</option>
+                  {credentials.map((row) => (
+                    <option key={row.id} value={row.id}>
+                      {row.name} ({row.provider_type}/{row.key_version})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </div>
         )}
 

@@ -217,8 +217,8 @@ export const AttackNode = memo(function AttackNode({ data, selected }: NodeProps
         </div>
       )}
 
-      <Handle type="target" position={Position.Top} className="!bg-muted-foreground !border-background !w-2 !h-2" />
-      <Handle type="source" position={Position.Bottom} className="!bg-muted-foreground !border-background !w-2 !h-2" />
+      <Handle type="target" position={Position.Left} className="!bg-muted-foreground !border-background !w-2 !h-2" />
+      <Handle type="source" position={Position.Right} className="!bg-muted-foreground !border-background !w-2 !h-2" />
     </motion.div>
   )
 })

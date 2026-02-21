@@ -377,10 +377,27 @@ export function ConfigPanel() {
 
       dispatch({ type: 'SET_RUN_ID', runId: run.id })
       if (baselineRunId) dispatch({ type: 'SET_BASELINE_RUN_ID', runId: baselineRunId })
+      dispatch({
+        type: 'ADD_EVENT',
+        event: {
+          event_type: 'run_launched',
+          message: `Run ${run.id.slice(0, 8)} launched (${preset}/${mode})`,
+          created_at: new Date().toISOString(),
+          data: {
+            run_id: run.id,
+            preset,
+            mode,
+          },
+        },
+      })
 
       // Start streaming
       actions.startStreaming()
-      dispatch({ type: 'TOGGLE_EVENTS' })
+      if (!state.eventsOpen) dispatch({ type: 'TOGGLE_EVENTS' })
+      actions.fetchRunData()
+      setTimeout(() => {
+        actions.fetchRunData()
+      }, 1500)
 
       toast.success(`Run ${run.id.slice(0, 8)} launched!`)
       dispatch({ type: 'CLOSE_PANEL' })

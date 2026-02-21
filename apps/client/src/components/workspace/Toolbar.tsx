@@ -93,8 +93,8 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
       className={cn(
         'absolute top-3 left-3 right-3 z-40 h-11',
         'flex items-center gap-2 px-3',
-        'rounded-xl border border-border/70 bg-background/95 dark:border-border/50 dark:bg-background/75 backdrop-blur-2xl backdrop-saturate-150',
-        'shadow-[0_2px_20px_-8px_rgba(0,0,0,0.3)]',
+        'rounded-xl border border-border/30 bg-background/35 dark:border-border/25 dark:bg-background/20 backdrop-blur-2xl backdrop-saturate-150',
+        'shadow-[0_2px_14px_-10px_rgba(0,0,0,0.25)]',
       )}
       data-onboarding="toolbar"
     >

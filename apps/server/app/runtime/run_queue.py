@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import queue
 import socket
 import threading
@@ -12,6 +13,9 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Run
 from app.utils.common import log_event
+
+
+logger = logging.getLogger("metrox.queue")
 
 try:
     import redis
@@ -227,8 +231,27 @@ class RunQueue:
             _, payload = item
             try:
                 run_id, attempt = self._deserialize_item(str(payload))
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "run_dequeued",
+                            "run_id": run_id,
+                            "attempt": attempt,
+                        },
+                        sort_keys=True,
+                    )
+                )
                 self._process_one(run_id, attempt)
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    json.dumps(
+                        {
+                            "event": "run_dequeue_error",
+                            "error": str(exc),
+                        },
+                        sort_keys=True,
+                    )
+                )
                 continue
 
 

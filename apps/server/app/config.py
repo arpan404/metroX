@@ -1,11 +1,27 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+_APP_DIR = Path(__file__).resolve().parent
+_SERVER_DIR = _APP_DIR.parent
+_REPO_DIR = _SERVER_DIR.parent.parent
+
+_ENV_FILES: list[Path] = []
+for _candidate in (_SERVER_DIR / ".env", _REPO_DIR / ".env"):
+    if _candidate.exists():
+        _ENV_FILES.append(_candidate)
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="METROX_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="METROX_",
+        extra="ignore",
+        env_file=tuple(_ENV_FILES),
+        env_file_encoding="utf-8",
+    )
 
     database_url: str = Field(
         default="postgresql+psycopg://metrox:metrox@localhost:5432/metrox"

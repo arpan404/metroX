@@ -280,7 +280,7 @@ export function Canvas() {
         />
         <Controls
           showInteractive={state.canvasMode === 'studio'}
-          className="!rounded-lg !border-border/60 !bg-background/80 !backdrop-blur-xl !shadow-lg"
+          className="workspace-controls !rounded-xl !border-border/40 !bg-background/50 !backdrop-blur-xl !shadow-[0_8px_24px_-14px_rgba(0,0,0,0.45)]"
         />
         <MiniMap
           zoomable

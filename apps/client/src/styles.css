@@ -39,17 +39,19 @@
   }
 
   .workspace-canvas .react-flow__controls button {
-    border-color: hsl(var(--border) / 0.35) !important;
-    background: hsl(var(--background) / 0.5) !important;
+    border: none !important;
+    background: transparent !important;
     color: var(--foreground) !important;
-    width: 34px !important;
-    height: 34px !important;
+    width: 32px !important;
+    height: 32px !important;
+    margin: 3px !important;
+    border-radius: 8px !important;
     /* ensure SVG does not swallow pointer events */
     cursor: pointer !important;
   }
 
   .workspace-canvas .react-flow__controls button:hover {
-    background: hsl(var(--accent) / 0.55) !important;
+    background: hsl(var(--accent) / 0.7) !important;
   }
 
   .workspace-canvas .react-flow__controls button svg {

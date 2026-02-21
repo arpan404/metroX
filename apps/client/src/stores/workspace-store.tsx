@@ -146,6 +146,7 @@ export type WorkspaceAction =
   | { type: 'SET_LOADING_ANALYTICS'; loading: boolean }
   | { type: 'ADD_STUDIO_NODE'; node: WorkspaceState['studioNodes'][0] }
   | { type: 'UPDATE_STUDIO_NODE'; nodeId: string; data: Partial<WorkspaceState['studioNodes'][0]['data']> }
+  | { type: 'UPDATE_STUDIO_NODE_POSITION'; nodeId: string; position: { x: number; y: number } }
   | { type: 'REMOVE_STUDIO_NODE'; nodeId: string }
   | { type: 'SET_STUDIO_EDGES'; edges: WorkspaceState['studioEdges'] }
   | { type: 'APPLY_TEMPLATE'; template: { name: string; config: Record<string, unknown> } }
@@ -328,6 +329,18 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
                       ? resolveStudioRoleModel(n.data.role, action.data.model)
                       : n.data.model,
                 },
+              }
+            : n,
+        ),
+      }
+    case 'UPDATE_STUDIO_NODE_POSITION':
+      return {
+        ...state,
+        studioNodes: state.studioNodes.map((n) =>
+          n.id === action.nodeId
+            ? {
+                ...n,
+                position: action.position,
               }
             : n,
         ),

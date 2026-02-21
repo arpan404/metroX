@@ -217,6 +217,18 @@ export function Canvas() {
     [dispatch],
   )
 
+  const onNodeDragStop = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      if (state.canvasMode !== 'studio' || node.type !== 'studioRole') return
+      dispatch({
+        type: 'UPDATE_STUDIO_NODE_POSITION',
+        nodeId: node.id,
+        position: node.position,
+      })
+    },
+    [dispatch, state.canvasMode],
+  )
+
   return (
     <div
       className="absolute inset-0"
@@ -231,6 +243,7 @@ export function Canvas() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeClick={onNodeClick}
+        onNodeDragStop={onNodeDragStop}
         onNodeContextMenu={onNodeContextMenu}
         onPaneClick={onPaneClick}
         onPaneContextMenu={onPaneContextMenu}

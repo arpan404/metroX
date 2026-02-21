@@ -824,6 +824,37 @@ def stream_run_events(run_id: str, db: Session = Depends(get_db)) -> StreamingRe
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+@router.get("/runs/{run_id}/events/recent")
+def get_recent_run_events(
+    run_id: str,
+    limit: int = Query(default=200, ge=1, le=1000),
+    db: Session = Depends(get_db),
+) -> dict:
+    run = db.query(Run).filter(Run.id == run_id).one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    rows = (
+        db.query(RunEvent)
+        .filter(RunEvent.run_id == run_id)
+        .order_by(RunEvent.id.desc())
+        .limit(limit)
+        .all()
+    )
+    events = [
+        {
+            "id": event.id,
+            "event_type": event.event_type,
+            "step": event.step,
+            "message": event.message,
+            "data": event.data,
+            "created_at": event.created_at.isoformat(),
+        }
+        for event in reversed(rows)
+    ]
+    return {"run_id": run_id, "events": events}
+
+
 @router.websocket("/runs/{run_id}/ws")
 async def stream_run_events_ws(websocket: WebSocket, run_id: str) -> None:
     settings = get_settings()

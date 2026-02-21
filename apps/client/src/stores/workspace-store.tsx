@@ -339,6 +339,24 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
   let fetchingAnalytics = false
   let fetchedCapabilities = false
 
+  const mergeEvents = (current: RunEvent[], incoming: RunEvent[]): RunEvent[] => {
+    const keyFor = (event: RunEvent) =>
+      event.id != null
+        ? `id:${event.id}`
+        : `sig:${event.event_type}|${event.step ?? ''}|${event.created_at ?? ''}|${event.message ?? ''}`
+
+    const map = new Map<string, RunEvent>()
+    for (const event of current) map.set(keyFor(event), event)
+    for (const event of incoming) map.set(keyFor(event), event)
+
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.id != null && b.id != null) return a.id - b.id
+      const at = a.created_at ? Date.parse(a.created_at) : 0
+      const bt = b.created_at ? Date.parse(b.created_at) : 0
+      return at - bt
+    })
+  }
+
   return {
     setRunId(runId: string | null) {
       dispatch({ type: 'SET_RUN_ID', runId })
@@ -366,12 +384,20 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
       fetchingRun = true
       dispatch({ type: 'SET_LOADING_RUN', loading: true })
       try {
-        const [runData, attackSummary] = await Promise.all([
+        const [runData, attackSummary, recentEvents] = await Promise.all([
           api.getRun(runId),
           api.getAttackSummary(runId).catch(() => null),
+          api.getRunEventsRecent(runId, 300).catch(() => null),
         ])
         dispatch({ type: 'SET_RUN_DATA', data: runData })
         if (attackSummary) dispatch({ type: 'SET_ATTACK_SUMMARY', data: attackSummary })
+        if (recentEvents?.events) {
+          const merged = mergeEvents(
+            stateRef.current.events,
+            recentEvents.events as RunEvent[],
+          )
+          dispatch({ type: 'SET_EVENTS', events: merged })
+        }
       } catch {
         dispatch({ type: 'SET_LOADING_RUN', loading: false })
       } finally {

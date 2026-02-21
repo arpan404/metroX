@@ -296,6 +296,13 @@ export const api = {
     return request<RunOut>(`/v1/runs/${runId}`)
   },
 
+  getRunEventsRecent(runId: string, limit = 200) {
+    const params = new URLSearchParams({ limit: String(limit) })
+    return request<{ run_id: string; events: Array<Record<string, unknown>> }>(
+      `/v1/runs/${runId}/events/recent?${params.toString()}`,
+    )
+  },
+
   resumeRun(runId: string) {
     return request<RunOut>(`/v1/runs/${runId}/resume`, { method: 'POST' })
   },

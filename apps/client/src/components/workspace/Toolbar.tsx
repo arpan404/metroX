@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'motion/react'
 import {
   Search,
   Command,
-  Settings2,
   Moon,
   Sun,
   RefreshCw,
@@ -11,11 +10,10 @@ import {
   Pause,
   SkipForward,
   Radio,
-  Wifi,
-  WifiOff,
   ChevronDown,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
+import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -44,6 +42,7 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
   }, [actions])
 
   const runStatus = state.runData?.status
+  const canResumeRun = runStatus === 'interrupted' || runStatus === 'failed'
   const progress = state.runData
     ? state.runData.total_attacks > 0
       ? Math.round((state.runData.completed_attacks / state.runData.total_attacks) * 100)
@@ -58,18 +57,21 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
       className={cn(
         'absolute top-3 left-3 right-3 z-40 h-11',
         'flex items-center gap-2 px-3',
-        'rounded-xl border border-border/50 bg-background/75 backdrop-blur-2xl backdrop-saturate-150',
+        'rounded-xl border border-border/70 bg-background/95 dark:border-border/50 dark:bg-background/75 backdrop-blur-2xl backdrop-saturate-150',
         'shadow-[0_2px_20px_-8px_rgba(0,0,0,0.3)]',
       )}
       data-onboarding="toolbar"
     >
       {/* Brand */}
-      <div className="flex items-center gap-2 mr-2 shrink-0">
-        <div className="h-6 w-6 rounded-md bg-primary/15 flex items-center justify-center">
-          <span className="text-primary text-xs font-bold font-[Syne]">M</span>
-        </div>
-        <span className="text-sm font-[Syne] font-semibold tracking-tight hidden sm:block">metroX</span>
-      </div>
+      <Link to="/" className="flex items-center gap-2 mr-2 shrink-0">
+        <img
+          src="/favicon.svg"
+          alt="MetroX"
+          className="opacity-95 dark:opacity-80 transition-opacity duration-300 hover:opacity-100"
+          style={{ height: '24px', width: '24px', objectFit: 'contain' }}
+        />
+        <span className="text-sm font-display font-semibold tracking-tight hidden sm:block opacity-95 dark:opacity-80">MetroX</span>
+      </Link>
 
       {/* Divider */}
       <div className="h-5 w-px bg-border/40 shrink-0" />
@@ -160,31 +162,8 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
           <TooltipContent side="bottom" className="text-xs">Refresh data</TooltipContent>
         </Tooltip>
 
-        {/* Stream toggle */}
-        {state.currentRunId && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => state.isStreaming ? actions.stopStreaming() : actions.startStreaming()}
-              >
-                {state.isStreaming ? (
-                  <Wifi className="h-3.5 w-3.5 text-emerald-400" />
-                ) : (
-                  <WifiOff className="h-3.5 w-3.5" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              {state.isStreaming ? 'Stop streaming' : 'Start streaming'}
-            </TooltipContent>
-          </Tooltip>
-        )}
-
         {/* Resume run */}
-        {state.runData?.status === 'interrupted' && (
+        {canResumeRun && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

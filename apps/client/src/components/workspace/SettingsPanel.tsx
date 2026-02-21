@@ -448,8 +448,14 @@ function CapabilitiesSection() {
 
 /* ── Main Settings Panel ── */
 export function SettingsPanel() {
-  const { state, dispatch } = useWorkspace()
+  const { state, dispatch, actions } = useWorkspace()
   const isOpen = state.activePanel === 'settings'
+
+  useEffect(() => {
+    if (isOpen && !state.afkCapabilities) {
+      actions.fetchCapabilities()
+    }
+  }, [isOpen, state.afkCapabilities, actions])
 
   return (
     <PanelShell

@@ -9,7 +9,7 @@ import { TooltipProvider } from './components/ui/tooltip'
 
 function LandingPage() {
     return (
-        <div className="relative min-h-screen" style={{ backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+        <div className="landing-root relative min-h-screen" style={{ backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
             <div className="noise-overlay" />
             <Navbar />
             <main>
@@ -24,7 +24,7 @@ function LandingPage() {
 export default function App() {
     return (
         <TooltipProvider delayDuration={400}>
-            <BrowserRouter>
+            <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
                 <Routes>
                     <Route path="/" element={<LandingPage />} />
                     <Route path="/docs" element={<DocsPage />} />

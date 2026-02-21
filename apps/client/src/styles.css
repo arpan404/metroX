@@ -84,6 +84,18 @@
     /* Do NOT set stroke-dashoffset here — ReactFlow's dashdraw keyframe owns it */
   }
 
+  /* Studio flow edges: stronger directional movement toward markerEnd */
+  .workspace-canvas[data-canvas-mode="studio"] .react-flow__edge.flow-edge .react-flow__edge-path {
+    stroke: #22d3ee !important;
+    stroke-width: 2.8 !important;
+    stroke-linecap: round !important;
+    stroke-dasharray: 1 10 !important; /* dotted line */
+    animation: studioEdgeFlow 0.8s linear infinite !important;
+    filter: drop-shadow(0 0 6px rgba(34, 211, 238, 0.55));
+  }
+  .workspace-canvas[data-canvas-mode="studio"] .react-flow__edge.flow-edge .react-flow__edge-interaction {
+    stroke-width: 18 !important;
+  }
   /* ─── ReactFlow handles & selection ────────────────────────── */
   .react-flow__handle {
     background: var(--foreground) !important;
@@ -129,6 +141,11 @@
 @keyframes livePulse {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.4; }
+}
+
+@keyframes studioEdgeFlow {
+  from { stroke-dashoffset: 24; }
+  to   { stroke-dashoffset: 0; }
 }
 
 @keyframes floatIn {

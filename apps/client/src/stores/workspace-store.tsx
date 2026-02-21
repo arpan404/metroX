@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { api } from '@/lib/api'
 import { loadState, saveState } from '@/lib/state'
+import { createDefaultStudioMap, resolveStudioRoleModel } from '@/lib/studio-defaults'
 import type {
   RunOut,
   Scorecard,
@@ -145,6 +146,7 @@ export type WorkspaceAction =
   | { type: 'SET_LOADING_ANALYTICS'; loading: boolean }
   | { type: 'ADD_STUDIO_NODE'; node: WorkspaceState['studioNodes'][0] }
   | { type: 'UPDATE_STUDIO_NODE'; nodeId: string; data: Partial<WorkspaceState['studioNodes'][0]['data']> }
+  | { type: 'UPDATE_STUDIO_NODE_POSITION'; nodeId: string; position: { x: number; y: number } }
   | { type: 'REMOVE_STUDIO_NODE'; nodeId: string }
   | { type: 'SET_STUDIO_EDGES'; edges: WorkspaceState['studioEdges'] }
   | { type: 'APPLY_TEMPLATE'; template: { name: string; config: Record<string, unknown> } }
@@ -230,6 +232,17 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
     case 'SET_BASELINE_RUN_ID':
       return { ...state, baselineRunId: action.runId }
     case 'SET_CANVAS_MODE':
+      if (action.mode === 'studio' && state.studioNodes.length === 0) {
+        const defaults = createDefaultStudioMap()
+        return {
+          ...state,
+          canvasMode: action.mode,
+          selectedNodeId: null,
+          selectedAttackType: null,
+          studioNodes: defaults.nodes,
+          studioEdges: defaults.edges,
+        }
+      }
       return { ...state, canvasMode: action.mode, selectedNodeId: null, selectedAttackType: null }
     case 'SELECT_NODE':
       return { ...state, selectedNodeId: action.nodeId, selectedAttackType: action.attackType ?? null }
@@ -288,12 +301,48 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
     case 'SET_LOADING_ANALYTICS':
       return { ...state, isLoadingAnalytics: action.loading }
     case 'ADD_STUDIO_NODE':
-      return { ...state, studioNodes: [...state.studioNodes, action.node] }
+      return {
+        ...state,
+        studioNodes: [
+          ...state.studioNodes,
+          {
+            ...action.node,
+            data: {
+              ...action.node.data,
+              model: resolveStudioRoleModel(action.node.data.role, action.node.data.model),
+            },
+          },
+        ],
+      }
     case 'UPDATE_STUDIO_NODE':
       return {
         ...state,
         studioNodes: state.studioNodes.map((n) =>
-          n.id === action.nodeId ? { ...n, data: { ...n.data, ...action.data } } : n,
+          n.id === action.nodeId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  ...action.data,
+                  model:
+                    action.data.model !== undefined
+                      ? resolveStudioRoleModel(n.data.role, action.data.model)
+                      : n.data.model,
+                },
+              }
+            : n,
+        ),
+      }
+    case 'UPDATE_STUDIO_NODE_POSITION':
+      return {
+        ...state,
+        studioNodes: state.studioNodes.map((n) =>
+          n.id === action.nodeId
+            ? {
+                ...n,
+                position: action.position,
+              }
+            : n,
         ),
       }
     case 'REMOVE_STUDIO_NODE':
@@ -339,6 +388,61 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
   let fetchingAnalytics = false
   let fetchedCapabilities = false
 
+  const mergeEvents = (current: RunEvent[], incoming: RunEvent[]): RunEvent[] => {
+    const keyFor = (event: RunEvent) =>
+      event.id != null
+        ? `id:${event.id}`
+        : `sig:${event.event_type}|${event.step ?? ''}|${event.created_at ?? ''}|${event.message ?? ''}`
+
+    const map = new Map<string, RunEvent>()
+    for (const event of current) map.set(keyFor(event), event)
+    for (const event of incoming) map.set(keyFor(event), event)
+
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.id != null && b.id != null) return a.id - b.id
+      const at = a.created_at ? Date.parse(a.created_at) : 0
+      const bt = b.created_at ? Date.parse(b.created_at) : 0
+      return at - bt
+    })
+  }
+
+  const fetchRunDataInternal = async (runId: string) => {
+    const [runData, attackSummary, recentEvents] = await Promise.all([
+      api.getRun(runId),
+      api.getAttackSummary(runId).catch(() => null),
+      api.getRunEventsRecent(runId, 300).catch(() => null),
+    ])
+    dispatch({ type: 'SET_RUN_DATA', data: runData })
+    if (attackSummary) dispatch({ type: 'SET_ATTACK_SUMMARY', data: attackSummary })
+    if (recentEvents?.events) {
+      const merged = mergeEvents(
+        stateRef.current.events,
+        recentEvents.events as RunEvent[],
+      )
+      dispatch({ type: 'SET_EVENTS', events: merged })
+    }
+    return runData
+  }
+
+  const startStreamingForRun = (runId: string) => {
+    streamCleanupRef.current?.()
+    dispatch({ type: 'SET_STREAMING', active: true })
+
+    const wsCleanup = api.streamRunEventsWs(
+      runId,
+      (evt) => {
+        dispatch({ type: 'ADD_EVENT', event: evt as RunEvent })
+      },
+      () => {
+        dispatch({ type: 'SET_STREAMING', active: false })
+      },
+    )
+
+    streamCleanupRef.current = () => {
+      wsCleanup()
+    }
+  }
+
   return {
     setRunId(runId: string | null) {
       dispatch({ type: 'SET_RUN_ID', runId })
@@ -366,13 +470,25 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
       fetchingRun = true
       dispatch({ type: 'SET_LOADING_RUN', loading: true })
       try {
-        const [runData, attackSummary] = await Promise.all([
-          api.getRun(runId),
-          api.getAttackSummary(runId).catch(() => null),
-        ])
-        dispatch({ type: 'SET_RUN_DATA', data: runData })
-        if (attackSummary) dispatch({ type: 'SET_ATTACK_SUMMARY', data: attackSummary })
-      } catch {
+        await fetchRunDataInternal(runId)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to fetch run data'
+        if (/run not found|not found|404/i.test(message)) {
+          streamCleanupRef.current?.()
+          streamCleanupRef.current = null
+          dispatch({ type: 'SET_STREAMING', active: false })
+          dispatch({ type: 'SET_RUN_ID', runId: null })
+          return
+        }
+        dispatch({
+          type: 'ADD_EVENT',
+          event: {
+            event_type: 'error',
+            message: `Run fetch failed: ${message}`,
+            created_at: new Date().toISOString(),
+            data: { run_id: runId },
+          },
+        })
         dispatch({ type: 'SET_LOADING_RUN', loading: false })
       } finally {
         fetchingRun = false
@@ -452,40 +568,7 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
     startStreaming() {
       const runId = stateRef.current.currentRunId
       if (!runId) return
-      // Stop any existing stream
-      streamCleanupRef.current?.()
-      dispatch({ type: 'SET_STREAMING', active: true })
-
-      // Try WebSocket first, fall back to SSE
-      let settled = false
-      const wsCleanup = api.streamRunEventsWs(
-        runId,
-        (evt) => {
-          settled = true
-          dispatch({ type: 'ADD_EVENT', event: evt as RunEvent })
-        },
-        () => {
-          dispatch({ type: 'SET_STREAMING', active: false })
-        },
-      )
-
-      // If WS doesn't fire within 2s, add SSE fallback
-      const fallbackTimer = setTimeout(() => {
-        if (!settled) {
-          wsCleanup()
-          const sseCleanup = api.streamRunEvents(
-            runId,
-            (evt) => dispatch({ type: 'ADD_EVENT', event: evt as RunEvent }),
-            () => dispatch({ type: 'SET_STREAMING', active: false }),
-          )
-          streamCleanupRef.current = sseCleanup
-        }
-      }, 2000)
-
-      streamCleanupRef.current = () => {
-        clearTimeout(fallbackTimer)
-        wsCleanup()
-      }
+      startStreamingForRun(runId)
     },
 
     stopStreaming() {
@@ -496,11 +579,43 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
 
     async resumeRun() {
       const runId = stateRef.current.currentRunId
-      if (!runId) return
+      if (!runId) return false
       try {
         const data = await api.resumeRun(runId)
         dispatch({ type: 'SET_RUN_DATA', data })
-      } catch { /* handled by caller */ }
+        dispatch({
+          type: 'ADD_EVENT',
+          event: {
+            event_type: 'run_resumed',
+            message: `Run ${runId.slice(0, 8)} resumed`,
+            created_at: new Date().toISOString(),
+            data: { run_id: runId },
+          },
+        })
+        if (['queued', 'running'].includes(data.status)) {
+          dispatch({ type: 'SET_STREAMING', active: false })
+          streamCleanupRef.current?.()
+          streamCleanupRef.current = null
+          startStreamingForRun(runId)
+        }
+        await fetchRunDataInternal(runId)
+        setTimeout(() => {
+          fetchRunDataInternal(runId).catch(() => {})
+        }, 1500)
+        return true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to resume run'
+        dispatch({
+          type: 'ADD_EVENT',
+          event: {
+            event_type: 'error',
+            message: `Resume failed: ${message}`,
+            created_at: new Date().toISOString(),
+            data: { run_id: runId },
+          },
+        })
+        return false
+      }
     },
 
     async generateReport() {
@@ -563,11 +678,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       actions.fetchAnalytics()
     }
   }, [state.runData?.status, actions])
-
-  // Fetch capabilities on mount
-  useEffect(() => {
-    actions.fetchCapabilities()
-  }, [actions])
 
   return (
     <WorkspaceContext.Provider value={{ state, dispatch, actions }}>

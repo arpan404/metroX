@@ -31,24 +31,27 @@ function buildEvaluateGraph(
   const attackSummary = state.attackSummary
   const scorecard = state.scorecard
 
+  // No run loaded — return empty so the "No active evaluation" overlay shows
+  if (!runData) return { nodes: [], edges: [] }
+
   // Root target node
   nodes.push({
     id: 'target-root',
     type: 'target',
     position: { x: 300, y: 40 },
     data: {
-      label: runData ? `Run ${runData.id.slice(0, 8)}` : 'Target System',
-      model: (runData as any)?.summary_metrics?.model ?? 'Configure target →',
-      status: runData?.status === 'completed'
+      label: `Run ${runData.id.slice(0, 8)}`,
+      model: (runData as any)?.summary_metrics?.model ?? '',
+      status: runData.status === 'completed'
         ? 'completed'
-        : runData?.status === 'failed'
+        : runData.status === 'failed'
           ? 'failed'
-          : runData?.status === 'running'
+          : runData.status === 'running'
             ? 'running'
             : 'idle',
-      targetType: runData?.preset,
-      totalAttacks: runData?.total_attacks,
-      completedAttacks: runData?.completed_attacks,
+      targetType: runData.preset,
+      totalAttacks: runData.total_attacks,
+      completedAttacks: runData.completed_attacks,
     },
   })
 

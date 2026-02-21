@@ -9,7 +9,7 @@ import { TooltipProvider } from './components/ui/tooltip'
 
 function LandingPage() {
     return (
-        <div className="relative min-h-screen" style={{ backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+        <div className="landing-root relative min-h-screen" style={{ backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
             <div className="noise-overlay" />
             <Navbar />
             <main>

@@ -35,6 +35,43 @@ import type {
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 const API_KEY = import.meta.env.VITE_API_KEY ?? 'local-dev-key'
 
+function parseOllamaModels(payload: unknown): string[] {
+  if (!payload || typeof payload !== 'object') return []
+  const body = payload as { models?: unknown; data?: unknown }
+
+  if (Array.isArray(body.models)) {
+    const out = body.models
+      .map((item) => {
+        if (typeof item === 'string') return item
+        if (item && typeof item === 'object' && 'name' in item) {
+          const name = (item as { name?: unknown }).name
+          return typeof name === 'string' ? name : null
+        }
+        if (item && typeof item === 'object' && 'id' in item) {
+          const id = (item as { id?: unknown }).id
+          return typeof id === 'string' ? id : null
+        }
+        return null
+      })
+      .filter((item): item is string => Boolean(item))
+    if (out.length > 0) return out
+  }
+
+  if (Array.isArray(body.data)) {
+    return body.data
+      .map((item) => {
+        if (item && typeof item === 'object' && 'id' in item) {
+          const id = (item as { id?: unknown }).id
+          return typeof id === 'string' ? id : null
+        }
+        return null
+      })
+      .filter((item): item is string => Boolean(item))
+  }
+
+  return []
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -96,6 +133,22 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     })
+  },
+
+  async getOllamaModels(baseUrl?: string) {
+    const root = (baseUrl?.trim() || 'http://localhost:11434').replace(/\/+$/, '')
+    const endpoints = [`${root}/v1/models`, `${root}/models`, `${root}/api/tags`]
+    let lastStatus = 0
+    for (const url of endpoints) {
+      const response = await fetch(url)
+      if (!response.ok) {
+        lastStatus = response.status
+        continue
+      }
+      const body = await response.json()
+      return parseOllamaModels(body)
+    }
+    throw new Error(`Ollama model discovery failed (${lastStatus || 'network'})`)
   },
 
   getProviderCapabilities() {

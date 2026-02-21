@@ -74,7 +74,7 @@ function WorkspaceInner() {
       <CommandBar />
 
       {/* Side panels (animated, floating) */}
-      <AnimatePresence mode="wait">
+      <AnimatePresence>
         <ConfigPanel key="config" />
         <AnalyticsPanel key="analytics" />
         <SettingsPanel key="settings" />

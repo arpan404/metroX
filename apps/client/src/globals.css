@@ -44,7 +44,7 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  body {
+  .landing-root {
     font-family: 'IBM Plex Sans', system-ui, sans-serif;
     background-color: var(--bg-primary);
     color: var(--text-primary);

@@ -149,10 +149,15 @@ export function Canvas() {
         ...edge,
         animated: true,
         className: 'flow-edge',
+        style: {
+          stroke: '#22d3ee',
+          strokeWidth: 2.8,
+        },
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          width: 18,
-          height: 18,
+          color: '#22d3ee',
+          width: 28,
+          height: 28,
         },
       })),
     }

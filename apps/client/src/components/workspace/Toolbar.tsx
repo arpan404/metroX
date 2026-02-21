@@ -113,14 +113,14 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
       <div className="h-5 w-px bg-border/40 shrink-0" />
 
       {/* Run selector */}
-      <div className="flex items-center gap-2 flex-1 max-w-[460px] min-w-[280px]">
+      <div className="flex items-center gap-2 flex-1 min-w-0 max-w-[520px]">
         <Popover open={runSelectorOpen} onOpenChange={setRunSelectorOpen}>
           <PopoverTrigger asChild>
             <Button
               variant="outline"
               role="combobox"
               aria-expanded={runSelectorOpen}
-              className="h-7 w-full justify-between border-border/35 bg-background/45 dark:bg-background/25 text-xs font-mono"
+              className="h-7 w-full min-w-0 justify-between border-border/35 bg-background/45 dark:bg-background/25 text-xs font-mono"
             >
               <span className="truncate">{selectorLabel}</span>
               <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-60" />
@@ -163,6 +163,9 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
             </CommandMenu>
           </PopoverContent>
         </Popover>
+      </div>
+
+      <div className="flex items-center gap-2 shrink-0">
         <Button
           variant="ghost"
           size="icon"
@@ -177,8 +180,8 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
       {/* Run status pills */}
       {state.runData && (
         <>
-          <div className="h-5 w-px bg-border/40 shrink-0 hidden md:block mx-1" />
-          <div className="hidden md:flex items-center gap-2 ml-1">
+          <div className="h-5 w-px bg-border/40 shrink-0 mx-1" />
+          <div className="flex items-center gap-2 shrink-0">
             <Badge
               variant={runStatus === 'completed' ? 'default' : runStatus === 'failed' ? 'destructive' : 'secondary'}
               className="text-[10px] h-5 px-2 font-mono"

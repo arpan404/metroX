@@ -47,7 +47,7 @@ class RunQueue:
         if redis is None:
             raise RuntimeError("redis queue backend requested but redis package is not installed")
         settings = get_settings()
-        self._redis_client = cast("redis.Redis", redis.from_url(settings.redis_url, decode_responses=True))
+        self._redis_client = cast("redis.Redis", redis.from_url(settings.redis_url, decode_responses=True)) # type: ignore
         return self._redis_client
 
     def start(self) -> None:

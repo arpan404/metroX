@@ -67,14 +67,20 @@ export function PanelShell({
           transition={{ type: 'spring', stiffness: 400, damping: 35, mass: 0.8 }}
         >
           {/* Header */}
-          <div className="flex items-center gap-3 border-b border-border/40 px-4 py-3">
-            {icon && <span className="text-muted-foreground">{icon}</span>}
+          <div className="flex items-center gap-3 border-b border-border/40 px-5 py-3.5">
+            {icon && <span className="text-foreground/70">{icon}</span>}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-semibold tracking-tight truncate font-[Syne]">{title}</h3>
+                <h3 className="truncate text-[1.02rem] leading-none font-semibold tracking-[-0.01em] text-foreground/95 font-display">
+                  {title}
+                </h3>
                 {badge}
               </div>
-              {subtitle && <p className="text-xs text-muted-foreground truncate mt-0.5">{subtitle}</p>}
+              {subtitle && (
+                <p className="mt-1 truncate text-[11px] font-medium text-muted-foreground/85 tracking-[0.01em]">
+                  {subtitle}
+                </p>
+              )}
             </div>
             <Button
               variant="ghost"
@@ -118,8 +124,8 @@ export function PanelSection({ title, description, children, badge }: SectionPro
     <div className="space-y-3 pb-5 mb-5 border-b border-border/30 last:border-0 last:mb-0 last:pb-0">
       <div className="flex items-center justify-between">
         <div>
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h4>
-          {description && <p className="text-[11px] text-muted-foreground/70 mt-0.5">{description}</p>}
+          <h4 className="text-[0.84rem] font-semibold uppercase tracking-[0.1em] text-foreground/78">{title}</h4>
+          {description && <p className="text-[11px] text-muted-foreground/72 mt-0.5">{description}</p>}
         </div>
         {badge}
       </div>

@@ -122,15 +122,15 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
               variant="outline"
               role="combobox"
               aria-expanded={runSelectorOpen}
-              className="h-7 w-full min-w-0 justify-between border-border/35 bg-background/45 dark:bg-background/25 text-xs font-mono"
+              className="h-9 w-full min-w-0 justify-between rounded-lg border-border/35 bg-background/45 dark:bg-background/25 px-3 text-sm font-mono"
             >
               <span className="truncate">{selectorLabel}</span>
-              <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-60" />
+              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
             </Button>
           </PopoverTrigger>
           <PopoverContent
             className={cn(
-              'w-[420px] p-0 overflow-hidden',
+              'w-[var(--radix-popover-trigger-width)] p-0 overflow-hidden',
               'rounded-xl border border-border/45',
               'bg-background/88 dark:bg-background/68',
               'backdrop-blur-2xl backdrop-saturate-150',
@@ -141,7 +141,7 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
             <CommandMenu
               className={cn(
                 'bg-transparent',
-                '[&_[cmdk-input-wrapper]]:h-11 [&_[cmdk-input-wrapper]]:border-b [&_[cmdk-input-wrapper]]:border-border/45 [&_[cmdk-input-wrapper]]:bg-background/40',
+                '[&_[cmdk-input-wrapper]]:h-12 [&_[cmdk-input-wrapper]]:border-b [&_[cmdk-input-wrapper]]:border-border/45 [&_[cmdk-input-wrapper]]:bg-background/40',
                 '[&_[cmdk-input-wrapper]_svg]:text-muted-foreground/85',
                 '[&_[cmdk-group-heading]]:px-4 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:pb-2',
                 '[&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:uppercase',
@@ -149,7 +149,7 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
             >
               <CommandInput
                 placeholder="Search run ID..."
-                className="text-sm"
+                className="h-12 text-base"
               />
               <CommandList>
                 <CommandEmpty>{isLoadingRuns ? 'Loading runs...' : 'No runs found.'}</CommandEmpty>
@@ -165,7 +165,7 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
                       }}
                       className={cn(
                         'mx-2 mb-1 rounded-lg px-3 py-2',
-                        'font-mono text-xs',
+                        'font-mono text-sm',
                         'data-[selected=true]:bg-primary/15 data-[selected=true]:text-foreground',
                         'hover:bg-primary/10',
                       )}
@@ -196,11 +196,11 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0 rounded-md border border-border/35 bg-background/45 dark:bg-background/25 hover:bg-background/60"
+          className="h-9 w-9 shrink-0 rounded-lg border border-border/35 bg-background/45 dark:bg-background/25 hover:bg-background/60"
           onClick={handleLoadRun}
           disabled={!runIdInput.trim()}
         >
-          <Play className="h-3 w-3" />
+          <Play className="h-4 w-4" />
         </Button>
       </div>
 

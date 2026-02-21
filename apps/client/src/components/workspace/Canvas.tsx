@@ -130,6 +130,7 @@ export function Canvas() {
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null)
+  const [nodeMenu, setNodeMenu] = useState<{ x: number; y: number; node: Node } | null>(null)
 
   // Build graph from state
   const graphData = useMemo(() => {
@@ -196,12 +197,25 @@ export function Canvas() {
   const onPaneClick = useCallback(() => {
     dispatch({ type: 'SELECT_NODE', nodeId: null })
     setContextMenuPos(null)
+    setNodeMenu(null)
   }, [dispatch])
 
   const onPaneContextMenu = useCallback((event: React.MouseEvent) => {
     event.preventDefault()
+    setNodeMenu(null)
     setContextMenuPos({ x: event.clientX, y: event.clientY })
   }, [])
+
+  const onNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      event.preventDefault()
+      event.stopPropagation()
+      dispatch({ type: 'SELECT_NODE', nodeId: node.id })
+      setContextMenuPos(null)
+      setNodeMenu({ x: event.clientX, y: event.clientY, node })
+    },
+    [dispatch],
+  )
 
   return (
     <div
@@ -217,6 +231,7 @@ export function Canvas() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeClick={onNodeClick}
+        onNodeContextMenu={onNodeContextMenu}
         onPaneClick={onPaneClick}
         onPaneContextMenu={onPaneContextMenu}
         fitView={nodes.length > 0}
@@ -284,6 +299,14 @@ export function Canvas() {
           x={contextMenuPos.x}
           y={contextMenuPos.y}
           onClose={() => setContextMenuPos(null)}
+        />
+      )}
+      {nodeMenu && (
+        <NodeContextMenu
+          x={nodeMenu.x}
+          y={nodeMenu.y}
+          node={nodeMenu.node}
+          onClose={() => setNodeMenu(null)}
         />
       )}
     </div>
@@ -407,6 +430,124 @@ function CanvasContextMenu({ x, y, onClose }: { x: number; y: number; onClose: (
           </button>
         )
       })}
+    </motion.div>
+  )
+}
+
+function NodeContextMenu({
+  x,
+  y,
+  node,
+  onClose,
+}: {
+  x: number
+  y: number
+  node: Node
+  onClose: () => void
+}) {
+  const { state, dispatch } = useWorkspace()
+  const isStudioNode = state.canvasMode === 'studio' && node.type === 'studioRole'
+  const nodeData = node.data as { label?: string; role?: string; model?: string; description?: string } | undefined
+
+  const handleDuplicate = () => {
+    if (!isStudioNode || !nodeData?.label || !nodeData?.role) return
+    const role = nodeData.role
+    const id = `${node.id}-copy-${Math.random().toString(36).slice(2, 7)}`
+    dispatch({
+      type: 'ADD_STUDIO_NODE',
+      node: {
+        id,
+        type: 'studioRole',
+        position: { x: node.position.x + 56, y: node.position.y + 36 },
+        data: {
+          role,
+          label: `${nodeData.label} Copy`,
+          model: nodeData.model,
+          description: nodeData.description,
+        },
+      },
+    })
+  }
+
+  const handleDelete = () => {
+    if (!isStudioNode) return
+    dispatch({ type: 'REMOVE_STUDIO_NODE', nodeId: node.id })
+  }
+
+  const handleInfo = () => {
+    const attackType = node.id.startsWith('attack-') ? node.id.replace('attack-', '') : null
+    dispatch({ type: 'SELECT_NODE', nodeId: node.id, attackType })
+    if (isStudioNode) {
+      dispatch({ type: 'OPEN_PANEL', panel: 'config' })
+      return
+    }
+    if (attackType) {
+      dispatch({ type: 'OPEN_PANEL', panel: 'attack-detail' })
+      return
+    }
+    dispatch({ type: 'OPEN_PANEL', panel: 'analytics' })
+  }
+
+  const menuX = Math.min(x, window.innerWidth - 220)
+  const menuY = Math.min(y, window.innerHeight - 180)
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.1 }}
+      className={cn(
+        'fixed z-50 min-w-[200px] rounded-xl border border-border/60',
+        'bg-background/90 backdrop-blur-2xl shadow-[0_8px_40px_-12px_rgba(0,0,0,0.5)]',
+        'py-1.5 overflow-hidden',
+      )}
+      style={{ left: menuX, top: menuY }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="px-3 py-1.5 text-[11px] text-muted-foreground border-b border-border/40 mb-1">
+        {nodeData?.label ?? node.id}
+      </div>
+      <button
+        className={cn(
+          'flex items-center gap-2.5 w-full px-3 py-1.5 text-left text-[13px]',
+          isStudioNode
+            ? 'text-foreground/80 hover:text-foreground hover:bg-accent/60'
+            : 'text-muted-foreground/50 cursor-not-allowed',
+          'transition-colors duration-100',
+        )}
+        disabled={!isStudioNode}
+        onClick={() => { handleDuplicate(); onClose() }}
+      >
+        <Download className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="flex-1">Duplicate</span>
+      </button>
+      <button
+        className={cn(
+          'flex items-center gap-2.5 w-full px-3 py-1.5 text-left text-[13px]',
+          isStudioNode
+            ? 'text-destructive/90 hover:text-destructive hover:bg-destructive/10'
+            : 'text-muted-foreground/50 cursor-not-allowed',
+          'transition-colors duration-100',
+        )}
+        disabled={!isStudioNode}
+        onClick={() => { handleDelete(); onClose() }}
+      >
+        <RotateCcw className="h-3.5 w-3.5" />
+        <span className="flex-1">Delete</span>
+      </button>
+      <div className="h-px bg-border/40 my-1" />
+      <button
+        className={cn(
+          'flex items-center gap-2.5 w-full px-3 py-1.5 text-left text-[13px]',
+          'text-foreground/80 hover:text-foreground hover:bg-accent/60',
+          'transition-colors duration-100',
+        )}
+        onClick={() => { handleInfo(); onClose() }}
+      >
+        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="flex-1">Info</span>
+      </button>
     </motion.div>
   )
 }

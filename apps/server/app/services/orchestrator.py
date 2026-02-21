@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import (
     AFKRunState,
+    AttackCase,
+    BenchmarkSnapshot,
     ConfigProfile,
     ConfigSnapshot,
     Detection,
@@ -46,43 +48,93 @@ class RunOrchestrator:
         if not profile:
             raise ValueError("Config profile not found")
 
-        snapshot = ConfigSnapshot(
-            config_profile_id=profile.id,
-            run_id=run.id,
-            snapshot={
-                "target_config": profile.target_config,
-                "benchmark_config": profile.benchmark_config,
-                "scoring_config": profile.scoring_config,
-                "runtime_config": profile.runtime_config,
-                "strictness": run.strictness,
-                "mode": run.mode,
-                "preset": run.preset,
-            },
+        latest_state = (
+            self.db.query(AFKRunState)
+            .filter(AFKRunState.run_id == run.id)
+            .order_by(AFKRunState.created_at.desc())
+            .first()
         )
-        self.db.add(snapshot)
-        self.db.commit()
-        self.db.refresh(snapshot)
+        resume_requested = latest_state is not None and latest_state.state == "resumed"
+        existing_executions = (
+            self.db.query(Execution.id, Execution.attack_case_id)
+            .filter(Execution.run_id == run.id)
+            .all()
+        )
+        processed_case_ids = {attack_case_id for _, attack_case_id in existing_executions}
 
-        run.config_snapshot_id = snapshot.id
-        run.thread_id = f"run-{run.id}"
+        if run.config_snapshot_id:
+            snapshot = self.db.query(ConfigSnapshot).filter(ConfigSnapshot.id == run.config_snapshot_id).one_or_none()
+        else:
+            snapshot = None
+        if not snapshot:
+            snapshot = ConfigSnapshot(
+                config_profile_id=profile.id,
+                run_id=run.id,
+                snapshot={
+                    "target_config": profile.target_config,
+                    "benchmark_config": profile.benchmark_config,
+                    "scoring_config": profile.scoring_config,
+                    "runtime_config": profile.runtime_config,
+                    "strictness": run.strictness,
+                    "mode": run.mode,
+                    "preset": run.preset,
+                },
+            )
+            self.db.add(snapshot)
+            self.db.commit()
+            self.db.refresh(snapshot)
+            run.config_snapshot_id = snapshot.id
+
+        run.thread_id = run.thread_id or f"run-{run.id}"
         run.status = "running"
-        run.started_at = datetime.now(timezone.utc)
+        if not run.started_at:
+            run.started_at = datetime.now(timezone.utc)
         self.db.commit()
-        reset_run_cost(self.db, run.id)
+        if not resume_requested and len(processed_case_ids) == 0:
+            reset_run_cost(self.db, run.id)
 
         log_event(self.db, run_id=run.id, event_type="run_started", step=0, message="Run started")
-        self.db.add(AFKRunState(run_id=run.id, thread_id=run.thread_id, state="running", step=0, checkpoint={}))
+        self.db.add(
+            AFKRunState(
+                run_id=run.id,
+                thread_id=run.thread_id,
+                state="running",
+                step=0,
+                checkpoint={
+                    "resume_requested": resume_requested,
+                    "already_processed": len(processed_case_ids),
+                },
+            )
+        )
         self.db.commit()
 
         try:
-            attack_count = self._attack_count(run.preset)
-            benchmark_snapshot, attack_cases = create_benchmark(
-                self.db,
-                run_id=run.id,
-                benchmark_config=profile.benchmark_config,
-                attack_count=attack_count,
+            benchmark_snapshot = (
+                self.db.query(BenchmarkSnapshot)
+                .filter(BenchmarkSnapshot.run_id == run.id)
+                .order_by(BenchmarkSnapshot.created_at.desc())
+                .first()
             )
+            if benchmark_snapshot:
+                attack_cases = (
+                    self.db.query(AttackCase)
+                    .filter(AttackCase.benchmark_snapshot_id == benchmark_snapshot.id)
+                    .all()
+                )
+            else:
+                attack_cases = []
+
+            if not attack_cases:
+                attack_count = self._attack_count(run.preset)
+                benchmark_snapshot, attack_cases = create_benchmark(
+                    self.db,
+                    run_id=run.id,
+                    benchmark_config=profile.benchmark_config,
+                    attack_count=attack_count,
+                )
+
             run.total_attacks = len(attack_cases)
+            run.completed_attacks = len(processed_case_ids)
             self.db.commit()
 
             log_event(
@@ -103,8 +155,25 @@ class RunOrchestrator:
 
             executions: list[Execution] = []
             low_confidence = []
+            interrupted_early = False
+            if processed_case_ids:
+                cost_summary = rebuild_run_cost_aggregate(self.db, run.id)
+                run.budget_spent_usd = float(cost_summary["totals"]["effective_cost"])
+                completion_ratio = len(processed_case_ids) / max(len(attack_cases), 1)
+                run.estimated_final_cost_usd = (
+                    run.budget_spent_usd / completion_ratio if completion_ratio > 0 else run.budget_spent_usd
+                )
+                run.cost_gate_result = {
+                    "pass": budget_usd <= 0 or run.budget_spent_usd <= budget_usd,
+                    "budget_usd": budget_usd,
+                    "spent_usd": run.budget_spent_usd,
+                    "projected_final_usd": run.estimated_final_cost_usd,
+                }
+                self.db.commit()
 
-            for idx, case in enumerate(attack_cases, start=1):
+            for case in attack_cases:
+                if case.id in processed_case_ids:
+                    continue
                 request = TargetRequest(
                     run_id=run.id,
                     attack_id=case.id,
@@ -151,6 +220,7 @@ class RunOrchestrator:
                 self.db.add(detection)
                 self.db.add(label)
                 executions.append(execution)
+                processed_case_ids.add(case.id)
                 compute_execution_cost(
                     self.db,
                     run_id=run.id,
@@ -160,10 +230,10 @@ class RunOrchestrator:
                     pricing_profile_id=pricing_profile_id,
                 )
 
-                run.completed_attacks = idx
+                run.completed_attacks = len(processed_case_ids)
                 cost_summary = rebuild_run_cost_aggregate(self.db, run.id)
                 run.budget_spent_usd = float(cost_summary["totals"]["effective_cost"])
-                completion_ratio = idx / max(len(attack_cases), 1)
+                completion_ratio = run.completed_attacks / max(len(attack_cases), 1)
                 run.estimated_final_cost_usd = (
                     run.budget_spent_usd / completion_ratio if completion_ratio > 0 else run.budget_spent_usd
                 )
@@ -177,21 +247,36 @@ class RunOrchestrator:
                 if self.settings.low_confidence_min <= detection.confidence < self.settings.low_confidence_max:
                     low_confidence.append(execution.id)
 
-                if idx % 100 == 0 or idx == len(attack_cases):
+                if run.completed_attacks % 100 == 0 or run.completed_attacks == len(attack_cases):
                     self.db.commit()
                     log_event(
                         self.db,
                         run_id=run.id,
                         event_type="progress",
                         step=2,
-                        message=f"Processed {idx}/{len(attack_cases)}",
+                        message=f"Processed {run.completed_attacks}/{len(attack_cases)}",
                         data={
-                            "completed": idx,
+                            "completed": run.completed_attacks,
                             "total": len(attack_cases),
                             "spent_usd": run.budget_spent_usd,
                             "projected_final_usd": run.estimated_final_cost_usd,
                         },
                     )
+                    self.db.add(
+                        AFKRunState(
+                            run_id=run.id,
+                            thread_id=run.thread_id or f"run-{run.id}",
+                            state="running",
+                            step=2,
+                            checkpoint={
+                                "completed_attacks": run.completed_attacks,
+                                "total_attacks": run.total_attacks,
+                                "spent_usd": run.budget_spent_usd,
+                                "projected_final_usd": run.estimated_final_cost_usd,
+                            },
+                        )
+                    )
+                    self.db.commit()
 
                 if abort_on_cost_breach and budget_usd > 0 and run.budget_spent_usd > budget_usd:
                     log_event(
@@ -202,10 +287,33 @@ class RunOrchestrator:
                         message="Run stopped due to cost gate breach",
                         data={"spent_usd": run.budget_spent_usd, "budget_usd": budget_usd},
                     )
+                    interrupted_early = True
                     break
 
+            if interrupted_early:
+                run.status = "interrupted"
+                run.ended_at = datetime.now(timezone.utc)
+                self.db.commit()
+                self.db.add(
+                    AFKRunState(
+                        run_id=run.id,
+                        thread_id=run.thread_id or f"run-{run.id}",
+                        state="interrupted",
+                        step=2,
+                        checkpoint={
+                            "completed_attacks": run.completed_attacks,
+                            "total_attacks": run.total_attacks,
+                            "spent_usd": run.budget_spent_usd,
+                            "budget_usd": budget_usd,
+                        },
+                    )
+                )
+                self.db.commit()
+                return
+
             ensure_feature_definitions(self.db)
-            rebuild_features_for_run(self.db, run.id, executions)
+            all_executions = self.db.query(Execution).filter(Execution.run_id == run.id).all()
+            rebuild_features_for_run(self.db, run.id, all_executions)
             log_event(self.db, run_id=run.id, event_type="features_ready", step=3, message="Feature extraction complete")
 
             build_clusters(self.db, run.id)

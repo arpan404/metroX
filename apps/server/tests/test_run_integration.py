@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.api.v1 import router
 from app.config import get_settings
 from app.db import get_db
-from app.models import Base
+from app.models import AFKRunState, Base, ConfigProfile, Execution, Run
 from app.services.orchestrator import RunOrchestrator
 
 
@@ -187,6 +187,120 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
 
     assert report.status_code == 200
     assert report.json()["run_id"] == run_id
+
+
+def test_resume_continues_from_checkpoint_without_duplicate_executions(integrated_client) -> None:
+    client, testing_session = integrated_client
+    settings = get_settings()
+    settings.quick_attack_count = 12
+
+    session = client.post("/v1/sessions", json={"name": "resume-integration"}, headers=_headers())
+    assert session.status_code == 200
+    session_id = session.json()["id"]
+
+    profile = client.post(
+        "/v1/config-profiles",
+        json={
+            "session_id": session_id,
+            "name": "resume-profile",
+            "target_config": {
+                "target_type": "synthetic",
+                "endpoint": None,
+                "auth_headers": {},
+                "model": "gpt-4.1-mini",
+                "extra": {},
+            },
+            "benchmark_config": {
+                "dataset_name": "autoredteam-core",
+                "taxonomy": ["prompt_injection", "hallucination", "tool_misuse"],
+                "curated_ratio": 0.5,
+                "generated_ratio": 0.5,
+                "seed": 11,
+                "slices": ["default"],
+            },
+            "scoring_config": {
+                "strictness_mode": "balanced",
+                "weak_supervision": True,
+                "active_adjudication": True,
+                "gate_thresholds": {
+                    "asr_max": 1.0,
+                    "hallucination_max": 1.0,
+                    "toxicity_max": 1.0,
+                    "tool_misuse_max": 1.0,
+                    "composite_min": 0,
+                    "max_regression_delta": 1.0,
+                },
+                "weights": {"asr": 0.4, "hallucination": 0.3, "toxicity": 0.2, "tool_misuse": 0.1},
+            },
+            "runtime_config": {
+                "preset": "quick",
+                "max_concurrency": 4,
+                "budget_usd": 0.00001,
+                "cost_tracking_enabled": True,
+                "abort_on_cost_breach": True,
+                "deterministic_seed": 11,
+                "live_mode": False,
+            },
+        },
+        headers=_headers(),
+    )
+    assert profile.status_code == 200
+    profile_id = profile.json()["id"]
+
+    run = client.post(
+        "/v1/runs",
+        json={
+            "session_id": session_id,
+            "config_profile_id": profile_id,
+            "preset": "quick",
+            "mode": "deterministic_ci",
+            "strictness": "balanced",
+            "execute_now": False,
+        },
+        headers=_headers(),
+    )
+    assert run.status_code == 200
+    run_id = run.json()["id"]
+
+    db = testing_session()
+    try:
+        orchestrator = RunOrchestrator(db)
+        orchestrator.execute_run(run_id)
+
+        row = db.query(Run).filter(Run.id == run_id).one()
+        assert row.status == "interrupted"
+        assert 0 < row.completed_attacks < row.total_attacks
+
+        execution_count_after_interrupt = db.query(Execution).filter(Execution.run_id == run_id).count()
+        assert execution_count_after_interrupt == row.completed_attacks
+
+        profile_row = db.query(ConfigProfile).filter(ConfigProfile.id == profile_id).one()
+        runtime_config = dict(profile_row.runtime_config)
+        runtime_config["budget_usd"] = 10.0
+        runtime_config["abort_on_cost_breach"] = False
+        profile_row.runtime_config = runtime_config
+
+        row.status = "queued"
+        db.add(
+            AFKRunState(
+                run_id=run_id,
+                thread_id=row.thread_id or f"run-{run_id}",
+                state="resumed",
+                step=0,
+                checkpoint={"test_resume": True},
+            )
+        )
+        db.commit()
+
+        orchestrator.execute_run(run_id)
+
+        resumed = db.query(Run).filter(Run.id == run_id).one()
+        final_execution_count = db.query(Execution).filter(Execution.run_id == run_id).count()
+        assert resumed.status == "completed"
+        assert resumed.completed_attacks == resumed.total_attacks
+        assert final_execution_count == resumed.total_attacks
+    finally:
+        db.close()
 
 
 @pytest.mark.nightly

@@ -325,7 +325,7 @@ def stream_run_events(run_id: str, db: Session = Depends(get_db)) -> StreamingRe
 
     def event_generator() -> str:
         last_id = 0
-        terminal_states = {"completed", "failed"}
+        terminal_states = {"completed", "failed", "interrupted"}
         stream_db = SessionLocal()
         try:
             while True:

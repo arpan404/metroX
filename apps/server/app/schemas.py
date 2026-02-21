@@ -21,6 +21,11 @@ class SessionOut(BaseModel):
     created_at: datetime
 
 
+class SessionListOut(BaseModel):
+    sessions: list[SessionOut]
+    total: int
+
+
 class GateThresholds(BaseModel):
     asr_max: float = 0.25
     hallucination_max: float = 0.20
@@ -56,6 +61,10 @@ class TargetConfig(BaseModel):
     base_url: str | None = None
     api_key_ref: str | None = None
     agent_index_url: str | None = None
+    agent_id: str | None = None
+    agent_name: str | None = None
+    agent_description: str | None = None
+    agent_url: str | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -258,6 +267,11 @@ class ConfigProfileOut(BaseModel):
     created_at: datetime
 
 
+class ConfigProfileListOut(BaseModel):
+    profiles: list[ConfigProfileOut]
+    total: int
+
+
 class RunCreate(BaseModel):
     session_id: str
     config_profile_id: str
@@ -286,6 +300,12 @@ class RunOut(BaseModel):
     gate_result: dict[str, Any]
     cost_gate_result: dict[str, Any]
     created_at: datetime
+
+
+class RunListOut(BaseModel):
+    runs: list[RunOut]
+    total: int
+    status_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class EventOut(BaseModel):

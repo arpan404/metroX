@@ -152,6 +152,44 @@ class RunOrchestrator:
             .all()
         )
         processed_case_ids = {attack_case_id for _, attack_case_id in existing_executions}
+        benchmark_cfg_base = profile.benchmark_config if isinstance(profile.benchmark_config, dict) else {}
+        orchestration_cfg = (
+            benchmark_cfg_base.get("afk_orchestration")
+            if isinstance(benchmark_cfg_base.get("afk_orchestration"), dict)
+            else {}
+        )
+        threading_cfg = orchestration_cfg.get("threading") if isinstance(orchestration_cfg.get("threading"), dict) else {}
+        thread_strategy = str(threading_cfg.get("strategy") or "per_attack_type").strip() or "per_attack_type"
+        target_thread_ids: dict[str, str] = {}
+        if latest_state and isinstance(latest_state.checkpoint, dict):
+            restored = latest_state.checkpoint.get("target_thread_ids")
+            if isinstance(restored, dict):
+                target_thread_ids = {
+                    str(key): str(value)
+                    for key, value in restored.items()
+                    if str(key).strip() and str(value).strip()
+                }
+        if resume_requested and not target_thread_ids:
+            prior_states = (
+                self.db.query(AFKRunState)
+                .filter(AFKRunState.run_id == run.id)
+                .order_by(AFKRunState.created_at.desc())
+                .limit(20)
+                .all()
+            )
+            for state_row in prior_states:
+                if not isinstance(state_row.checkpoint, dict):
+                    continue
+                restored = state_row.checkpoint.get("target_thread_ids")
+                if not isinstance(restored, dict):
+                    continue
+                target_thread_ids = {
+                    str(key): str(value)
+                    for key, value in restored.items()
+                    if str(key).strip() and str(value).strip()
+                }
+                if target_thread_ids:
+                    break
 
         if run.config_snapshot_id:
             snapshot = self.db.query(ConfigSnapshot).filter(ConfigSnapshot.id == run.config_snapshot_id).one_or_none()
@@ -194,12 +232,17 @@ class RunOrchestrator:
                 checkpoint={
                     "resume_requested": resume_requested,
                     "already_processed": len(processed_case_ids),
+                    "thread_strategy": thread_strategy,
+                    "target_thread_ids": target_thread_ids,
                 },
             )
         )
         self.db.commit()
 
         try:
+            target_cfg = profile.target_config if isinstance(profile.target_config, dict) else {}
+            target_extra = target_cfg.get("extra") if isinstance(target_cfg.get("extra"), dict) else {}
+            normalized_target_type = normalize_target_type(target_cfg.get("target_type", "managed_llm_runtime"))
             benchmark_snapshot = (
                 self.db.query(BenchmarkSnapshot)
                 .filter(BenchmarkSnapshot.run_id == run.id)
@@ -218,6 +261,22 @@ class RunOrchestrator:
             if not attack_cases:
                 attack_count = self._attack_count(run.preset)
                 benchmark_cfg = self._resolve_orchestration_credentials(profile.benchmark_config, run.id)
+                benchmark_cfg["target_type"] = normalized_target_type
+                benchmark_cfg["target_under_test"] = {
+                    "agent_id": target_cfg.get("agent_id") or target_extra.get("agent_id"),
+                    "agent_name": target_cfg.get("agent_name") or target_extra.get("agent_name"),
+                    "agent_description": target_cfg.get("agent_description")
+                    or target_extra.get("agent_description"),
+                    "agent_url": target_cfg.get("agent_url")
+                    or target_cfg.get("endpoint")
+                    or target_extra.get("agent_url"),
+                    "endpoint": target_cfg.get("endpoint"),
+                }
+                benchmark_cfg["threading"] = {
+                    "strategy": thread_strategy,
+                    "run_thread_id": run.thread_id,
+                    "target_thread_ids": target_thread_ids,
+                }
                 benchmark_snapshot, attack_cases = create_benchmark(
                     self.db,
                     run_id=run.id,
@@ -238,7 +297,6 @@ class RunOrchestrator:
                 data={"snapshot_id": benchmark_snapshot.id, "count": len(attack_cases)},
             )
 
-            target_cfg = profile.target_config
             resolved_api_key = self._resolve_credential(target_cfg, run.id)
             adapter = get_adapter(target_cfg.get("target_type", "managed_llm_runtime"))
             runtime_cfg = profile.runtime_config or {}
@@ -300,7 +358,12 @@ class RunOrchestrator:
                         **target_cfg.get("extra", {}),
                         "provider_name": target_cfg.get("provider_name", target_cfg.get("target_type", "unknown")),
                         "base_url": target_cfg.get("base_url"),
-                        "thread_id": run.thread_id,
+                        "thread_id": (
+                            target_thread_ids.get(case.attack_type, "")
+                            if thread_strategy == "per_attack_type"
+                            else run.thread_id
+                        )
+                        or None,
                         "policy_profile": policy_cfg["name"],
                         "allowed_tools": sorted(policy_cfg["allowed_tools"]),
                         "afk_resume": resume_requested
@@ -315,6 +378,20 @@ class RunOrchestrator:
                     afk_run_id = response.raw_payload.get("run_id")
                     if afk_run_id:
                         last_afk_run_id = afk_run_id
+                    response_thread_id = str(
+                        response.raw_payload.get("thread_id")
+                        or (
+                            response.raw_payload.get("raw_payload", {}).get("thread_id")
+                            if isinstance(response.raw_payload.get("raw_payload"), dict)
+                            else ""
+                        )
+                        or ""
+                    ).strip()
+                    if response_thread_id:
+                        if thread_strategy == "per_attack_type":
+                            target_thread_ids[case.attack_type] = response_thread_id
+                        else:
+                            run.thread_id = response_thread_id
 
                 execution = Execution(
                     run_id=run.id,
@@ -422,6 +499,8 @@ class RunOrchestrator:
                                 "spent_usd": run.budget_spent_usd,
                                 "projected_final_usd": run.estimated_final_cost_usd,
                                 "last_afk_run_id": last_afk_run_id,
+                                "thread_strategy": thread_strategy,
+                                "target_thread_ids": target_thread_ids,
                             },
                         )
                     )
@@ -455,6 +534,8 @@ class RunOrchestrator:
                             "spent_usd": run.budget_spent_usd,
                             "budget_usd": budget_usd,
                             "last_afk_run_id": last_afk_run_id,
+                            "thread_strategy": thread_strategy,
+                            "target_thread_ids": target_thread_ids,
                         },
                     )
                 )
@@ -511,6 +592,8 @@ class RunOrchestrator:
                         "completed_attacks": run.completed_attacks,
                         "total_attacks": run.total_attacks,
                         "last_afk_run_id": last_afk_run_id,
+                        "thread_strategy": thread_strategy,
+                        "target_thread_ids": target_thread_ids,
                     },
                 )
             )
@@ -536,7 +619,12 @@ class RunOrchestrator:
                         thread_id=run.thread_id or f"run-{run.id}",
                         state="failed",
                         step=99,
-                        checkpoint={"error": str(exc), "last_afk_run_id": last_afk_run_id},
+                        checkpoint={
+                            "error": str(exc),
+                            "last_afk_run_id": last_afk_run_id,
+                            "thread_strategy": thread_strategy,
+                            "target_thread_ids": target_thread_ids,
+                        },
                     )
                 )
                 self.db.commit()

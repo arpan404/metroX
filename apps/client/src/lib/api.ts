@@ -5,6 +5,7 @@ import type {
   AttackSummaryPayload,
   ClusterPayload,
   ConfigProfileOut,
+  ConfigProfileListPayload,
   CostSummaryPayload,
   CostTimeseriesPayload,
   DetectorVote,
@@ -28,8 +29,11 @@ import type {
   RiskCards,
   RunTelemetryPayload,
   RunOut,
+  RunListPayload,
   Scorecard,
+  SessionListPayload,
   SessionOut,
+  TestAgentCatalog,
 } from './types'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
@@ -109,6 +113,19 @@ export const api = {
     return request<SessionOut>(`/v1/sessions/${sessionId}`)
   },
 
+  listSessions(params?: { limit?: number; offset?: number; owner?: string }) {
+    const query = new URLSearchParams()
+    if (params?.limit != null) query.set('limit', String(params.limit))
+    if (params?.offset != null) query.set('offset', String(params.offset))
+    if (params?.owner) query.set('owner', params.owner)
+    const suffix = query.toString()
+    return request<SessionListPayload>(`/v1/sessions${suffix ? `?${suffix}` : ''}`)
+  },
+
+  listTestAgentsCatalog() {
+    return request<TestAgentCatalog>('/v1/test-agents/catalog')
+  },
+
   /* ---------------------------------------------------------------- */
   /*  Config Profiles                                                 */
   /* ---------------------------------------------------------------- */
@@ -122,6 +139,15 @@ export const api = {
 
   getConfigProfile(profileId: string) {
     return request<ConfigProfileOut>(`/v1/config-profiles/${profileId}`)
+  },
+
+  listConfigProfiles(params?: { session_id?: string; limit?: number; offset?: number }) {
+    const query = new URLSearchParams()
+    if (params?.session_id) query.set('session_id', params.session_id)
+    if (params?.limit != null) query.set('limit', String(params.limit))
+    if (params?.offset != null) query.set('offset', String(params.offset))
+    const suffix = query.toString()
+    return request<ConfigProfileListPayload>(`/v1/config-profiles${suffix ? `?${suffix}` : ''}`)
   },
 
   /* ---------------------------------------------------------------- */
@@ -294,6 +320,23 @@ export const api = {
 
   getRun(runId: string) {
     return request<RunOut>(`/v1/runs/${runId}`)
+  },
+
+  listRuns(params?: {
+    session_id?: string
+    config_profile_id?: string
+    status?: string
+    limit?: number
+    offset?: number
+  }) {
+    const query = new URLSearchParams()
+    if (params?.session_id) query.set('session_id', params.session_id)
+    if (params?.config_profile_id) query.set('config_profile_id', params.config_profile_id)
+    if (params?.status) query.set('status', params.status)
+    if (params?.limit != null) query.set('limit', String(params.limit))
+    if (params?.offset != null) query.set('offset', String(params.offset))
+    const suffix = query.toString()
+    return request<RunListPayload>(`/v1/runs${suffix ? `?${suffix}` : ''}`)
   },
 
   getRunEventsRecent(runId: string, limit = 200) {

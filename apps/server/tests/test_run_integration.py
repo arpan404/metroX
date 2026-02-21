@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.models import AFKRunState, Base, ConfigProfile, Execution, Run
 from app.pipeline.orchestrator import RunOrchestrator
+from app.runtime.adapters import TargetResponse
 
 
 @pytest.fixture
@@ -81,6 +82,8 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
                 "generated_ratio": 0.5,
                 "seed": 9,
                 "slices": ["default"],
+                "agentic_attacking": False,
+                "agentic_provider": "afk_live",
             },
             "scoring_config": {
                 "strictness_mode": "balanced",
@@ -205,10 +208,31 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
     assert isinstance(events.json()["events"], list)
 
 
-def test_resume_continues_from_checkpoint_without_duplicate_executions(integrated_client) -> None:
+def test_resume_continues_from_checkpoint_without_duplicate_executions(integrated_client, monkeypatch) -> None:
     client, testing_session = integrated_client
     settings = get_settings()
     settings.quick_attack_count = 12
+
+    def _fake_http_invoke(self, request):
+        thread_in = str(request.extra.get("thread_id") or f"run-{request.run_id}")
+        thread_out = f"{thread_in}-next"
+        return TargetResponse(
+            response_text="ok",
+            retrieved_docs=[],
+            tool_events=[],
+            latency_ms=5.0,
+            token_usage={
+                "prompt_tokens": 200.0,
+                "completion_tokens": 100.0,
+                "total_tokens": 300.0,
+                "total_cost_usd": 0.15,
+            },
+            raw_payload={"thread_id": thread_out},
+            provider_name="agent_http",
+            model_resolved=request.model,
+        )
+
+    monkeypatch.setattr("app.runtime.adapters.HttpTargetAdapter.invoke", _fake_http_invoke)
 
     session = client.post("/v1/sessions", json={"name": "resume-integration"}, headers=_headers())
     assert session.status_code == 200
@@ -220,10 +244,11 @@ def test_resume_continues_from_checkpoint_without_duplicate_executions(integrate
             "session_id": session_id,
             "name": "resume-profile",
             "target_config": {
-                "target_type": "managed_llm_runtime",
-                "endpoint": None,
+                "target_type": "agent_http",
+                "endpoint": "http://127.0.0.1:8001/agents/refund/chat",
                 "auth_headers": {},
                 "model": "gpt-4.1-mini",
+                "agent_id": "refund",
                 "extra": {},
             },
             "benchmark_config": {
@@ -233,6 +258,9 @@ def test_resume_continues_from_checkpoint_without_duplicate_executions(integrate
                 "generated_ratio": 0.5,
                 "seed": 11,
                 "slices": ["default"],
+                "agentic_attacking": False,
+                "agentic_provider": "afk_live",
+                "afk_orchestration": {"threading": {"enabled": True, "strategy": "per_attack_type"}},
             },
             "scoring_config": {
                 "strictness_mode": "balanced",
@@ -289,6 +317,15 @@ def test_resume_continues_from_checkpoint_without_duplicate_executions(integrate
 
         execution_count_after_interrupt = db.query(Execution).filter(Execution.run_id == run_id).count()
         assert execution_count_after_interrupt == row.completed_attacks
+        interrupted_state = (
+            db.query(AFKRunState)
+            .filter(AFKRunState.run_id == run_id, AFKRunState.state == "interrupted")
+            .order_by(AFKRunState.created_at.desc())
+            .first()
+        )
+        assert interrupted_state is not None
+        assert isinstance(interrupted_state.checkpoint.get("target_thread_ids"), dict)
+        assert interrupted_state.checkpoint["target_thread_ids"]
 
         profile_row = db.query(ConfigProfile).filter(ConfigProfile.id == profile_id).one()
         runtime_config = dict(profile_row.runtime_config)
@@ -315,6 +352,17 @@ def test_resume_continues_from_checkpoint_without_duplicate_executions(integrate
         assert resumed.status == "completed"
         assert resumed.completed_attacks == resumed.total_attacks
         assert final_execution_count == resumed.total_attacks
+        completed_state = (
+            db.query(AFKRunState)
+            .filter(AFKRunState.run_id == run_id, AFKRunState.state == "completed")
+            .order_by(AFKRunState.created_at.desc())
+            .first()
+        )
+        assert completed_state is not None
+        completed_threads = completed_state.checkpoint.get("target_thread_ids")
+        assert isinstance(completed_threads, dict)
+        assert completed_threads
+        assert set(interrupted_state.checkpoint["target_thread_ids"]).issubset(set(completed_threads))
     finally:
         db.close()
 

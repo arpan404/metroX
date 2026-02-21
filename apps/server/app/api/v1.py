@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from datetime import timedelta
 from uuid import uuid4
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func
@@ -45,6 +46,7 @@ from app.schemas import (
     AdjudicationOut,
     CompareOut,
     ConfigProfileCreate,
+    ConfigProfileListOut,
     ConfigProfileOut,
     DriftOut,
     FeatureOut,
@@ -60,6 +62,7 @@ from app.schemas import (
     ProviderValidateRequest,
     RiskCardOut,
     RunCreate,
+    RunListOut,
     RunOut,
     RunReportOut,
     SecretKeyCreate,
@@ -68,6 +71,7 @@ from app.schemas import (
     SecretAccessAuditOut,
     ScoreCardOut,
     SessionCreate,
+    SessionListOut,
     SessionOut,
 )
 from app.stats.clustering import list_clusters
@@ -118,10 +122,59 @@ def _redact_target_config(target_config: dict) -> dict:
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(auth_dependency)])
 _AGENT_INDEX_REGISTRY: dict[str, dict[str, object]] = {}
+_TEST_AGENTS_DIR = Path(__file__).resolve().parents[3] / "test-agents" / "agents"
 
 
 def _coerce_agent_index_url(url: str) -> str:
     return str(url or "").strip().rstrip("/")
+
+
+def _coerce_agent_url(url: str) -> str:
+    return str(url or "").strip()
+
+
+def _test_agent_chat_url(base_url: str, agent_id: str) -> str:
+    normalized_base = str(base_url or "").strip().rstrip("/")
+    normalized_agent = str(agent_id or "").strip().strip("/")
+    if not normalized_base or not normalized_agent:
+        return ""
+    return f"{normalized_base}/agents/{normalized_agent}/chat"
+
+
+def _display_agent_name(agent_id: str) -> str:
+    return str(agent_id or "").strip().replace("-", " ").replace("_", " ").title()
+
+
+def _read_runtime_test_agents(base_url: str, timeout_s: float) -> list[str]:
+    endpoint = f"{str(base_url).rstrip('/')}/agents/"
+    with httpx.Client(timeout=max(float(timeout_s), 1.0)) as client:
+        response = client.get(endpoint)
+        response.raise_for_status()
+        payload = response.json()
+    rows = payload.get("agents")
+    if not isinstance(rows, list):
+        return []
+    out: list[str] = []
+    for row in rows:
+        if isinstance(row, str):
+            candidate = row.strip()
+        elif isinstance(row, dict):
+            candidate = str(row.get("id") or row.get("name") or "").strip()
+        else:
+            candidate = ""
+        if candidate:
+            out.append(candidate)
+    return sorted(set(out))
+
+
+def _read_filesystem_test_agents() -> list[str]:
+    if not _TEST_AGENTS_DIR.exists():
+        return []
+    out: list[str] = []
+    for path in _TEST_AGENTS_DIR.iterdir():
+        if path.is_file() and path.suffix == ".py" and not path.name.startswith("_"):
+            out.append(path.stem.replace("_", "-"))
+    return sorted(set(out))
 
 
 def _agent_index_invoke_url(index_url: str) -> str:
@@ -298,6 +351,28 @@ def get_afk_capabilities() -> dict:
             },
         },
     }
+
+
+@router.get("/test-agents/catalog")
+def get_test_agents_catalog() -> dict:
+    settings = get_settings()
+    base_url = str(settings.test_agents_base_url or "http://127.0.0.1:8001").strip().rstrip("/")
+    source = "runtime_api"
+    try:
+        agent_ids = _read_runtime_test_agents(base_url, timeout_s=float(settings.test_agents_timeout_s))
+    except Exception:
+        source = "filesystem_fallback"
+        agent_ids = _read_filesystem_test_agents()
+
+    agents = [
+        {
+            "id": agent_id,
+            "name": _display_agent_name(agent_id),
+            "chat_url": _test_agent_chat_url(base_url, agent_id),
+        }
+        for agent_id in agent_ids
+    ]
+    return {"base_url": base_url, "source": source, "agents": agents}
 
 
 @router.get("/agent-index")
@@ -743,6 +818,30 @@ def create_session(payload: SessionCreate, db: Session = Depends(get_db)) -> Ses
     return SessionOut.model_validate(row, from_attributes=True)
 
 
+@router.get("/sessions", response_model=SessionListOut)
+def list_sessions(
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    owner: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> SessionListOut:
+    query = db.query(EvaluationSession)
+    normalized_owner = str(owner or "").strip()
+    if normalized_owner:
+        query = query.filter(EvaluationSession.owner == normalized_owner)
+    total = query.count()
+    rows = (
+        query.order_by(EvaluationSession.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return SessionListOut(
+        sessions=[SessionOut.model_validate(row, from_attributes=True) for row in rows],
+        total=total,
+    )
+
+
 @router.get("/sessions/{session_id}", response_model=SessionOut)
 def get_session(session_id: str, db: Session = Depends(get_db)) -> SessionOut:
     row = db.query(EvaluationSession).filter(EvaluationSession.id == session_id).one_or_none()
@@ -756,6 +855,7 @@ def create_profile(payload: ConfigProfileCreate, db: Session = Depends(get_db)) 
     session = db.query(EvaluationSession).filter(EvaluationSession.id == payload.session_id).one_or_none()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    settings = get_settings()
 
     orchestration_cfg = payload.benchmark_config.afk_orchestration.model_dump()
     orchestration_meta: dict[str, str] | None = None
@@ -791,9 +891,38 @@ def create_profile(payload: ConfigProfileCreate, db: Session = Depends(get_db)) 
             detail="Legacy target_type is not accepted on write. Use managed_llm_runtime or managed_agent_runtime.",
         )
     target_config = payload.target_config.model_dump()
+    agent_id = str(payload.target_config.agent_id or "").strip()
+    agent_name = str(payload.target_config.agent_name or "").strip()
+    agent_description = str(payload.target_config.agent_description or "").strip()
+    agent_url = _coerce_agent_url(str(payload.target_config.agent_url or ""))
     agent_index_url = _coerce_agent_index_url(str(payload.target_config.agent_index_url or ""))
-    if agent_index_url:
+    if agent_id and not agent_url:
+        agent_url = _test_agent_chat_url(settings.test_agents_base_url, agent_id)
+    if agent_url:
         normalized_target_type = "agent_http"
+        target_config["agent_id"] = agent_id or None
+        target_config["agent_url"] = agent_url
+        target_config["endpoint"] = agent_url
+        target_config["base_url"] = None
+        target_config["api_key_ref"] = None
+        target_config["agent_index_url"] = None
+        extra = target_config.get("extra")
+        if not isinstance(extra, dict):
+            extra = {}
+        if agent_id:
+            extra["agent_id"] = agent_id
+        extra["agent_url"] = agent_url
+        if agent_name:
+            target_config["agent_name"] = agent_name
+            extra["agent_name"] = agent_name
+        if agent_description:
+            target_config["agent_description"] = agent_description
+            extra["agent_description"] = agent_description
+        target_config["extra"] = extra
+    elif agent_index_url:
+        normalized_target_type = "agent_http"
+        if agent_id:
+            target_config["agent_id"] = agent_id
         target_config["agent_index_url"] = agent_index_url
         target_config["endpoint"] = _agent_index_invoke_url(agent_index_url)
         target_config["base_url"] = None
@@ -801,7 +930,29 @@ def create_profile(payload: ConfigProfileCreate, db: Session = Depends(get_db)) 
         extra = target_config.get("extra")
         if not isinstance(extra, dict):
             extra = {}
+        if agent_id:
+            extra["agent_id"] = agent_id
         extra["agent_index_url"] = agent_index_url
+        if agent_name:
+            target_config["agent_name"] = agent_name
+            extra["agent_name"] = agent_name
+        if agent_description:
+            target_config["agent_description"] = agent_description
+            extra["agent_description"] = agent_description
+        target_config["extra"] = extra
+    elif agent_id or agent_name or agent_description:
+        extra = target_config.get("extra")
+        if not isinstance(extra, dict):
+            extra = {}
+        if agent_id:
+            target_config["agent_id"] = agent_id
+            extra["agent_id"] = agent_id
+        if agent_name:
+            target_config["agent_name"] = agent_name
+            extra["agent_name"] = agent_name
+        if agent_description:
+            target_config["agent_description"] = agent_description
+            extra["agent_description"] = agent_description
         target_config["extra"] = extra
     target_config["target_type"] = normalized_target_type
 
@@ -823,6 +974,33 @@ def create_profile(payload: ConfigProfileCreate, db: Session = Depends(get_db)) 
     db.commit()
     db.refresh(row)
     return ConfigProfileOut.model_validate(row, from_attributes=True)
+
+
+@router.get("/config-profiles", response_model=ConfigProfileListOut)
+def list_profiles(
+    session_id: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> ConfigProfileListOut:
+    query = db.query(ConfigProfile)
+    normalized_session_id = str(session_id or "").strip()
+    if normalized_session_id:
+        query = query.filter(ConfigProfile.session_id == normalized_session_id)
+    total = query.count()
+    rows = (
+        query.order_by(ConfigProfile.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    profiles: list[ConfigProfileOut] = []
+    for row in rows:
+        if isinstance(row.target_config, dict):
+            current = str(row.target_config.get("target_type", "")).strip()
+            row.target_config = {**row.target_config, "target_type": normalize_target_type(current)}
+        profiles.append(ConfigProfileOut.model_validate(row, from_attributes=True))
+    return ConfigProfileListOut(profiles=profiles, total=total)
 
 
 @router.get("/config-profiles/{profile_id}", response_model=ConfigProfileOut)
@@ -899,6 +1077,53 @@ def create_run(
             background_tasks.add_task(_run_pipeline_background, run.id)
 
     return RunOut.model_validate(run, from_attributes=True)
+
+
+@router.get("/runs", response_model=RunListOut)
+def list_runs(
+    session_id: str | None = Query(default=None),
+    config_profile_id: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> RunListOut:
+    base_query = db.query(Run)
+    normalized_session_id = str(session_id or "").strip()
+    normalized_profile_id = str(config_profile_id or "").strip()
+    if normalized_session_id:
+        base_query = base_query.filter(Run.session_id == normalized_session_id)
+    if normalized_profile_id:
+        base_query = base_query.filter(Run.config_profile_id == normalized_profile_id)
+
+    status_counts_rows = (
+        base_query.with_entities(Run.status, func.count(Run.id))
+        .group_by(Run.status)
+        .all()
+    )
+    status_counts = {str(run_status): int(count) for run_status, count in status_counts_rows}
+
+    query = base_query
+    raw_status = str(status or "").strip()
+    if raw_status:
+        status_values = [value.strip() for value in raw_status.split(",") if value.strip()]
+        if len(status_values) == 1:
+            query = query.filter(Run.status == status_values[0])
+        elif status_values:
+            query = query.filter(Run.status.in_(status_values))
+
+    total = query.count()
+    rows = (
+        query.order_by(Run.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return RunListOut(
+        runs=[RunOut.model_validate(row, from_attributes=True) for row in rows],
+        total=total,
+        status_counts=status_counts,
+    )
 
 
 @router.get("/queue/stats")

@@ -125,7 +125,7 @@ export type WorkspaceState = {
 
 export type WorkspaceAction =
   | { type: 'SET_SESSION'; sessionId: string; configProfileId?: string }
-  | { type: 'SET_CONFIG_PROFILE'; configProfileId: string }
+  | { type: 'SET_CONFIG_PROFILE'; configProfileId: string | null }
   | { type: 'SET_RUN_ID'; runId: string | null }
   | { type: 'SET_BASELINE_RUN_ID'; runId: string | null }
   | { type: 'SET_CANVAS_MODE'; mode: CanvasMode }

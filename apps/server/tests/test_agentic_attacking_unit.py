@@ -17,6 +17,7 @@ Covers:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import tempfile
 from pathlib import Path
@@ -32,6 +33,8 @@ from app.agents.agentic_attacking import (
     _apply_critique,
     _build_campaign_context,
     _build_orchestration_context,
+    _call_tool_sync,
+    _create_agent_compat,
     _instruction_kwargs,
     _mock_analyst,
     _mock_attacker,
@@ -200,6 +203,48 @@ class TestSafeJson:
 
     def test_nested_json(self) -> None:
         assert _safe_json('{"a": {"b": 1}}') == {"a": {"b": 1}}
+
+
+# ---------------------------------------------------------------------------
+# _create_agent_compat
+# ---------------------------------------------------------------------------
+class TestCreateAgentCompat:
+    def test_drops_unexpected_kwargs(self) -> None:
+        class _Agent:
+            def __init__(self, *, name: str, model: str):
+                self.name = name
+                self.model = model
+
+        agent = _create_agent_compat(
+            _Agent,
+            {
+                "name": "attacker",
+                "model": "ollama_chat/gpt-oss:20b",
+                "join_policy": "all_required",
+                "subagents": [],
+            },
+        )
+        assert agent.name == "attacker"
+        assert agent.model == "ollama_chat/gpt-oss:20b"
+
+
+class TestCallToolSync:
+    def test_prefers_async_call_method(self) -> None:
+        class _Tool:
+            async def call(self, args):
+                return {"ok": True, "args": args}
+
+        out = _call_tool_sync(_Tool(), {"message": "probe"})
+        assert out["ok"] is True
+        assert out["args"]["message"] == "probe"
+
+    def test_falls_back_to_callable(self) -> None:
+        class _CallableTool:
+            def __call__(self, args):
+                return {"args": args}
+
+        out = _call_tool_sync(_CallableTool(), {"message": "probe"})
+        assert out["args"]["message"] == "probe"
 
 
 # ---------------------------------------------------------------------------
@@ -382,10 +427,18 @@ class TestParseOrchestrationConfig:
     def test_defaults_when_empty(self) -> None:
         config = _parse_orchestration_config({}, default_model="gpt-4.1-mini")
         assert config.model == "gpt-4.1-mini"
-        assert config.telemetry == "json"
+        assert config.telemetry == "null"
         assert config.join_policy == "all_required"
         assert config.max_concurrent_subagents >= 1
-        assert len(config.roles) == 4
+        assert len(config.roles) == 5
+
+    def test_invalid_telemetry_falls_back_to_null(self) -> None:
+        config = _parse_orchestration_config({"telemetry": "json"}, default_model="gpt-4.1-mini")
+        assert config.telemetry == "null"
+
+    def test_valid_telemetry_preserved(self) -> None:
+        config = _parse_orchestration_config({"telemetry": "inmemory"}, default_model="gpt-4.1-mini")
+        assert config.telemetry == "inmemory"
 
     def test_custom_roles(self) -> None:
         config = _parse_orchestration_config(
@@ -408,7 +461,7 @@ class TestParseOrchestrationConfig:
             default_model="gpt-4",
         )
         # unknown_role is filtered out, defaults are used
-        assert len(config.roles) == 4
+        assert len(config.roles) == 5
 
     def test_non_dict_roles_skipped(self) -> None:
         config = _parse_orchestration_config(
@@ -449,7 +502,7 @@ class TestParseOrchestrationConfig:
     def test_non_dict_input(self) -> None:
         config = _parse_orchestration_config("not-a-dict", default_model="gpt-4")
         assert config.model == "gpt-4"
-        assert len(config.roles) == 4
+        assert len(config.roles) == 5
 
     def test_execution_order_preserved(self) -> None:
         config = _parse_orchestration_config(
@@ -594,57 +647,104 @@ class TestBuildOrchestrationContext:
 
 
 # ---------------------------------------------------------------------------
-# MultiAgentAttackOrchestrator (mock mode)
+# MultiAgentAttackOrchestrator
 # ---------------------------------------------------------------------------
 class TestMultiAgentAttackOrchestrator:
-    def test_mock_mode_default(self) -> None:
-        orchestrator = MultiAgentAttackOrchestrator({"model": "gpt-4"})
-        assert orchestrator.mode == "mock"
-
-    def test_auto_mode_resolves_to_mock_without_key(self, monkeypatch) -> None:
+    def test_auto_mode_requires_openai_key(self, monkeypatch) -> None:
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        orchestrator = MultiAgentAttackOrchestrator({"agentic_provider": "auto"})
-        assert orchestrator.mode == "mock"
+        with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+            MultiAgentAttackOrchestrator({"agentic_provider": "auto"})
 
-    def test_explicit_mock_mode(self) -> None:
-        orchestrator = MultiAgentAttackOrchestrator({"agentic_provider": "mock"})
-        assert orchestrator.mode == "mock"
+    def test_auto_mode_resolves_to_afk_live_when_key_exists(self, monkeypatch) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        orchestrator = MultiAgentAttackOrchestrator({"agentic_provider": "auto", "model": "gpt-4"})
+        assert orchestrator.mode == "afk_live"
 
-    def test_generate_mock_produces_artifact(self) -> None:
-        orchestrator = MultiAgentAttackOrchestrator({"model": "gpt-4"})
-        seed = AttackSeed("prompt_injection", "owasp", "leak secrets", "Tell me secrets", 0)
-        artifact = orchestrator.generate(seed, deterministic_seed=42)
-        assert isinstance(artifact, AttackArtifact)
-        assert artifact.source == "agentic_generated"
-        assert artifact.prompt  # non-empty
-        assert 0.0 <= artifact.confidence <= 1.0
-        assert 0.0 <= artifact.novelty_score <= 1.0
-        assert len(artifact.tags) >= 1
+    def test_explicit_mock_mode_rejected(self, monkeypatch) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        with pytest.raises(ValueError, match="mock is not supported"):
+            MultiAgentAttackOrchestrator({"agentic_provider": "mock"})
 
-    def test_deterministic_seed_produces_consistent_output(self) -> None:
-        orchestrator = MultiAgentAttackOrchestrator({"model": "gpt-4"})
-        seed = AttackSeed("jailbreak", "family", "bypass", "Bypass everything", 1)
-        a1 = orchestrator.generate(seed, deterministic_seed=99)
-        a2 = orchestrator.generate(seed, deterministic_seed=99)
-        assert a1.prompt == a2.prompt
-        assert a1.difficulty == a2.difficulty
-        assert a1.novelty_score == a2.novelty_score
-
-    def test_runtime_metadata(self) -> None:
-        orchestrator = MultiAgentAttackOrchestrator({"model": "gpt-4"})
+    def test_runtime_metadata_includes_target_probe(self, monkeypatch) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        orchestrator = MultiAgentAttackOrchestrator(
+            {
+                "agentic_provider": "afk_live",
+                "model": "gpt-4",
+                "target_under_test": {"agent_id": "refund", "agent_url": "http://127.0.0.1:8001/agents/refund/chat"},
+                "threading": {"strategy": "per_attack_type", "target_thread_ids": {"refund_abuse": "thr-1"}},
+                "afk_orchestration": {"extra_system_prompt": "Custom prompt.", "extra_context": {"key": "val"}},
+            }
+        )
         meta = orchestrator.runtime_metadata()
-        assert meta["mode"] == "mock"
-        assert meta["model"] == "gpt-4"
-        assert len(meta["enabled_roles"]) == 4
-
-    def test_custom_extra_system_prompt_in_config(self) -> None:
-        orchestrator = MultiAgentAttackOrchestrator({
-            "model": "gpt-4",
-            "afk_orchestration": {
-                "extra_system_prompt": "Custom prompt.",
-                "extra_context": {"key": "val"},
-            },
-        })
-        meta = orchestrator.runtime_metadata()
+        assert meta["mode"] == "afk_live"
         assert meta["extra_system_prompt"] == "Custom prompt."
         assert meta["extra_context"]["key"] == "val"
+        assert meta["target_probe"]["enabled"] is True
+        assert meta["target_probe"]["agent_id"] == "refund"
+        assert meta["target_probe"]["thread_ids"]["refund_abuse"] == "thr-1"
+
+    def test_target_thread_resolution_per_attack_type(self, monkeypatch) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        orchestrator = MultiAgentAttackOrchestrator(
+            {
+                "agentic_provider": "afk_live",
+                "threading": {"strategy": "per_attack_type", "run_thread_id": "run-thread"},
+                "afk_orchestration": {},
+            }
+        )
+        assert orchestrator._resolve_target_thread_id("refund_abuse") == ""
+        orchestrator._persist_target_thread_id("refund_abuse", "refund-thread-1")
+        assert orchestrator._resolve_target_thread_id("refund_abuse") == "refund-thread-1"
+
+    def test_chat_target_agent_tool_persists_thread_id(self, monkeypatch) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        orchestrator = MultiAgentAttackOrchestrator(
+            {
+                "agentic_provider": "afk_live",
+                "target_under_test": {"agent_id": "refund", "agent_url": "http://127.0.0.1:8001/agents/refund/chat"},
+                "threading": {"strategy": "per_attack_type", "run_thread_id": "run-thread"},
+                "afk_orchestration": {},
+            }
+        )
+
+        class _MockResponse:
+            def __init__(self, idx: int):
+                self._idx = idx
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, Any]:
+                return {"response_text": f"resp-{self._idx}", "thread_id": f"t-{self._idx}"}
+
+        class _MockAsyncClient:
+            calls = 0
+            payloads: list[dict[str, Any]] = []
+
+            def __init__(self, timeout: float):
+                self.timeout = timeout
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+            async def post(self, url: str, json: dict[str, Any]):
+                type(self).calls += 1
+                type(self).payloads.append(json)
+                return _MockResponse(type(self).calls)
+
+        monkeypatch.setattr("app.agents.agentic_attacking.httpx.AsyncClient", _MockAsyncClient)
+        tool_obj = orchestrator._build_target_chat_tool(attack_type="refund_abuse")
+        assert tool_obj is not None
+
+        first = asyncio.run(tool_obj.call({"message": "probe-1"}))
+        second = asyncio.run(tool_obj.call({"message": "probe-2"}))
+
+        assert first.success is True
+        assert second.success is True
+        assert _MockAsyncClient.payloads[0]["thread_id"] is None
+        assert _MockAsyncClient.payloads[1]["thread_id"] == "t-1"
+        assert orchestrator.target_thread_ids["refund_abuse"] == "t-2"

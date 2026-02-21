@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     credential_rotation_enforced: bool = Field(default=True)
 
     cors_allowed_origins: str = Field(default="http://localhost:3000,http://localhost:5173")
+    test_agents_base_url: str = Field(default="http://127.0.0.1:8001")
+    test_agents_timeout_s: float = Field(default=5.0)
 
     run_queue_enabled: bool = Field(default=True)
     run_queue_backend: str = Field(default="inprocess")

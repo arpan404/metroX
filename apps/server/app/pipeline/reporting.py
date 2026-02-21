@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models import ReportArtifact, Run, ScoreCard
-from app.services.risk import risk_cards
+from app.stats.risk import risk_cards
 
 
 def generate_markdown_report(db: Session, run_id: str) -> tuple[str, str]:

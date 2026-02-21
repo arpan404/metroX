@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 import httpx
 
 from app.config import get_settings
-from app.services.policy import policy_decision_for_tool, resolve_policy_config
+from app.runtime.policy import policy_decision_for_tool, resolve_policy_config
 
 
 @dataclass

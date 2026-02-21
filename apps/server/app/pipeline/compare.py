@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models import Comparison, Detection, Execution, ScoreCard
-from app.services.common import benjamini_hochberg, proportion_test
+from app.utils.common import benjamini_hochberg, proportion_test
 
 FLAG_BY_METRIC = {
     "asr": None,

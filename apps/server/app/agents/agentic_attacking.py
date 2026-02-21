@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.services.common import seeded_random
+from app.utils.common import seeded_random
 
 DEFAULT_ROLE_INSTRUCTIONS: dict[str, str] = {
     "attacker": (

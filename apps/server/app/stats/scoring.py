@@ -6,7 +6,7 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.models import Detection, Execution, Run, RunCostAggregate, ScoreCard, StatisticalTest
-from app.services.common import bootstrap_ci
+from app.utils.common import bootstrap_ci
 
 METRIC_KEYS = [
     "asr",

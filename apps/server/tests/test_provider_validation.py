@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from app.services import providers
+from app.runtime import providers
 
 
 @pytest.fixture(autouse=True)

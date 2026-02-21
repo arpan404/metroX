@@ -10,7 +10,7 @@ from starlette.requests import Request
 from app.api.v1 import router as v1_router
 from app.db import init_db
 from app.observability import METRICS, configure_logging, log_request_event
-from app.services.run_queue import RUN_QUEUE
+from app.runtime.run_queue import RUN_QUEUE
 
 app = FastAPI(
     title="MetroX API",

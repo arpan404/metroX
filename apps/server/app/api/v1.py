@@ -65,24 +65,24 @@ from app.schemas import (
     SessionCreate,
     SessionOut,
 )
-from app.services.clustering import list_clusters
-from app.services.compare import compare_runs
-from app.services.costing import cost_timeseries, pricing_profile_payload, rebuild_run_cost_aggregate, upsert_pricing_profile
-from app.services.drift import drift_payload
-from app.services.features import feature_table_for_run
-from app.services.mitigation import create_mitigation_experiment, mitigation_payload
-from app.services.orchestration_profiles import (
+from app.stats.clustering import list_clusters
+from app.pipeline.compare import compare_runs
+from app.pipeline.costing import cost_timeseries, pricing_profile_payload, rebuild_run_cost_aggregate, upsert_pricing_profile
+from app.stats.drift import drift_payload
+from app.stats.features import feature_table_for_run
+from app.pipeline.mitigation import create_mitigation_experiment, mitigation_payload
+from app.agents.orchestration_profiles import (
     bound_orchestration_snapshot,
     validate_orchestration_config,
 )
-from app.services.orchestrator import RunOrchestrator
-from app.services.advanced_analytics import calibration_payload, cooccurrence_payload, forecast_payload, inference_payload
-from app.services.providers import provider_capabilities, validate_provider
-from app.services.reporting import generate_markdown_report
-from app.services.risk import risk_cards
-from app.services.run_queue import RUN_QUEUE
-from app.services.adapters import normalize_target_type
-from app.services.security import (
+from app.pipeline.orchestrator import RunOrchestrator
+from app.stats.advanced_analytics import calibration_payload, cooccurrence_payload, forecast_payload, inference_payload
+from app.runtime.providers import provider_capabilities, validate_provider
+from app.pipeline.reporting import generate_markdown_report
+from app.stats.risk import risk_cards
+from app.runtime.run_queue import RUN_QUEUE
+from app.runtime.adapters import normalize_target_type
+from app.security.service import (
     SecretCipher,
     activate_key,
     create_key,

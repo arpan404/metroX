@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from app.models import ProviderCredential
-from app.services.security import SecretCipher, activate_key, create_key, retire_key
+from app.security.service import SecretCipher, activate_key, create_key, retire_key
 
 
 def test_secret_cipher_fails_without_active_key(db_session):

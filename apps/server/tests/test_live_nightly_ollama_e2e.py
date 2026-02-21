@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.providers import validate_provider
+from app.runtime.providers import validate_provider
 from tests.live_helpers import live_test_config, live_tests_enabled, require_live_preflight
 
 

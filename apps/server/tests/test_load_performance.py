@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models import Base, Execution, ExecutionCost
-from app.services.costing import rebuild_run_cost_aggregate
+from app.pipeline.costing import rebuild_run_cost_aggregate
 
 
 @pytest.mark.load

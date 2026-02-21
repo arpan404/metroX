@@ -12,8 +12,8 @@ from app.api.v1 import router
 from app.config import get_settings
 from app.db import get_db
 from app.models import Base, Execution, Run
-from app.services.orchestrator import RunOrchestrator
-from app.services.providers import validate_provider
+from app.pipeline.orchestrator import RunOrchestrator
+from app.runtime.providers import validate_provider
 from tests.live_helpers import (
     configure_afk_litellm_env,
     live_test_config,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.services.benchmark import create_benchmark
+from app.pipeline.benchmark import create_benchmark
 
 
 def test_benchmark_reproducibility(db_session):

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.models import ConfigProfile, Detection, EvaluationSession, Execution, Run, RunCostAggregate, StatisticalTest
-from app.services.scoring import build_scorecard
+from app.stats.scoring import build_scorecard
 
 
 def test_scorecard_and_gate(db_session):

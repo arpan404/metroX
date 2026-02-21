@@ -12,7 +12,7 @@ from app.api.v1 import router
 from app.config import get_settings
 from app.db import get_db
 from app.models import AFKRunState, Base, ConfigProfile, Execution, Run
-from app.services.orchestrator import RunOrchestrator
+from app.pipeline.orchestrator import RunOrchestrator
 
 
 @pytest.fixture
@@ -340,7 +340,7 @@ def test_nightly_multi_provider_smoke_matrix() -> None:
         model = os.getenv("METROX_NIGHTLY_MODEL", "gpt-4.1-mini")
         if not key:
             pytest.skip("METROX_LIVE_PROVIDER_KEY missing for litellm smoke")
-        from app.services.providers import validate_provider
+        from app.runtime.providers import validate_provider
 
         out = validate_provider(
             {
@@ -357,7 +357,7 @@ def test_nightly_multi_provider_smoke_matrix() -> None:
         key = os.getenv("METROX_OPENAI_COMPAT_API_KEY")
         if not base_url or not key:
             pytest.skip("OpenAI-compatible credentials are not configured")
-        from app.services.providers import validate_provider
+        from app.runtime.providers import validate_provider
 
         out = validate_provider(
             {

@@ -12,7 +12,7 @@ from typing import cast
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Run
-from app.services.common import log_event
+from app.utils.common import log_event
 
 try:
     import redis
@@ -175,7 +175,7 @@ class RunQueue:
             return
         db = SessionLocal()
         try:
-            from app.services.orchestrator import RunOrchestrator
+            from app.pipeline.orchestrator import RunOrchestrator
 
             log_event(
                 db,

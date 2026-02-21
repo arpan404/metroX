@@ -19,22 +19,22 @@ from app.models import (
     Run,
     ScoreCard,
 )
-from app.services.adapters import TargetRequest, get_adapter, normalize_target_type
-from app.services.advanced_analytics import (
+from app.runtime.adapters import TargetRequest, get_adapter, normalize_target_type
+from app.stats.advanced_analytics import (
     build_cooccurrence_graph,
     build_forecast,
     build_inference_and_calibration,
 )
-from app.services.benchmark import create_benchmark
-from app.services.clustering import build_clusters
-from app.services.common import log_event
-from app.services.costing import compute_execution_cost, rebuild_run_cost_aggregate, reset_run_cost
-from app.services.detection import detect_failures, fuse_labels
-from app.services.drift import compute_drift
-from app.services.features import ensure_feature_definitions, rebuild_features_for_run
-from app.services.risk import build_risk_models
-from app.services.scoring import build_scorecard
-from app.services.policy import resolve_policy_config
+from app.pipeline.benchmark import create_benchmark
+from app.stats.clustering import build_clusters
+from app.utils.common import log_event
+from app.pipeline.costing import compute_execution_cost, rebuild_run_cost_aggregate, reset_run_cost
+from app.stats.detection import detect_failures, fuse_labels
+from app.stats.drift import compute_drift
+from app.stats.features import ensure_feature_definitions, rebuild_features_for_run
+from app.stats.risk import build_risk_models
+from app.stats.scoring import build_scorecard
+from app.runtime.policy import resolve_policy_config
 
 
 class RunOrchestrator:

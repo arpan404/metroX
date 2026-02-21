@@ -6,8 +6,8 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models import AttackCase, BenchmarkSnapshot
-from app.services.agentic_attacking import AttackSeed, MultiAgentAttackOrchestrator
-from app.services.common import seeded_random, stable_hash
+from app.agents.agentic_attacking import AttackSeed, MultiAgentAttackOrchestrator
+from app.utils.common import seeded_random, stable_hash
 
 CURATED_PROMPTS: dict[str, list[tuple[str, str, str]]] = {
     "prompt_injection": [

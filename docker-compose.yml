@@ -17,30 +17,5 @@ services:
     ports:
       - "6379:6379"
 
-  server:
-    build:
-      context: ./apps/server
-    environment:
-      METROX_DATABASE_URL: postgresql+psycopg://metrox:metrox@postgres:5432/metrox
-      METROX_API_KEY: local-dev-key
-      METROX_REDIS_URL: redis://redis:6379/0
-      METROX_ALLOW_SYNTHETIC_TARGETS: "true"
-    depends_on:
-      - postgres
-      - redis
-    ports:
-      - "8000:8000"
-
-  client:
-    build:
-      context: ./apps/client
-    environment:
-      VITE_API_BASE_URL: http://localhost:8000
-      VITE_API_KEY: local-dev-key
-    depends_on:
-      - server
-    ports:
-      - "5173:5173"
-
 volumes:
   postgres_data:

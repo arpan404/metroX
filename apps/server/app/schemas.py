@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class SessionCreate(BaseModel):
@@ -58,6 +58,98 @@ class TargetConfig(BaseModel):
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
+class AFKRoleConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    name: str
+    enabled: bool = True
+    model: str | None = None
+    instruction_file: str | None = None
+    instructions: str | None = None
+
+
+class AFKGraphNode(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+
+
+class AFKGraphEdge(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    source: str
+    target: str
+
+
+class AFKGraphConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    nodes: list[AFKGraphNode] = Field(default_factory=list)
+    edges: list[AFKGraphEdge] = Field(default_factory=list)
+
+
+class AFKOrchestrationConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    prompts_dir: str = str(Path(__file__).resolve().parents[1] / "prompts" / "agentic")
+    coordinator_instruction_file: str = "coordinator.md"
+    coordinator_instructions: str | None = None
+    extra_system_prompt: str | None = None
+    extra_context: dict[str, Any] = Field(default_factory=dict)
+    join_policy: str | dict[str, Any] = "all_required"
+    interaction_mode: str = "headless"
+    approval_fallback: str = "deny"
+    input_fallback: str = "deny"
+    subagent_router_strategy: str = "taxonomy"
+    max_concurrent_subagents: int = 3
+    max_iterations: int = 3
+    exploitation_enabled: bool = True
+    user_conditions: list[str] = Field(default_factory=list)
+    prior_run_context: str = ""
+    known_vulnerabilities: list[str] = Field(default_factory=list)
+    execution_order: list[str] = Field(default_factory=list)
+    graph: AFKGraphConfig = Field(default_factory=AFKGraphConfig)
+    threading: dict[str, Any] = Field(default_factory=lambda: {"enabled": True, "strategy": "run_thread"})
+    runner: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "interaction_mode": "headless",
+            "approval_fallback": "deny",
+            "input_fallback": "deny",
+            "max_parallel_subagents_per_parent": 4,
+            "subagent_queue_backpressure_limit": 256,
+            "background_tools_enabled": True,
+        }
+    )
+    fail_safe: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "max_steps": 12,
+            "max_llm_calls": 10,
+            "max_tool_calls": 8,
+            "max_wall_time_s": 45.0,
+            "max_total_cost_usd": 0.75,
+            "llm_failure_policy": "retry_then_degrade",
+            "tool_failure_policy": "continue_with_error",
+            "subagent_failure_policy": "continue",
+            "fallback_model_chain": [],
+        }
+    )
+    roles: list[AFKRoleConfig] = Field(
+        default_factory=lambda: [
+            AFKRoleConfig(name="attacker", enabled=True, instruction_file="attacker.md"),
+            AFKRoleConfig(name="critic", enabled=True, instruction_file="critic.md"),
+            AFKRoleConfig(name="verifier", enabled=True, instruction_file="verifier.md"),
+            AFKRoleConfig(name="analyst", enabled=True, instruction_file="analyst.md"),
+        ]
+    )
+
+    @field_validator("user_conditions", "known_vulnerabilities", "execution_order", mode="before")
+    @classmethod
+    def _coerce_string_lists(cls, value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [str(item).strip() for item in value if str(item).strip()]
+
+
 class BenchmarkConfig(BaseModel):
     dataset_name: str = "metrox-core"
     taxonomy: list[str] = Field(
@@ -76,60 +168,7 @@ class BenchmarkConfig(BaseModel):
     agentic_attacking: bool = True
     agentic_provider: Literal["auto", "mock", "afk_live"] = "auto"
     agentic_model: str | None = None
-    afk_orchestration: dict[str, Any] = Field(
-        default_factory=lambda: {
-            "prompts_dir": str(Path(__file__).resolve().parents[1] / "prompts" / "agentic"),
-            "coordinator_instruction_file": "coordinator.md",
-            "join_policy": "all_required",
-            "interaction_mode": "headless",
-            "approval_fallback": "deny",
-            "input_fallback": "deny",
-            "subagent_router_strategy": "taxonomy",
-            "max_concurrent_subagents": 3,
-            "threading": {"enabled": True, "strategy": "run_thread"},
-            "runner": {
-                "interaction_mode": "headless",
-                "approval_fallback": "deny",
-                "input_fallback": "deny",
-                "max_parallel_subagents_per_parent": 4,
-                "subagent_queue_backpressure_limit": 256,
-                "background_tools_enabled": True,
-            },
-            "fail_safe": {
-                "max_steps": 12,
-                "max_llm_calls": 10,
-                "max_tool_calls": 8,
-                "max_wall_time_s": 45.0,
-                "max_total_cost_usd": 0.75,
-                "llm_failure_policy": "retry_then_degrade",
-                "tool_failure_policy": "continue_with_error",
-                "subagent_failure_policy": "continue",
-                "fallback_model_chain": [],
-            },
-            "roles": [
-                {
-                    "name": "attacker",
-                    "enabled": True,
-                    "instruction_file": "attacker.md",
-                },
-                {
-                    "name": "critic",
-                    "enabled": True,
-                    "instruction_file": "critic.md",
-                },
-                {
-                    "name": "verifier",
-                    "enabled": True,
-                    "instruction_file": "verifier.md",
-                },
-                {
-                    "name": "analyst",
-                    "enabled": True,
-                    "instruction_file": "analyst.md",
-                },
-            ],
-        }
-    )
+    afk_orchestration: AFKOrchestrationConfig = Field(default_factory=AFKOrchestrationConfig)
 
 
 class RuntimeConfig(BaseModel):
@@ -381,14 +420,14 @@ class OrchestrationProfileCreate(BaseModel):
     description: str | None = None
     version: str = "v1"
     status: str = "active"
-    config: dict[str, Any] = Field(default_factory=dict)
+    config: AFKOrchestrationConfig = Field(default_factory=AFKOrchestrationConfig)
 
 
 class OrchestrationProfileUpdate(BaseModel):
     description: str | None = None
     version: str | None = None
     status: str | None = None
-    config: dict[str, Any] | None = None
+    config: AFKOrchestrationConfig | None = None
 
 
 class OrchestrationProfileOut(BaseModel):

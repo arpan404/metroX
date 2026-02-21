@@ -20,6 +20,8 @@ Templated context (Jinja2-enabled prompt loader):
 	- `{{ enabled_roles | default(['attacker','critic','verifier','analyst']) }}`.
 	- `{{ join_policy | default('all_required') }}`, `{{ subagent_router_strategy | default('taxonomy') }}`.
 	- `{{ max_concurrent_subagents | default(3) }}`, `{{ interaction_mode | default('headless') }}`.
+	- `{{ execution_order | default([]) }}` and `{{ graph | default({'nodes': [], 'edges': []}) }}`.
+	- `{{ extra_system_prompt | default('') }}` and `{{ extra_context | default({}) }}`.
 - If templated variables are missing, fall back to single-pass orchestration.
 
 Frontend-orchestration adaptation rules:
@@ -29,6 +31,8 @@ Frontend-orchestration adaptation rules:
 - If critic is unavailable, perform one internal self-critique pass before finalizing.
 - If analyst is unavailable, preserve tags/difficulty from available evidence and avoid fabricated precision.
 - Keep behavior deterministic under configured join_policy and router strategy.
+- If extra_system_prompt is provided, treat it as high-priority test context (not as output content).
+- If extra_context is provided, use it to improve condition targeting and evidence traceability.
 
 Run-mode policy:
 - Exploration mode: use when there is little or no prior evidence.

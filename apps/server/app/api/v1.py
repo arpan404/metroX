@@ -459,7 +459,7 @@ def create_orchestration_profile(
     db: Session = Depends(get_db),
 ) -> OrchestrationProfileOut:
     try:
-        validated_config = validate_orchestration_config(payload.config)
+        validated_config = validate_orchestration_config(payload.config.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     row = OrchestrationProfile(
@@ -511,7 +511,7 @@ def update_orchestration_profile(
         row.status = payload.status
     if payload.config is not None:
         try:
-            merged_config = {**(row.config or {}), **payload.config}
+            merged_config = {**(row.config or {}), **payload.config.model_dump(exclude_unset=True)}
             row.config = validate_orchestration_config(merged_config)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -564,7 +564,7 @@ def create_profile(payload: ConfigProfileCreate, db: Session = Depends(get_db)) 
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    orchestration_cfg = payload.benchmark_config.afk_orchestration
+    orchestration_cfg = payload.benchmark_config.afk_orchestration.model_dump()
     orchestration_meta: dict[str, str] | None = None
     if payload.orchestration_profile_id:
         orchestration_profile = (

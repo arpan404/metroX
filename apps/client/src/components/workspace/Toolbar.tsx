@@ -128,9 +128,29 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
               <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-60" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-[420px] p-0" align="start">
-            <CommandMenu>
-              <CommandInput placeholder="Search run ID..." />
+          <PopoverContent
+            className={cn(
+              'w-[420px] p-0 overflow-hidden',
+              'rounded-xl border border-border/45',
+              'bg-background/88 dark:bg-background/68',
+              'backdrop-blur-2xl backdrop-saturate-150',
+              'shadow-[0_14px_34px_-14px_rgba(0,0,0,0.5)]',
+            )}
+            align="start"
+          >
+            <CommandMenu
+              className={cn(
+                'bg-transparent',
+                '[&_[cmdk-input-wrapper]]:h-11 [&_[cmdk-input-wrapper]]:border-b [&_[cmdk-input-wrapper]]:border-border/45 [&_[cmdk-input-wrapper]]:bg-background/40',
+                '[&_[cmdk-input-wrapper]_svg]:text-muted-foreground/85',
+                '[&_[cmdk-group-heading]]:px-4 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:pb-2',
+                '[&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:uppercase',
+              )}
+            >
+              <CommandInput
+                placeholder="Search run ID..."
+                className="text-sm"
+              />
               <CommandList>
                 <CommandEmpty>{isLoadingRuns ? 'Loading runs...' : 'No runs found.'}</CommandEmpty>
                 <CommandGroup heading="Recent Runs">
@@ -143,7 +163,12 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
                         dispatch({ type: 'SET_RUN_ID', runId: run.id })
                         setRunSelectorOpen(false)
                       }}
-                      className="font-mono text-xs"
+                      className={cn(
+                        'mx-2 mb-1 rounded-lg px-3 py-2',
+                        'font-mono text-xs',
+                        'data-[selected=true]:bg-primary/15 data-[selected=true]:text-foreground',
+                        'hover:bg-primary/10',
+                      )}
                     >
                       <Check
                         className={cn(

@@ -1,15 +1,14 @@
-import { useCallback, useMemo, useEffect, useState, useRef } from 'react'
+import { useCallback, useMemo, useEffect, useState } from 'react'
 import ReactFlow, {
   Background,
   Controls,
+  MiniMap,
   useNodesState,
   useEdgesState,
   addEdge,
   type Connection,
   type Node,
   type Edge,
-  type ReactFlowInstance,
-  type Viewport,
   BackgroundVariant,
   Panel,
   Position,
@@ -131,15 +130,9 @@ export function Canvas() {
   const { state, dispatch } = useWorkspace()
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
-  const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null)
-  const [viewport, setViewport] = useState<Viewport>({ x: 0, y: 0, zoom: 1 })
-  const [canvasSize, setCanvasSize] = useState({ width: 1, height: 1 })
-  const [isMiniMapDragging, setIsMiniMapDragging] = useState(false)
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null)
   const [nodeMenu, setNodeMenu] = useState<{ x: number; y: number; node: Node } | null>(null)
   const [infoNode, setInfoNode] = useState<Node | null>(null)
-  const canvasRef = useRef<HTMLDivElement | null>(null)
-  const miniMapRef = useRef<HTMLDivElement | null>(null)
 
   // Build graph from state
   const graphData = useMemo(() => {
@@ -171,19 +164,6 @@ export function Canvas() {
     setNodes(graphData.nodes)
     setEdges(graphData.edges)
   }, [graphData, setNodes, setEdges])
-
-  useEffect(() => {
-    if (!canvasRef.current || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(([entry]) => {
-      const rect = entry.contentRect
-      setCanvasSize({
-        width: Math.max(1, rect.width),
-        height: Math.max(1, rect.height),
-      })
-    })
-    observer.observe(canvasRef.current)
-    return () => observer.disconnect()
-  }, [canvasRef])
 
   // Keep evaluate-mode detail panel useful by preselecting the first attack node when available.
   useEffect(() => {
@@ -235,157 +215,6 @@ export function Canvas() {
     setNodeMenu(null)
   }, [dispatch])
 
-  const updateViewportFromMiniMap = useCallback((clientX: number, clientY: number) => {
-    if (!rfInstance || !miniMapRef.current || nodes.length === 0) return
-    const rect = miniMapRef.current.getBoundingClientRect()
-    if (rect.width <= 0 || rect.height <= 0) return
-
-    const px = Math.min(Math.max(clientX - rect.left, 0), rect.width)
-    const py = Math.min(Math.max(clientY - rect.top, 0), rect.height)
-
-    const nodeBounds = nodes.reduce(
-      (acc, node) => {
-        const width = node.width ?? 220
-        const height = node.height ?? 120
-        return {
-          minX: Math.min(acc.minX, node.position.x),
-          minY: Math.min(acc.minY, node.position.y),
-          maxX: Math.max(acc.maxX, node.position.x + width),
-          maxY: Math.max(acc.maxY, node.position.y + height),
-        }
-      },
-      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
-    )
-
-    const boundsPadding = 48
-    const minX = nodeBounds.minX - boundsPadding
-    const minY = nodeBounds.minY - boundsPadding
-    const boundsWidth = Math.max(1, nodeBounds.maxX - nodeBounds.minX + boundsPadding * 2)
-    const boundsHeight = Math.max(1, nodeBounds.maxY - nodeBounds.minY + boundsPadding * 2)
-    const mapScale = Math.min(rect.width / boundsWidth, rect.height / boundsHeight)
-    const offsetX = (rect.width - boundsWidth * mapScale) / 2
-    const offsetY = (rect.height - boundsHeight * mapScale) / 2
-
-    const worldX = (px - offsetX) / mapScale + minX
-    const worldY = (py - offsetY) / mapScale + minY
-
-    void rfInstance.setCenter(worldX, worldY, {
-      zoom: viewport.zoom,
-      duration: 90,
-    })
-  }, [rfInstance, nodes, viewport.zoom, miniMapRef])
-
-  const miniMapModel = useMemo(() => {
-    if (nodes.length === 0) {
-      return {
-        mapWidth: 220,
-        mapHeight: 140,
-        nodeRects: [] as Array<{ id: string; x: number; y: number; width: number; height: number; color: string }>,
-        edgeLines: [] as Array<{ id: string; x1: number; y1: number; x2: number; y2: number; color: string }>,
-        viewportRect: { x: 0, y: 0, width: 0, height: 0 },
-      }
-    }
-
-    const mapWidth = 220
-    const mapHeight = 140
-    const boundsPadding = 48
-    const nodeById = new Map(nodes.map((node) => [node.id, node]))
-
-    const rawBounds = nodes.reduce(
-      (acc, node) => {
-        const width = node.width ?? 220
-        const height = node.height ?? 120
-        return {
-          minX: Math.min(acc.minX, node.position.x),
-          minY: Math.min(acc.minY, node.position.y),
-          maxX: Math.max(acc.maxX, node.position.x + width),
-          maxY: Math.max(acc.maxY, node.position.y + height),
-        }
-      },
-      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
-    )
-
-    const minX = rawBounds.minX - boundsPadding
-    const minY = rawBounds.minY - boundsPadding
-    const boundsWidth = Math.max(1, rawBounds.maxX - rawBounds.minX + boundsPadding * 2)
-    const boundsHeight = Math.max(1, rawBounds.maxY - rawBounds.minY + boundsPadding * 2)
-    const scale = Math.min(mapWidth / boundsWidth, mapHeight / boundsHeight)
-    const offsetX = (mapWidth - boundsWidth * scale) / 2
-    const offsetY = (mapHeight - boundsHeight * scale) / 2
-
-    const nodeColorForMap = (node: Node) => {
-      if (node.type === 'target') return 'hsl(var(--primary))'
-      if (node.type === 'metrics') return 'hsl(var(--chart-2))'
-      if (node.type === 'studioRole') {
-        const role = (node.data as { role?: string } | undefined)?.role
-        if (role === 'attacker') return '#ef4444'
-        if (role === 'critic') return '#f59e0b'
-        if (role === 'verifier') return '#3b82f6'
-        if (role === 'analyst') return '#10b981'
-        if (role === 'fraud_analyst') return '#a855f7'
-        if (role === 'entrypoint') return '#22d3ee'
-        if (role === 'coordinator') return '#a855f7'
-      }
-      return 'hsl(var(--muted-foreground))'
-    }
-
-    const nodeRects = nodes.map((node) => {
-      const width = node.width ?? 220
-      const height = node.height ?? 120
-      return {
-        id: node.id,
-        x: offsetX + (node.position.x - minX) * scale,
-        y: offsetY + (node.position.y - minY) * scale,
-        width: Math.max(6, width * scale),
-        height: Math.max(4, height * scale),
-        color: nodeColorForMap(node),
-      }
-    })
-
-    const edgeLines = edges
-      .map((edge) => {
-        const source = nodeById.get(edge.source)
-        const target = nodeById.get(edge.target)
-        if (!source || !target) return null
-        const sourceWidth = source.width ?? 220
-        const sourceHeight = source.height ?? 120
-        const targetWidth = target.width ?? 220
-        const targetHeight = target.height ?? 120
-        const sx = source.position.x + sourceWidth / 2
-        const sy = source.position.y + sourceHeight / 2
-        const tx = target.position.x + targetWidth / 2
-        const ty = target.position.y + targetHeight / 2
-        return {
-          id: edge.id,
-          x1: offsetX + (sx - minX) * scale,
-          y1: offsetY + (sy - minY) * scale,
-          x2: offsetX + (tx - minX) * scale,
-          y2: offsetY + (ty - minY) * scale,
-          color: edge.className?.includes('flow-edge') ? '#22d3ee' : 'hsl(var(--muted-foreground) / 0.72)',
-        }
-      })
-      .filter((line): line is NonNullable<typeof line> => Boolean(line))
-
-    const visibleWidthWorld = canvasSize.width / Math.max(viewport.zoom, 0.0001)
-    const visibleHeightWorld = canvasSize.height / Math.max(viewport.zoom, 0.0001)
-    const visibleLeftWorld = -viewport.x / Math.max(viewport.zoom, 0.0001)
-    const visibleTopWorld = -viewport.y / Math.max(viewport.zoom, 0.0001)
-
-    const viewportRect = {
-      x: offsetX + (visibleLeftWorld - minX) * scale,
-      y: offsetY + (visibleTopWorld - minY) * scale,
-      width: visibleWidthWorld * scale,
-      height: visibleHeightWorld * scale,
-    }
-
-    return {
-      mapWidth,
-      mapHeight,
-      nodeRects,
-      edgeLines,
-      viewportRect,
-    }
-  }, [nodes, edges, viewport, canvasSize])
 
   const onPaneContextMenu = useCallback((event: React.MouseEvent) => {
     event.preventDefault()
@@ -418,7 +247,6 @@ export function Canvas() {
 
   return (
     <div
-      ref={(el) => { canvasRef.current = el }}
       className="absolute inset-0"
       data-onboarding="canvas"
       onClick={() => setContextMenuPos(null)}
@@ -435,8 +263,6 @@ export function Canvas() {
         onNodeContextMenu={onNodeContextMenu}
         onPaneClick={onPaneClick}
         onPaneContextMenu={onPaneContextMenu}
-        onMove={(_, nextViewport) => setViewport(nextViewport)}
-        onInit={setRfInstance}
         fitView={nodes.length > 0}
         fitViewOptions={{ padding: 0.3, maxZoom: 1.2 }}
         proOptions={{ hideAttribution: true }}
@@ -457,80 +283,28 @@ export function Canvas() {
           showInteractive={state.canvasMode === 'studio'}
           className="workspace-controls !rounded-xl !border-border/40 !bg-background/50 !backdrop-blur-xl !shadow-[0_8px_24px_-14px_rgba(0,0,0,0.45)]"
         />
-        <Panel position="bottom-right">
-          <div
-            ref={(el) => { miniMapRef.current = el }}
-            className={cn(
-              'h-[140px] w-[220px] overflow-hidden',
-              'rounded-xl border border-border/60 bg-background/72',
-              'backdrop-blur-xl shadow-[0_10px_28px_-14px_rgba(0,0,0,0.5)]',
-              'cursor-grab active:cursor-grabbing',
-            )}
-            onMouseDown={(event) => {
-              setIsMiniMapDragging(true)
-              updateViewportFromMiniMap(event.clientX, event.clientY)
-            }}
-            onMouseMove={(event) => {
-              if (!isMiniMapDragging) return
-              updateViewportFromMiniMap(event.clientX, event.clientY)
-            }}
-            onMouseUp={() => setIsMiniMapDragging(false)}
-            onMouseLeave={() => setIsMiniMapDragging(false)}
-            onClick={(event) => updateViewportFromMiniMap(event.clientX, event.clientY)}
-            role="application"
-            aria-label="Interactive minimap"
-          >
-            <svg width={miniMapModel.mapWidth} height={miniMapModel.mapHeight} className="block">
-              <rect
-                x={0}
-                y={0}
-                width={miniMapModel.mapWidth}
-                height={miniMapModel.mapHeight}
-                fill="transparent"
-              />
-
-              {miniMapModel.edgeLines.map((line) => (
-                <line
-                  key={line.id}
-                  x1={line.x1}
-                  y1={line.y1}
-                  x2={line.x2}
-                  y2={line.y2}
-                  stroke={line.color}
-                  strokeWidth={1.15}
-                  strokeOpacity={0.85}
-                  strokeLinecap="round"
-                />
-              ))}
-
-              {miniMapModel.nodeRects.map((nodeRect) => (
-                <rect
-                  key={nodeRect.id}
-                  x={nodeRect.x}
-                  y={nodeRect.y}
-                  width={nodeRect.width}
-                  height={nodeRect.height}
-                  rx={Math.min(4, nodeRect.height / 2)}
-                  fill={nodeRect.color}
-                  fillOpacity={0.88}
-                  stroke="hsl(var(--background) / 0.55)"
-                  strokeWidth={0.8}
-                />
-              ))}
-
-              <rect
-                x={miniMapModel.viewportRect.x}
-                y={miniMapModel.viewportRect.y}
-                width={miniMapModel.viewportRect.width}
-                height={miniMapModel.viewportRect.height}
-                rx={3}
-                fill="hsl(var(--primary) / 0.18)"
-                stroke="hsl(var(--primary) / 0.85)"
-                strokeWidth={1.2}
-              />
-            </svg>
-          </div>
-        </Panel>
+        <MiniMap
+          zoomable
+          pannable
+          className="!rounded-xl !border !border-border/55 !bg-background/70 !backdrop-blur-xl !shadow-[0_10px_28px_-14px_rgba(0,0,0,0.45)]"
+          maskColor="rgba(34, 211, 238, 0.12)"
+          nodeStrokeWidth={2}
+          nodeColor={(node) => {
+            if (node.type === 'target') return '#22d3ee'
+            if (node.type === 'metrics') return '#a3e635'
+            if (node.type === 'studioRole') {
+              const role = (node.data as { role?: string } | undefined)?.role
+              if (role === 'attacker') return '#ef4444'
+              if (role === 'critic') return '#f59e0b'
+              if (role === 'verifier') return '#3b82f6'
+              if (role === 'analyst') return '#10b981'
+              if (role === 'fraud_analyst') return '#d946ef'
+              if (role === 'entrypoint') return '#22d3ee'
+              if (role === 'coordinator') return '#a855f7'
+            }
+            return '#6b7280'
+          }}
+        />
 
         {/* Empty state overlay */}
         {nodes.length === 0 && (

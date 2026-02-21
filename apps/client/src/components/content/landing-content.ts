@@ -48,7 +48,7 @@ export const architectureLayers = [
   {
     name: 'Orchestration Runtime',
     detail:
-      'AFK-native lifecycle, headless defaults, resumable checkpoints, and policy-decision audit events.',
+      'Agent-runtime lifecycle with headless defaults, resumable checkpoints, and policy-decision audit events.',
   },
   {
     name: 'Data & Lineage',

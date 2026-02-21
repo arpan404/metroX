@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 
@@ -62,16 +63,16 @@ class RunOrchestrator:
         self.db = db
         self.settings = get_settings()
 
-    def _resolve_credential(self, target_cfg: dict, run_id: str) -> str | None:
+    def _resolve_api_key_ref(self, api_key_ref: str, run_id: str, *, source: str = "target") -> str | None:
         """Resolve api_key_ref to a plaintext API key from ProviderCredential store."""
-        api_key_ref = str(target_cfg.get("api_key_ref", "") or "").strip()
+        api_key_ref = str(api_key_ref or "").strip()
         if not api_key_ref:
             return None
         row = self.db.query(ProviderCredential).filter(ProviderCredential.id == api_key_ref).one_or_none()
         if not row:
             log_event(
                 self.db, run_id=run_id, event_type="credential_resolution_failed",
-                step=0, message=f"ProviderCredential {api_key_ref} not found",
+                step=0, message=f"ProviderCredential {api_key_ref} not found ({source})",
             )
             return None
         try:
@@ -95,9 +96,40 @@ class RunOrchestrator:
             self.db.commit()
             log_event(
                 self.db, run_id=run_id, event_type="credential_resolution_failed",
-                step=0, message=f"Failed to decrypt credential {api_key_ref}: {exc}",
+                step=0, message=f"Failed to decrypt credential {api_key_ref} ({source}): {exc}",
             )
             return None
+
+    def _resolve_credential(self, target_cfg: dict, run_id: str) -> str | None:
+        return self._resolve_api_key_ref(str(target_cfg.get("api_key_ref", "") or "").strip(), run_id, source="target")
+
+    def _resolve_orchestration_credentials(self, benchmark_cfg: dict, run_id: str) -> dict[str, Any]:
+        config = deepcopy(benchmark_cfg or {})
+        orchestration = config.get("afk_orchestration")
+        if not isinstance(orchestration, dict):
+            return config
+        roles = orchestration.get("roles")
+        if not isinstance(roles, list):
+            return config
+
+        resolved_cache: dict[str, str | None] = {}
+        for role in roles:
+            if not isinstance(role, dict):
+                continue
+            role_name = str(role.get("name", "unknown")).strip() or "unknown"
+            api_key_ref = str(role.get("api_key_ref", "") or "").strip()
+            if not api_key_ref:
+                continue
+            if api_key_ref not in resolved_cache:
+                resolved_cache[api_key_ref] = self._resolve_api_key_ref(
+                    api_key_ref,
+                    run_id,
+                    source=f"orchestration_role:{role_name}",
+                )
+            resolved = resolved_cache.get(api_key_ref)
+            if resolved:
+                role["api_key"] = resolved
+        return config
 
     def execute_run(self, run_id: str) -> None:
         run = self.db.query(Run).filter(Run.id == run_id).one_or_none()
@@ -185,10 +217,11 @@ class RunOrchestrator:
 
             if not attack_cases:
                 attack_count = self._attack_count(run.preset)
+                benchmark_cfg = self._resolve_orchestration_credentials(profile.benchmark_config, run.id)
                 benchmark_snapshot, attack_cases = create_benchmark(
                     self.db,
                     run_id=run.id,
-                    benchmark_config=profile.benchmark_config,
+                    benchmark_config=benchmark_cfg,
                     attack_count=attack_count,
                 )
 

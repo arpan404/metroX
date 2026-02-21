@@ -122,7 +122,7 @@ export function AppSidebar({
           <SidebarGroup>
             <SidebarGroupLabel>Add Node</SidebarGroupLabel>
             <SidebarMenu>
-              {(['attacker', 'critic', 'verifier', 'analyst'] as const).map((role) => (
+              {(['attacker', 'critic', 'verifier', 'analyst', 'fraud_analyst'] as const).map((role) => (
                 <SidebarMenuItem key={role}>
                   <SidebarMenuButton
                     tooltip={`Add ${role} node`}

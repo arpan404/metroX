@@ -318,9 +318,14 @@ export const MetricsNode = memo(function MetricsNode({ data, selected }: NodePro
 
 type StudioRoleNodeData = {
   label: string
-  role: 'attacker' | 'critic' | 'verifier' | 'analyst' | 'entrypoint' | 'coordinator'
+  role: 'attacker' | 'critic' | 'verifier' | 'analyst' | 'fraud_analyst' | 'entrypoint' | 'coordinator'
   model?: string
   description?: string
+  enabled?: boolean
+  runtime_provider?: string
+  api_key_ref?: string
+  instruction_file?: string
+  instructions?: string
 }
 
 const roleStyles: Record<string, { color: string; border: string; icon: typeof Shield }> = {
@@ -328,6 +333,7 @@ const roleStyles: Record<string, { color: string; border: string; icon: typeof S
   critic: { color: 'text-amber-400', border: 'border-amber-500/40', icon: Eye },
   verifier: { color: 'text-blue-400', border: 'border-blue-500/40', icon: ShieldCheck },
   analyst: { color: 'text-emerald-400', border: 'border-emerald-500/40', icon: TrendingUp },
+  fraud_analyst: { color: 'text-fuchsia-400', border: 'border-fuchsia-500/40', icon: ShieldAlert },
   entrypoint: { color: 'text-primary', border: 'border-primary/40', icon: Activity },
   coordinator: { color: 'text-violet-400', border: 'border-violet-500/40', icon: Brain },
 }
@@ -345,6 +351,7 @@ export const StudioRoleNode = memo(function StudioRoleNode({ data, selected }: N
         'shadow-[0_2px_16px_-6px_rgba(0,0,0,0.25)]',
         style.border,
         selected && 'ring-2 ring-primary/30',
+        data.enabled === false && 'opacity-45 saturate-50',
       )}
     >
       <div className="flex items-center gap-2 mb-1.5">
@@ -355,9 +362,22 @@ export const StudioRoleNode = memo(function StudioRoleNode({ data, selected }: N
       {data.model && (
         <p className="text-[10px] text-muted-foreground font-mono truncate">{data.model}</p>
       )}
+      {data.runtime_provider && (
+        <p className="text-[10px] text-muted-foreground/80 truncate">provider: <span className="font-mono">{data.runtime_provider}</span></p>
+      )}
       {data.description && (
         <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{data.description}</p>
       )}
+      <div className="mt-1.5 flex flex-wrap gap-1">
+        {data.api_key_ref ? (
+          <Badge variant="outline" className="text-[9px] h-4 px-1.5 font-mono">key ref</Badge>
+        ) : null}
+        {data.instructions ? (
+          <Badge variant="outline" className="text-[9px] h-4 px-1.5">inline prompt</Badge>
+        ) : data.instruction_file ? (
+          <Badge variant="outline" className="text-[9px] h-4 px-1.5 font-mono">{data.instruction_file}</Badge>
+        ) : null}
+      </div>
 
       <Handle type="target" position={Position.Left} className="!bg-muted-foreground !border-background !w-2 !h-2" />
       <Handle type="source" position={Position.Right} className="!bg-muted-foreground !border-background !w-2 !h-2" />

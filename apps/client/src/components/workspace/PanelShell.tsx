@@ -156,7 +156,7 @@ export function MetricRow({ label, value, sub, color }: MetricRowProps) {
 /* ------------------------------------------------------------------ */
 
 type FieldGroupProps = {
-  label: string
+  label: ReactNode
   hint?: string
   children: ReactNode
   horizontal?: boolean
@@ -166,7 +166,7 @@ export function FieldGroup({ label, hint, children, horizontal }: FieldGroupProp
   return (
     <div className={cn(horizontal ? 'flex items-center justify-between gap-3' : 'space-y-1.5')}>
       <div className={cn(horizontal && 'shrink-0')}>
-        <label className="text-xs font-medium text-foreground/80">{label}</label>
+        <div className="text-xs font-medium text-foreground/80">{label}</div>
         {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
       </div>
       {children}

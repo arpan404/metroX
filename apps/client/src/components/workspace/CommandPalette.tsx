@@ -12,6 +12,7 @@ import {
 import {
   Search,
   Settings2,
+  Boxes,
   BarChart3,
   Wrench,
   Radio,
@@ -83,6 +84,11 @@ export function CommandPalette() {
             <Settings2 className="mr-2 h-4 w-4" />
             <span>Toggle Settings Panel</span>
             <kbd className="ml-auto pointer-events-none text-[10px] text-muted-foreground border px-1 rounded">3</kbd>
+          </CommandItem>
+          <CommandItem onSelect={() => runAction(() => dispatch({ type: 'TOGGLE_PANEL', panel: 'studio-inspector' }))}>
+            <Boxes className="mr-2 h-4 w-4" />
+            <span>Toggle Studio Inspector</span>
+            <kbd className="ml-auto pointer-events-none text-[10px] text-muted-foreground border px-1 rounded">4</kbd>
           </CommandItem>
           <CommandItem onSelect={() => runAction(() => dispatch({ type: 'TOGGLE_EVENTS' }))}>
             <Radio className="mr-2 h-4 w-4" />

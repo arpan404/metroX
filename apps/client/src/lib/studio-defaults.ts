@@ -1,13 +1,22 @@
 export const STUDIO_BASE_MODEL = 'gpt-4.1-mini'
 
-export const STUDIO_ROLES = ['attacker', 'critic', 'verifier', 'analyst'] as const
+export const STUDIO_ROLES = ['attacker', 'critic', 'verifier', 'analyst', 'fraud_analyst'] as const
 export type StudioRole = (typeof STUDIO_ROLES)[number]
+export type StudioTemplateId = 'fraud_triage' | 'refund_guard' | 'deep_investigation'
 
 export type StudioNodeData = {
   label: string
   role: string
   model?: string
   description?: string
+  enabled?: boolean
+  runtime_provider?: string
+  api_key_ref?: string
+  base_url?: string
+  instruction_file?: string
+  instructions?: string
+  auth_headers?: Record<string, string>
+  extra?: Record<string, unknown>
 }
 
 type StudioRoleDefault = {
@@ -33,6 +42,10 @@ export const STUDIO_ROLE_DEFAULTS: Record<StudioRole, StudioRoleDefault> = {
     label: 'Analyst',
     description: 'Score novelty, difficulty, and summarize outcomes.',
   },
+  fraud_analyst: {
+    label: 'Fraud Analyst',
+    description: 'Assess fraud risk and recommend approve/review/block decisions.',
+  },
 }
 
 export function resolveStudioRoleModel(role: string, providedModel?: string): string {
@@ -52,22 +65,108 @@ export function createStudioNodeData(role: string, model?: string): StudioNodeDa
     role,
     model: resolveStudioRoleModel(role, model),
     description,
+    enabled: true,
+    runtime_provider: 'litellm',
+    api_key_ref: '',
+    base_url: '',
+    instruction_file: `${role}.md`,
+    instructions: '',
+    auth_headers: {},
+    extra: {},
   }
 }
 
-export function createDefaultStudioMap() {
-  const nodes = STUDIO_ROLES.map((role, index) => ({
+export const STUDIO_GRAPH_TEMPLATES: Array<{
+  id: StudioTemplateId
+  name: string
+  description: string
+}> = [
+  {
+    id: 'fraud_triage',
+    name: 'Fraud Triage',
+    description: 'Balanced flow for pre-release fraud and safety checks.',
+  },
+  {
+    id: 'refund_guard',
+    name: 'Refund Guard',
+    description: 'Focused flow for refund abuse and claim manipulation.',
+  },
+  {
+    id: 'deep_investigation',
+    name: 'Deep Investigation',
+    description: 'High-scrutiny flow for complex exploit and identity risks.',
+  },
+]
+
+function makeStudioNode(role: StudioRole, x: number, y: number) {
+  return {
     id: `studio-${role}`,
     type: 'studioRole',
-    position: { x: 80 + index * 230, y: 220 },
+    position: { x, y },
     data: createStudioNodeData(role),
-  }))
+  }
+}
 
-  const edges = STUDIO_ROLES.slice(0, -1).map((role, index) => ({
-    id: `e-studio-${role}-${STUDIO_ROLES[index + 1]}`,
-    source: `studio-${role}`,
-    target: `studio-${STUDIO_ROLES[index + 1]}`,
-  }))
+function makeEdge(sourceRole: string, targetRole: string) {
+  return {
+    id: `e-studio-${sourceRole}-${targetRole}`,
+    source: `studio-${sourceRole}`,
+    target: `studio-${targetRole}`,
+  }
+}
 
+export function createStudioMapFromTemplate(templateId: StudioTemplateId) {
+  if (templateId === 'refund_guard') {
+    const nodes = [
+      makeStudioNode('attacker', 120, 360),
+      makeStudioNode('verifier', 540, 140),
+      makeStudioNode('fraud_analyst', 320, 120),
+      makeStudioNode('analyst', 300, 300),
+    ]
+    const edges = [
+      makeEdge('attacker', 'verifier'),
+      makeEdge('attacker', 'fraud_analyst'),
+      makeEdge('verifier', 'fraud_analyst'),
+      makeEdge('fraud_analyst', 'analyst'),
+    ]
+    return { nodes, edges }
+  }
+
+  if (templateId === 'deep_investigation') {
+    const nodes = [
+      makeStudioNode('attacker', 80, 360),
+      makeStudioNode('critic', 560, 560),
+      makeStudioNode('verifier', 720, 180),
+      makeStudioNode('fraud_analyst', 320, 120),
+      makeStudioNode('analyst', 420, 300),
+    ]
+    const edges = [
+      makeEdge('attacker', 'critic'),
+      makeEdge('critic', 'verifier'),
+      makeEdge('attacker', 'fraud_analyst'),
+      makeEdge('verifier', 'fraud_analyst'),
+      makeEdge('fraud_analyst', 'analyst'),
+      makeEdge('critic', 'analyst'),
+    ]
+    return { nodes, edges }
+  }
+
+  const nodes = [
+    makeStudioNode('attacker', 80, 360),
+    makeStudioNode('critic', 560, 560),
+    makeStudioNode('verifier', 720, 180),
+    makeStudioNode('fraud_analyst', 320, 120),
+    makeStudioNode('analyst', 420, 300),
+  ]
+  const edges = [
+    makeEdge('attacker', 'critic'),
+    makeEdge('critic', 'verifier'),
+    makeEdge('verifier', 'fraud_analyst'),
+    makeEdge('fraud_analyst', 'analyst'),
+  ]
   return { nodes, edges }
+}
+
+export function createDefaultStudioMap() {
+  return createStudioMapFromTemplate('fraud_triage')
 }

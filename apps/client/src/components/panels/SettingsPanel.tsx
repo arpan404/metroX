@@ -590,7 +590,7 @@ export function SettingsPanel() {
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.06 }}>
               <Card className="bg-card/60 backdrop-blur-xl">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">AFK Capabilities</CardTitle>
+                  <CardTitle className="text-sm">Runtime Capabilities</CardTitle>
                   <CardDescription className="text-xs">Runtime capability manifest and supported interaction modes.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">

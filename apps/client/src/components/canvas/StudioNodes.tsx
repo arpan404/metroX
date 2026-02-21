@@ -14,6 +14,7 @@ const roleColors: Record<string, string> = {
   critic: 'border-amber-500/30',
   verifier: 'border-blue-500/30',
   analyst: 'border-emerald-500/30',
+  fraud_analyst: 'border-fuchsia-500/30',
   entrypoint: 'border-primary/50',
 }
 

@@ -12,6 +12,7 @@ import { AnalyticsPanel } from '@/components/workspace/AnalyticsPanel'
 import { SettingsPanel } from '@/components/workspace/SettingsPanel'
 import { EventsPanel } from '@/components/workspace/EventsPanel'
 import { AttackDetailPanel } from '@/components/workspace/AttackDetailPanel'
+import { StudioInspectorPanel } from '@/components/workspace/StudioInspectorPanel'
 import { CommandPalette } from '@/components/workspace/CommandPalette'
 
 /* ── Keyboard Shortcuts ── */
@@ -28,6 +29,7 @@ function useKeyboardShortcuts() {
         '1': 'config',
         '2': 'analytics',
         '3': 'settings',
+        '4': 'studio-inspector',
       }
 
       if (panelKeys[e.key]) {
@@ -79,6 +81,7 @@ function WorkspaceInner() {
         <AnalyticsPanel key="analytics" />
         <SettingsPanel key="settings" />
         <AttackDetailPanel key="attack-detail" />
+        <StudioInspectorPanel key="studio-inspector" />
       </AnimatePresence>
 
       {/* Events panel: bottom pop-up */}

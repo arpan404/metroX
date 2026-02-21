@@ -41,7 +41,7 @@ export function AttackDetailPanel() {
   const [adjSubmitting, setAdjSubmitting] = useState(false)
 
   // Find selected attack data from summary
-  const selectedType = state.selectedNodeId
+  const selectedType = state.selectedAttackType
   const attackData = state.attackSummary?.attack_types?.find(
     (a: { attack_type: string }) => a.attack_type === selectedType
   )

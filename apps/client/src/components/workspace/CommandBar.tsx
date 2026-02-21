@@ -3,12 +3,14 @@ import {
   Sliders,
   BarChart3,
   Settings2,
+  Boxes,
   ListOrdered,
   Crosshair,
   Brain,
   Eye,
   Activity,
   TrendingUp,
+  ShieldAlert,
   Plus,
   ToggleLeft,
   Workflow,
@@ -28,6 +30,13 @@ export function CommandBar() {
   const isActive = (panel: PanelId) => state.activePanel === panel
 
   const studioAddNode = (role: string) => {
+    const existing = state.studioNodes.find((node) => node.data.role === role)
+    if (existing) {
+      dispatch({ type: 'SET_CANVAS_MODE', mode: 'studio' })
+      dispatch({ type: 'SELECT_NODE', nodeId: existing.id, attackType: null })
+      dispatch({ type: 'OPEN_PANEL', panel: 'studio-inspector' })
+      return
+    }
     const id = `${role}-${Date.now()}`
     dispatch({
       type: 'ADD_STUDIO_NODE',
@@ -149,6 +158,22 @@ export function CommandBar() {
           <Button
             variant="ghost"
             size="icon"
+            className={cn('h-7 w-7', isActive('studio-inspector') && 'bg-primary/15 text-primary')}
+            onClick={() => togglePanel('studio-inspector')}
+          >
+            <Boxes className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">
+          Studio Inspector <kbd className="ml-1 font-mono text-[10px]">4</kbd>
+        </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
             className={cn('h-7 w-7 relative', state.eventsOpen && 'bg-primary/15 text-primary')}
             onClick={toggleEvents}
           >
@@ -167,13 +192,20 @@ export function CommandBar() {
       {state.canvasMode === 'studio' && (
         <>
           <div className="h-5 w-px bg-border/40" />
-          {(['attacker', 'critic', 'verifier', 'analyst'] as const).map((role) => {
-            const Icon = { attacker: Crosshair, critic: Eye, verifier: Brain, analyst: TrendingUp }[role]
+          {(['attacker', 'critic', 'verifier', 'analyst', 'fraud_analyst'] as const).map((role) => {
+            const Icon = {
+              attacker: Crosshair,
+              critic: Eye,
+              verifier: Brain,
+              analyst: TrendingUp,
+              fraud_analyst: ShieldAlert,
+            }[role]
             const color = {
               attacker: 'hover:text-red-400',
               critic: 'hover:text-amber-400',
               verifier: 'hover:text-blue-400',
               analyst: 'hover:text-emerald-400',
+              fraud_analyst: 'hover:text-fuchsia-400',
             }[role]
             return (
               <Tooltip key={role}>

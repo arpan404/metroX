@@ -300,6 +300,7 @@ export type TargetConfig = {
   provider_name: string | null
   base_url: string | null
   api_key_ref: string | null
+  agent_index_url?: string | null
   extra: Record<string, unknown>
 }
 
@@ -374,7 +375,7 @@ export type QueueStats = {
 }
 
 /* ------------------------------------------------------------------ */
-/*  AFK Capabilities                                                  */
+/*  Runtime Capabilities                                              */
 /* ------------------------------------------------------------------ */
 
 export type AfkCapabilities = {

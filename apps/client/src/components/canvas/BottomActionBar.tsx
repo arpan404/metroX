@@ -19,7 +19,7 @@ const attackActions: { mode: ToolbarMode; label: string; icon: React.ReactNode; 
   { mode: 'analytics', label: 'Analytics', icon: <BarChart2 size={15} />, tooltip: 'View analytics' },
 ]
 
-const studioRoles = ['attacker', 'critic', 'verifier', 'analyst'] as const
+const studioRoles = ['attacker', 'critic', 'verifier', 'analyst', 'fraud_analyst'] as const
 
 export function BottomActionBar({
   activeMode,

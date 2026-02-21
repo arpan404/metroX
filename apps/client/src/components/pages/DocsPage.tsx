@@ -300,7 +300,7 @@ export function DocsPage() {
                         {[
                             { seq: '1', actor: 'Client → API', event: 'POST /v1/runs — insert Run(queued) + ConfigSnapshot' },
                             { seq: '2', actor: 'API → Queue', event: 'Enqueue run_id via inprocess thread or redis' },
-                            { seq: '3', actor: 'Worker → Orchestrator', event: 'execute_run(run_id) — mark running + persist AFKRunState' },
+                            { seq: '3', actor: 'Worker → Orchestrator', event: 'execute_run(run_id) — mark running + persist run state checkpoint' },
                             { seq: '4', actor: 'Orchestrator → Adapters', event: 'Per attack: invoke target, insert Execution, Detection, ProbabilisticLabel, ExecutionCost' },
                             { seq: '5', actor: 'Orchestrator', event: 'Budget gate check — abort + checkpoint if breach and abort_on_cost_breach=true' },
                             { seq: '6', actor: 'Orchestrator', event: 'Rebuild features, clusters, risk, analytics, scorecard, drift' },

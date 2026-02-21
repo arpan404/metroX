@@ -48,7 +48,7 @@ export function CommandBar() {
       className={cn(
         'absolute bottom-3 left-1/2 -translate-x-1/2 z-40',
         'flex items-center gap-1 px-2 h-10',
-        'rounded-xl border border-border/50 bg-background/75 backdrop-blur-2xl backdrop-saturate-150',
+        'rounded-xl border border-border/70 bg-background/95 dark:border-border/50 dark:bg-background/75 backdrop-blur-2xl backdrop-saturate-150',
         'shadow-[0_4px_24px_-8px_rgba(0,0,0,0.35)]',
       )}
       data-onboarding="command-bar"

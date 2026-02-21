@@ -50,7 +50,7 @@
     --radius: 0.5rem;
 
     /* Surfaces */
-    --background:           oklch(0.985 0 0);   /* #fafafa — barely-off-white */
+    --background:           oklch(0.965 0 0);   /* light gray, avoids washed-out canvas */
     --foreground:           oklch(0.08  0 0);   /* near-black */
     --card:                 oklch(1     0 0);   /* pure white */
     --card-foreground:      oklch(0.08  0 0);
@@ -65,7 +65,7 @@
     --secondary:            oklch(0.94  0 0);
     --secondary-foreground: oklch(0.09  0 0);
     --muted:                oklch(0.94  0 0);
-    --muted-foreground:     oklch(0.46  0 0);
+    --muted-foreground:     oklch(0.36  0 0);
     --accent:               oklch(0.94  0 0);
     --accent-foreground:    oklch(0.09  0 0);
 
@@ -73,8 +73,8 @@
     --destructive:          oklch(0.577 0.245 27.325);
 
     /* Structure */
-    --border:               oklch(0.88  0 0);
-    --input:                oklch(0.88  0 0);
+    --border:               oklch(0.82  0 0);
+    --input:                oklch(0.82  0 0);
     --ring:                 oklch(0.78  0.17 195);
 
     /* Charts — stay vibrant for data clarity */

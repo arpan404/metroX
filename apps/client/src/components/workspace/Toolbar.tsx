@@ -58,7 +58,7 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
       className={cn(
         'absolute top-3 left-3 right-3 z-40 h-11',
         'flex items-center gap-2 px-3',
-        'rounded-xl border border-border/50 bg-background/75 backdrop-blur-2xl backdrop-saturate-150',
+        'rounded-xl border border-border/70 bg-background/95 dark:border-border/50 dark:bg-background/75 backdrop-blur-2xl backdrop-saturate-150',
         'shadow-[0_2px_20px_-8px_rgba(0,0,0,0.3)]',
       )}
       data-onboarding="toolbar"
@@ -68,10 +68,10 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
         <img
           src="/favicon.svg"
           alt="MetroX"
-          className="opacity-80 transition-opacity duration-300 hover:opacity-100"
+          className="opacity-95 dark:opacity-80 transition-opacity duration-300 hover:opacity-100"
           style={{ height: '24px', width: '24px', objectFit: 'contain' }}
         />
-        <span className="text-sm font-display font-semibold tracking-tight hidden sm:block opacity-80">MetroX</span>
+        <span className="text-sm font-display font-semibold tracking-tight hidden sm:block opacity-95 dark:opacity-80">MetroX</span>
       </div>
 
       {/* Divider */}

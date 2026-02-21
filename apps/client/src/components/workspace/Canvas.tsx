@@ -243,13 +243,13 @@ export function Canvas() {
         {nodes.length === 0 && (
           <Panel position="top-center">
             <div className="mt-[30vh] text-center select-none">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-muted/30 mb-4">
-                <Shield className="w-7 h-7 text-muted-foreground/50" />
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-muted/45 dark:bg-muted/30 mb-4">
+                <Shield className="w-7 h-7 text-muted-foreground/70 dark:text-muted-foreground/50" />
               </div>
-              <h3 className="text-lg font-[Syne] font-semibold text-muted-foreground/60 mb-1">
+              <h3 className="text-lg font-[Syne] font-semibold text-muted-foreground/80 dark:text-muted-foreground/60 mb-1">
                 No active evaluation
               </h3>
-              <p className="text-sm text-muted-foreground/40 max-w-xs mx-auto">
+              <p className="text-sm text-muted-foreground/70 dark:text-muted-foreground/40 max-w-xs mx-auto">
                 Open Configuration to set up a target and launch a run, or enter a Run ID to load results.
               </p>
             </div>

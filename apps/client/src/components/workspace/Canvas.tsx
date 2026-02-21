@@ -17,6 +17,7 @@ import 'reactflow/dist/style.css'
 import { useWorkspace } from '@/stores/workspace-store'
 import { nodeTypes } from './Nodes'
 import { cn } from '@/lib/utils'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 /* ------------------------------------------------------------------ */
 /*  Build nodes/edges from attack summary                             */
@@ -131,6 +132,7 @@ export function Canvas() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null)
   const [nodeMenu, setNodeMenu] = useState<{ x: number; y: number; node: Node } | null>(null)
+  const [infoNode, setInfoNode] = useState<Node | null>(null)
 
   // Build graph from state
   const graphData = useMemo(() => {
@@ -319,9 +321,11 @@ export function Canvas() {
           x={nodeMenu.x}
           y={nodeMenu.y}
           node={nodeMenu.node}
+          onInfo={(node) => setInfoNode(node)}
           onClose={() => setNodeMenu(null)}
         />
       )}
+      <NodeInfoDialog node={infoNode} onOpenChange={(open) => !open && setInfoNode(null)} />
     </div>
   )
 }
@@ -451,11 +455,13 @@ function NodeContextMenu({
   x,
   y,
   node,
+  onInfo,
   onClose,
 }: {
   x: number
   y: number
   node: Node
+  onInfo: (node: Node) => void
   onClose: () => void
 }) {
   const { state, dispatch } = useWorkspace()
@@ -490,24 +496,7 @@ function NodeContextMenu({
   const handleInfo = () => {
     const attackType = node.id.startsWith('attack-') ? node.id.replace('attack-', '') : null
     dispatch({ type: 'SELECT_NODE', nodeId: node.id, attackType })
-    if (isStudioNode) {
-      const details = [
-        nodeData?.role ? `Role: ${nodeData.role}` : null,
-        nodeData?.model ? `Model: ${nodeData.model}` : null,
-        nodeData?.description ? nodeData.description : null,
-      ]
-        .filter(Boolean)
-        .join(' | ')
-      toast.message(nodeData?.label ?? 'Node info', {
-        description: details || `Node ID: ${node.id}`,
-      })
-      return
-    }
-    if (attackType) {
-      dispatch({ type: 'OPEN_PANEL', panel: 'attack-detail' })
-      return
-    }
-    dispatch({ type: 'OPEN_PANEL', panel: 'analytics' })
+    onInfo(node)
   }
 
   const menuX = Math.min(x, window.innerWidth - 220)
@@ -571,5 +560,54 @@ function NodeContextMenu({
         <span className="flex-1">Info</span>
       </button>
     </motion.div>
+  )
+}
+
+function NodeInfoDialog({
+  node,
+  onOpenChange,
+}: {
+  node: Node | null
+  onOpenChange: (open: boolean) => void
+}) {
+  const nodeData = (node?.data ?? {}) as Record<string, unknown>
+
+  const rows: Array<{ label: string; value: string }> = []
+  if (node) {
+    rows.push({ label: 'Node ID', value: node.id })
+    rows.push({ label: 'Type', value: node.type ?? 'unknown' })
+    rows.push({ label: 'Position', value: `x: ${Math.round(node.position.x)}, y: ${Math.round(node.position.y)}` })
+  }
+  if (typeof nodeData.label === 'string' && nodeData.label.trim()) rows.push({ label: 'Name', value: nodeData.label })
+  if (typeof nodeData.role === 'string' && nodeData.role.trim()) rows.push({ label: 'Agent', value: nodeData.role })
+  if (typeof nodeData.model === 'string' && nodeData.model.trim()) rows.push({ label: 'Model', value: nodeData.model })
+  if (typeof nodeData.attackType === 'string' && nodeData.attackType.trim()) rows.push({ label: 'Attack Type', value: nodeData.attackType })
+  if (typeof nodeData.status === 'string' && nodeData.status.trim()) rows.push({ label: 'Status', value: nodeData.status })
+  if (typeof nodeData.total === 'number') rows.push({ label: 'Total Samples', value: String(nodeData.total) })
+  if (typeof nodeData.success === 'number') rows.push({ label: 'Failures', value: String(nodeData.success) })
+  if (typeof nodeData.failure === 'number') rows.push({ label: 'Passes', value: String(nodeData.failure) })
+  if (typeof nodeData.description === 'string' && nodeData.description.trim()) {
+    rows.push({ label: 'Description', value: nodeData.description })
+  }
+
+  return (
+    <Dialog open={Boolean(node)} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>{(typeof nodeData.label === 'string' && nodeData.label) || 'Node Info'}</DialogTitle>
+          <DialogDescription>
+            Details for the selected node and agent configuration.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          {rows.map((row) => (
+            <div key={row.label} className="rounded-md border border-border/40 px-3 py-2">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{row.label}</p>
+              <p className="text-sm">{row.value}</p>
+            </div>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

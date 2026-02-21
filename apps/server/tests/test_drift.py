@@ -8,7 +8,7 @@ from app.models import (
     Run,
     ScoreCard,
 )
-from app.services.drift import compute_drift
+from app.stats.drift import compute_drift
 
 
 def test_drift_detects_shift(db_session):

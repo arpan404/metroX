@@ -9,7 +9,6 @@ description = "MetroX backend"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-  "afk-py @ file:///Users/arpanbhandari/code/afk-py",
   "alembic>=1.16.5",
   "fastapi>=0.116.0",
   "uvicorn[standard]>=0.35.0",
@@ -27,6 +26,7 @@ dependencies = [
   "networkx>=3.4.2",
   "httpx>=0.28.1",
   "redis>=5.2.1",
+  "afk-py",
 ]
 
 [project.optional-dependencies]
@@ -50,3 +50,6 @@ markers = [
   "live_model: marks opt-in live model tests against local/runtime providers",
   "nightly_live_model: marks nightly live model end-to-end runs",
 ]
+
+[tool.uv.sources]
+afk-py = { git = "https://github.com/arpan404/afk" }

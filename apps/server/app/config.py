@@ -1,11 +1,27 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+_APP_DIR = Path(__file__).resolve().parent
+_SERVER_DIR = _APP_DIR.parent
+_REPO_DIR = _SERVER_DIR.parent.parent
+
+_ENV_FILES: list[Path] = []
+for _candidate in (_SERVER_DIR / ".env", _REPO_DIR / ".env"):
+    if _candidate.exists():
+        _ENV_FILES.append(_candidate)
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="METROX_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="METROX_",
+        extra="ignore",
+        env_file=tuple(_ENV_FILES),
+        env_file_encoding="utf-8",
+    )
 
     database_url: str = Field(
         default="postgresql+psycopg://metrox:metrox@localhost:5432/metrox"
@@ -29,6 +45,8 @@ class Settings(BaseSettings):
     credential_rotation_max_age_days: int = Field(default=90)
     credential_rotation_enforced: bool = Field(default=True)
 
+    cors_allowed_origins: str = Field(default="http://localhost:3000,http://localhost:5173")
+
     run_queue_enabled: bool = Field(default=True)
     run_queue_backend: str = Field(default="inprocess")
     run_worker_threads: int = Field(default=1)
@@ -39,6 +57,7 @@ class Settings(BaseSettings):
     run_queue_redis_workers_key: str = Field(default="metrox:runs:workers")
     run_queue_redis_block_s: int = Field(default=5)
     run_queue_worker_heartbeat_ttl_s: int = Field(default=60)
+    run_queue_max_size: int = Field(default=10000)
     run_batch_size: int = Field(default=100)
     use_migrations: bool = Field(default=False)
 

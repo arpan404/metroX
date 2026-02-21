@@ -13,7 +13,7 @@ resolution-markers = [
 [[package]]
 name = "afk-py"
 version = "0.1.0"
-source = { directory = "../../../../../code/afk-py" }
+source = { git = "https://github.com/arpan404/afk#ad100c6b2317873de5be1ce5ce01a7c634f61e32" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "async-lru" },
@@ -29,25 +29,6 @@ dependencies = [
     { name = "pytest" },
     { name = "redis" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiosqlite", specifier = ">=0.22.1" },
-    { name = "async-lru", specifier = ">=2.1.0" },
-    { name = "asyncpg", specifier = ">=0.31.0" },
-    { name = "cachetools", specifier = ">=7.0.1" },
-    { name = "claude-agent-sdk", specifier = "==0.1.37" },
-    { name = "fastapi", specifier = ">=0.129.0" },
-    { name = "jinja2", specifier = ">=3.1.6" },
-    { name = "litellm", specifier = "==1.81.13" },
-    { name = "numpy", specifier = ">=2.3.0" },
-    { name = "openai", specifier = "==2.21.0" },
-    { name = "prometheus-client", specifier = ">=0.24.1" },
-    { name = "pyjwt", marker = "extra == 'a2a'", specifier = ">=2.10.1" },
-    { name = "pytest", specifier = ">=9.0.2" },
-    { name = "redis", specifier = "==7.2.0" },
-]
-provides-extras = ["a2a"]
 
 [[package]]
 name = "aiohappyeyeballs"
@@ -240,62 +221,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/6b/5c/685e6633917e101e5
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3a/2a/7cc015f5b9f5db42b7d48157e23356022889fc354a2813c15934b7cb5c0e/attrs-25.4.0-py3-none-any.whl", hash = "sha256:adcf7e2a1fb3b36ac48d97835bb6d8ade15b8dcce26aba8bf1d14847b57a3373", size = 67615, upload-time = "2025-10-06T13:54:43.17Z" },
 ]
-
-[[package]]
-name = "metrox-server"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "afk-py" },
-    { name = "alembic" },
-    { name = "fastapi" },
-    { name = "hdbscan" },
-    { name = "httpx" },
-    { name = "networkx" },
-    { name = "numpy" },
-    { name = "pandas" },
-    { name = "psycopg", extra = ["binary"] },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "redis" },
-    { name = "scikit-learn" },
-    { name = "scipy" },
-    { name = "sqlalchemy" },
-    { name = "statsmodels" },
-    { name = "umap-learn" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-cov" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "afk-py", directory = "../../../../../code/afk-py" },
-    { name = "alembic", specifier = ">=1.16.5" },
-    { name = "fastapi", specifier = ">=0.116.0" },
-    { name = "hdbscan", specifier = ">=0.8.40" },
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "networkx", specifier = ">=3.4.2" },
-    { name = "numpy", specifier = ">=2.2.0" },
-    { name = "pandas", specifier = ">=2.2.3" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.2.3" },
-    { name = "pydantic", specifier = ">=2.10.0" },
-    { name = "pydantic-settings", specifier = ">=2.6.1" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.3" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
-    { name = "redis", specifier = ">=5.2.1" },
-    { name = "scikit-learn", specifier = ">=1.6.0" },
-    { name = "scipy", specifier = ">=1.14.1" },
-    { name = "sqlalchemy", specifier = ">=2.0.36" },
-    { name = "statsmodels", specifier = ">=0.14.4" },
-    { name = "umap-learn", specifier = ">=0.5.7" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.35.0" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "cachetools"
@@ -1151,6 +1076,62 @@ sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec9
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
 ]
+
+[[package]]
+name = "metrox-server"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "afk-py" },
+    { name = "alembic" },
+    { name = "fastapi" },
+    { name = "hdbscan" },
+    { name = "httpx" },
+    { name = "networkx" },
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "redis" },
+    { name = "scikit-learn" },
+    { name = "scipy" },
+    { name = "sqlalchemy" },
+    { name = "statsmodels" },
+    { name = "umap-learn" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "afk-py", git = "https://github.com/arpan404/afk" },
+    { name = "alembic", specifier = ">=1.16.5" },
+    { name = "fastapi", specifier = ">=0.116.0" },
+    { name = "hdbscan", specifier = ">=0.8.40" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "networkx", specifier = ">=3.4.2" },
+    { name = "numpy", specifier = ">=2.2.0" },
+    { name = "pandas", specifier = ">=2.2.3" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.2.3" },
+    { name = "pydantic", specifier = ">=2.10.0" },
+    { name = "pydantic-settings", specifier = ">=2.6.1" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.3" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
+    { name = "redis", specifier = ">=5.2.1" },
+    { name = "scikit-learn", specifier = ">=1.6.0" },
+    { name = "scipy", specifier = ">=1.14.1" },
+    { name = "sqlalchemy", specifier = ">=2.0.36" },
+    { name = "statsmodels", specifier = ">=0.14.4" },
+    { name = "umap-learn", specifier = ">=0.5.7" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.35.0" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "multidict"

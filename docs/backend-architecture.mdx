@@ -1,8 +1,8 @@
 <a id="top"></a>
 
-# Backend Core Architecture (V1.11)
+# Backend Core Architecture (V1.12)
 
-Canonical backend architecture documentation for MetroX V1.11, grounded in current implementation under `apps/server/app/*`.
+Canonical backend architecture documentation for MetroX V1.12, grounded in current implementation under `apps/server/app/*`.
 
 ## Scope
 
@@ -209,6 +209,8 @@ sequenceDiagram
     end
 
     O->>DB: mark running and AFKRunState running
+    O->>DB: resolve api_key_ref via SecretCipher and log SecretAccessAudit
+    O->>DB: create ConfigSnapshot with redacted auth_headers
     O->>DB: create or load BenchmarkSnapshot and AttackCases
     loop each unprocessed attack case
         O->>A: invoke target
@@ -247,7 +249,7 @@ flowchart LR
     BACKEND{run_queue_backend}
 
     subgraph InProcess[inprocess backend]
-        IQ[(in-memory queue.Queue)]
+        IQ[(queue.Queue with maxsize backpressure)]
         T[worker threads]
     end
 
@@ -296,6 +298,8 @@ flowchart TB
 
     subgraph LLMManaged[managed_llm_runtime]
         LLM[AFKLLMRuntimeAdapter]
+        SYSPROMPT[_build_system_prompt: instructions + extra_system_prompt]
+        PROVSETTINGS[_provider_settings: litellm api_base or openai base_url]
         AFKLLM[AFK LLMBuilder and chat]
         LLMFALLBACK[deterministic degraded simulation]
     end
@@ -303,6 +307,7 @@ flowchart TB
     subgraph AgentManaged[managed_agent_runtime]
         AGENT[AFKManagedAgentRuntimeAdapter]
         RUNNER[AFK Runner and Agent]
+        EXTCTX[extra_context passed as context kwarg]
         POLICY[policy_decision_for_tool]
         EVENTS[AFK stream events]
     end
@@ -319,12 +324,16 @@ flowchart TB
 
     REQ --> TYPE
     TYPE -->|managed_llm_runtime| LLM
-    LLM --> AFKLLM
+    LLM --> SYSPROMPT
+    LLM --> PROVSETTINGS
+    PROVSETTINGS --> AFKLLM
+    SYSPROMPT --> AFKLLM
     AFKLLM --> LLMFALLBACK
     LLM --> RESP
 
     TYPE -->|managed_agent_runtime| AGENT
     AGENT --> RUNNER
+    AGENT --> EXTCTX
     RUNNER --> EVENTS
     EVENTS --> POLICY
     POLICY --> TOOLS
@@ -675,8 +684,12 @@ erDiagram
 
     RUNS ||--o{ REPORT_ARTIFACTS : reports
     RUNS ||--o{ COMPARISONS : compared
+    RUNS ||--o{ AFK_RUN_STATES : state_checkpoints
+    RUNS ||--o{ RUN_EVENTS : event_log
+    RUNS ||--o{ SCORE_CARDS : scored
     MITIGATION_EXPERIMENTS ||--o{ MITIGATION_EFFECTS : effects
     MITIGATION_EXPERIMENTS ||--o{ RECOMMENDATIONS : recommendations
+    ORCHESTRATION_PROFILES ||--|| ORCHESTRATION_CONFIG : defines
 ```
 
 [Back to top](#top)
@@ -736,8 +749,10 @@ erDiagram
   - `GET /v1/config-profiles/{profile_id}`
   - `POST /v1/pricing-profiles`
   - `GET /v1/pricing-profiles/{profile_id}`
+  - `GET /v1/afk/capabilities`
 - Compare mitigation reporting:
   - `GET /v1/compare`
+  - `POST /v1/adjudications`
   - `POST /v1/mitigation-experiments`
   - `GET /v1/mitigation-experiments/{experiment_id}`
   - `POST /v1/reports/{run_id}/generate`
@@ -750,6 +765,7 @@ erDiagram
 1. Standard run completes end-to-end.
 - Create session, profile, run with `execute_now=true`.
 - Run transitions: `queued -> running -> completed`.
+- Orchestrator resolves `api_key_ref` via `SecretCipher` (if present) and creates redacted `ConfigSnapshot`.
 - Orchestrator emits benchmark, progress, analytics, scorecard, drift, completed events.
 - Scorecard, risk, features, detector votes, cost summary, and report endpoints return populated payloads.
 
@@ -764,6 +780,7 @@ erDiagram
 - Provider credential stored as DB-wrapped ciphertext format `dbk:key_id:version:payload`.
 - Validation with `credential_id` decrypts key via `SecretCipher` and writes `SecretAccessAudit` records.
 - Key lifecycle operations emit `SecretKeyEvent` entries.
+- Credential resolution failure (missing credential or corrupt ciphertext) logs event and audit, returns `None`.
 
 4. High disagreement or uncertainty adjudication candidate.
 - Multiple detector votes are fused into final detection.
@@ -771,29 +788,58 @@ erDiagram
 - If threshold exceeded, execution marked as adjudication candidate for review.
 - Manual adjudication endpoint can override failure flags and increase confidence.
 
+5. Live Ollama E2E via litellm native path.
+- Profile with `target_type=managed_llm_runtime`, `model=ollama_chat/gpt-oss:20b`, `runtime_provider=litellm`.
+- No `base_url` needed; litellm routes `ollama_chat/*` models to Ollama natively.
+- Same model used for both target and agentic attacker agents.
+- `extra_system_prompt` merged into system message; `extra_context` passed to AFK agents.
+- Full pipeline: benchmark, executions, detections, scoring, drift, scorecard.
+
+6. Live Ollama E2E via OpenAI-compatible endpoint.
+- Profile with `target_type=managed_llm_runtime`, `model=openai/gpt-oss:20b`, `runtime_provider=litellm`.
+- `base_url` set to `http://localhost:11434/v1` (Ollama OpenAI-compatible API).
+- `auth_headers` with `Authorization` verified as `**REDACTED**` in config snapshot.
+- Provider settings mapped: `api_base` for litellm, `base_url` for openai.
+
 [Back to top](#top)
 
 <a id="code-grounding-map"></a>
 ## Code Grounding Map
 
-- Runtime and orchestration: `apps/server/app/services/orchestrator.py`
+- Entry point and middleware: `apps/server/app/main.py`
 - API and streaming: `apps/server/app/api/v1.py`
-- Queue and worker: `apps/server/app/services/run_queue.py`, `apps/server/app/worker.py`
-- Adapters and policy: `apps/server/app/services/adapters.py`, `apps/server/app/services/policy.py`
-- Benchmark and agentic generation: `apps/server/app/services/benchmark.py`, `apps/server/app/services/agentic_attacking.py`
-- Detection, risk, scoring, analytics, drift:
-  - `apps/server/app/services/detection.py`
-  - `apps/server/app/services/risk.py`
-  - `apps/server/app/services/scoring.py`
-  - `apps/server/app/services/advanced_analytics.py`
-  - `apps/server/app/services/drift.py`
-- Costing, security, provider, reporting, compare, mitigation:
-  - `apps/server/app/services/costing.py`
-  - `apps/server/app/services/security.py`
-  - `apps/server/app/services/providers.py`
-  - `apps/server/app/services/reporting.py`
-  - `apps/server/app/services/compare.py`
-  - `apps/server/app/services/mitigation.py`
+- Auth: `apps/server/app/auth.py`
+- Configuration: `apps/server/app/config.py`
+- Database and migrations: `apps/server/app/db.py`
+- Observability and SLO: `apps/server/app/observability.py`
+- Pipeline orchestration:
+  - `apps/server/app/pipeline/orchestrator.py` (run lifecycle, credential resolution, config snapshot redaction)
+  - `apps/server/app/pipeline/benchmark.py` (benchmark and attack case generation)
+  - `apps/server/app/pipeline/costing.py` (execution costing, pricing profiles, budget gate)
+  - `apps/server/app/pipeline/compare.py` (run comparison, Benjamini-Hochberg adjustment)
+  - `apps/server/app/pipeline/mitigation.py` (mitigation experiments and effects)
+  - `apps/server/app/pipeline/reporting.py` (markdown report generation, report artifacts)
+- Runtime adapters and queue:
+  - `apps/server/app/runtime/adapters.py` (target adapters, system prompt merging, provider settings)
+  - `apps/server/app/runtime/policy.py` (tool policy profiles and decisions)
+  - `apps/server/app/runtime/providers.py` (provider validation and capability probing)
+  - `apps/server/app/runtime/run_queue.py` (inprocess and redis queue backends, backpressure, DLQ)
+  - `apps/server/app/worker.py` (redis queue worker process)
+- Agents and orchestration:
+  - `apps/server/app/agents/agentic_attacking.py` (multi-agent attack orchestrator, role coordination)
+  - `apps/server/app/agents/orchestration_profiles.py` (profile CRUD, graph validation, topological sort)
+- Statistical analysis:
+  - `apps/server/app/stats/detection.py` (failure detection, vote fusion, probabilistic labels)
+  - `apps/server/app/stats/scoring.py` (scorecard, composite score, gate verdict, power estimation)
+  - `apps/server/app/stats/risk.py` (risk models, risk predictions, risk cards)
+  - `apps/server/app/stats/features.py` (feature definitions and extraction)
+  - `apps/server/app/stats/clustering.py` (TF-IDF clustering, HDBSCAN/KMeans)
+  - `apps/server/app/stats/drift.py` (PSI, KS test, KL divergence, change points)
+  - `apps/server/app/stats/advanced_analytics.py` (inference, calibration, cooccurrence, forecast)
+- Security:
+  - `apps/server/app/security/service.py` (AES-256-GCM cipher, key lifecycle, HKDF derivation)
+- Utilities:
+  - `apps/server/app/utils/common.py` (log_event, bootstrap_ci, proportion_test, benjamini_hochberg)
 - Entities and contracts: `apps/server/app/models.py`, `apps/server/app/schemas.py`
 
 [Back to top](#top)

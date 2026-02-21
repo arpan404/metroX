@@ -2,16 +2,22 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import os
 from datetime import datetime, timezone
 
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from sqlalchemy.orm import Session
 
-from app.models import ProviderCredential, SecretKey, SecretKeyEvent
+from app.models import ProviderCredential, SecretAccessAudit, SecretKey, SecretKeyEvent
+
+logger = logging.getLogger(__name__)
+
+_GCM_NONCE_SIZE = 12
 
 
 class SecretCipher:
-    """DB-managed key encryption for provider credentials."""
+    """DB-managed key encryption for provider credentials using AES-256-GCM."""
 
     def __init__(self, db: Session):
         self.db = db
@@ -21,15 +27,19 @@ class SecretCipher:
         if not key:
             raise ValueError("No active secret key. Create and activate a key via /v1/security/keys")
         material = _unwrap_material(key.encrypted_material)
-        cipher = _xor_encrypt(plaintext.encode("utf-8"), material)
-        payload = base64.urlsafe_b64encode(cipher).decode("utf-8")
-        return f"dbk:{key.id}:{key.version}:{payload}", key.version
+        encrypted = _aead_encrypt(plaintext.encode("utf-8"), material)
+        payload = base64.urlsafe_b64encode(encrypted).decode("utf-8")
+        return f"dbk2:{key.id}:{key.version}:{payload}", key.version
 
     def decrypt(self, ciphertext: str) -> str:
-        if not ciphertext.startswith("dbk:"):
+        if ciphertext.startswith("dbk2:"):
+            _, key_id, version, payload = ciphertext.split(":", 3)
+        elif ciphertext.startswith("dbk:"):
+            # Legacy XOR format - supported for read/migration only
+            _, key_id, version, payload = ciphertext.split(":", 3)
+        else:
             raise ValueError("Unsupported ciphertext format; credential must be re-encrypted")
 
-        _, key_id, version, payload = ciphertext.split(":", 3)
         key = self.db.query(SecretKey).filter(SecretKey.id == key_id).one_or_none()
         if not key:
             raise ValueError("Secret key not found")
@@ -40,7 +50,13 @@ class SecretCipher:
 
         material = _unwrap_material(key.encrypted_material)
         raw = base64.urlsafe_b64decode(payload.encode("utf-8"))
-        plain = _xor_encrypt(raw, material)
+
+        if ciphertext.startswith("dbk2:"):
+            plain = _aead_decrypt(raw, material)
+        else:
+            # Legacy XOR path for migration
+            plain = _legacy_xor(raw, material)
+
         return plain.decode("utf-8")
 
 
@@ -98,12 +114,29 @@ def reencrypt_credentials(db: Session, *, key_id: str, actor: str) -> dict[str, 
     for row in rows:
         try:
             plaintext = cipher.decrypt(row.encrypted_secret)
+            db.add(
+                SecretAccessAudit(
+                    provider_credential_id=row.id,
+                    action="decrypt_for_reencrypt",
+                    actor=actor,
+                    success=True,
+                )
+            )
             encrypted, version = cipher.encrypt(plaintext)
             row.encrypted_secret = encrypted
             row.key_version = version
             row.last_rotated_at = datetime.now(timezone.utc)
             updated += 1
-        except Exception:
+        except Exception as exc:
+            db.add(
+                SecretAccessAudit(
+                    provider_credential_id=row.id,
+                    action="decrypt_for_reencrypt",
+                    actor=actor,
+                    success=False,
+                    error=str(exc),
+                )
+            )
             continue
     _log_key_event(db, key_id=key_id, action="reencrypt_credentials", actor=actor, meta={"updated": updated})
     db.commit()
@@ -141,18 +174,70 @@ def _log_key_event(db: Session, *, key_id: str, action: str, actor: str, meta: d
     db.add(SecretKeyEvent(key_id=key_id, action=action, actor=actor, meta=meta))
 
 
+def _aead_encrypt(data: bytes, key_material: bytes) -> bytes:
+    """Encrypt with AES-256-GCM. Returns nonce || ciphertext (including auth tag)."""
+    key = _derive_aes_key(key_material)
+    aesgcm = AESGCM(key)
+    nonce = os.urandom(_GCM_NONCE_SIZE)
+    ciphertext = aesgcm.encrypt(nonce, data, None)
+    return nonce + ciphertext
+
+
+def _aead_decrypt(data: bytes, key_material: bytes) -> bytes:
+    """Decrypt AES-256-GCM. Input is nonce || ciphertext (including auth tag)."""
+    if len(data) < _GCM_NONCE_SIZE + 16:
+        raise ValueError("Ciphertext too short for AES-256-GCM")
+    key = _derive_aes_key(key_material)
+    aesgcm = AESGCM(key)
+    nonce = data[:_GCM_NONCE_SIZE]
+    ciphertext = data[_GCM_NONCE_SIZE:]
+    return aesgcm.decrypt(nonce, ciphertext, None)
+
+
+def _derive_aes_key(key_material: bytes) -> bytes:
+    """Derive a 256-bit AES key from raw key material using HKDF-SHA256."""
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    from cryptography.hazmat.primitives import hashes
+
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=None,
+        info=b"metrox-credential-aead-v2",
+    )
+    return hkdf.derive(key_material)
+
+
+def _get_wrap_key() -> bytes:
+    """Get the master wrap key from METROX_MASTER_WRAP_KEY environment variable."""
+    raw = os.getenv("METROX_MASTER_WRAP_KEY", "").strip()
+    if not raw:
+        raise ValueError(
+            "METROX_MASTER_WRAP_KEY environment variable is not set. "
+            "Set it to a strong random secret before using credential encryption."
+        )
+    return hashlib.sha256(raw.encode("utf-8")).digest()
+
+
 def _wrap_material(material: bytes) -> str:
-    master = hashlib.sha256((os.getenv("METROX_MASTER_WRAP_KEY") or "metrox-dev-wrap").encode("utf-8")).digest()
-    wrapped = _xor_encrypt(material, master)
-    return base64.urlsafe_b64encode(wrapped).decode("utf-8")
+    """Wrap key material using AES-256-GCM with the master wrap key."""
+    master = _get_wrap_key()
+    encrypted = _aead_encrypt(material, master)
+    return "v2:" + base64.urlsafe_b64encode(encrypted).decode("utf-8")
 
 
 def _unwrap_material(encrypted_material: str) -> bytes:
-    master = hashlib.sha256((os.getenv("METROX_MASTER_WRAP_KEY") or "metrox-dev-wrap").encode("utf-8")).digest()
+    """Unwrap key material. Supports new v2 (AEAD) and legacy (XOR) formats."""
+    master = _get_wrap_key()
+    if encrypted_material.startswith("v2:"):
+        raw = base64.urlsafe_b64decode(encrypted_material[3:].encode("utf-8"))
+        return _aead_decrypt(raw, master)
+    # Legacy XOR format for migration
     wrapped = base64.urlsafe_b64decode(encrypted_material.encode("utf-8"))
-    return _xor_encrypt(wrapped, master)
+    return _legacy_xor(wrapped, master)
 
 
-def _xor_encrypt(data: bytes, key_material: bytes) -> bytes:
+def _legacy_xor(data: bytes, key_material: bytes) -> bytes:
+    """Legacy XOR 'encryption' - kept only for migrating old data."""
     key = hashlib.sha256(key_material).digest()
     return bytes([byte ^ key[i % len(key)] for i, byte in enumerate(data)])

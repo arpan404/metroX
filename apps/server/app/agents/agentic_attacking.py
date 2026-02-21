@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.services.common import seeded_random
+from app.utils.common import seeded_random
 
 DEFAULT_ROLE_INSTRUCTIONS: dict[str, str] = {
     "attacker": (
@@ -77,6 +77,10 @@ class OrchestrationConfig:
     input_fallback: str
     subagent_router_strategy: str
     threading: dict[str, Any]
+    graph: dict[str, Any]
+    execution_order: list[str]
+    extra_system_prompt: str
+    extra_context: dict[str, Any]
 
 
 class MultiAgentAttackOrchestrator:
@@ -119,6 +123,10 @@ class MultiAgentAttackOrchestrator:
             "input_fallback": self.orchestration.input_fallback,
             "subagent_router_strategy": self.orchestration.subagent_router_strategy,
             "threading": self.orchestration.threading,
+            "graph": self.orchestration.graph,
+            "execution_order": self.orchestration.execution_order,
+            "extra_system_prompt": self.orchestration.extra_system_prompt,
+            "extra_context": self.orchestration.extra_context,
         }
 
     def generate(self, seed: AttackSeed, deterministic_seed: int) -> AttackArtifact:
@@ -168,46 +176,78 @@ class MultiAgentAttackOrchestrator:
 
         role_agents: dict[str, Any] = {}
         subagents = []
-        routed_roles = _route_roles(self.orchestration.roles, seed.attack_type, self.orchestration.subagent_router_strategy)
+        routed_roles = _route_roles(
+            self.orchestration.roles,
+            seed.attack_type,
+            self.orchestration.subagent_router_strategy,
+            graph=self.orchestration.graph,
+            execution_order=self.orchestration.execution_order,
+        )
+        extra_sys = self.orchestration.extra_system_prompt
+        extra_ctx = self.orchestration.extra_context or {}
         for role in routed_roles:
             if not role.enabled:
                 continue
-            agent = Agent(
-                name=role.name,
-                model=role.model or self.orchestration.model,
-                fail_safe=fail_safe,
+            agent_kwargs: dict[str, Any] = {
+                "name": role.name,
+                "model": role.model or self.orchestration.model,
+                "fail_safe": fail_safe,
                 **_instruction_kwargs(
                     prompts_dir=self.orchestration.prompts_dir,
                     instruction_file=role.instruction_file,
                     inline_instructions=role.instructions,
+                    extra_system_prompt=extra_sys,
                 ),
-            )
+            }
+            if extra_ctx:
+                agent_kwargs["context"] = extra_ctx
+            agent = Agent(**agent_kwargs)
             role_agents[role.name] = agent
             subagents.append(agent)
 
-        coordinator = Agent(
-            name="attack_coordinator",
-            model=self.orchestration.model,
+        coordinator_kwargs: dict[str, Any] = {
+            "name": "attack_coordinator",
+            "model": self.orchestration.model,
             **_instruction_kwargs(
                 prompts_dir=self.orchestration.prompts_dir,
                 instruction_file=self.orchestration.coordinator_instruction_file,
                 inline_instructions=self.orchestration.coordinator_instructions,
+                extra_system_prompt=extra_sys,
             ),
-            subagents=subagents,
-            join_policy=self.orchestration.join_policy,
-            max_concurrent_subagents=max(1, self.orchestration.max_concurrent_subagents),
-            fail_safe=fail_safe,
+            "subagents": subagents,
+            "join_policy": self.orchestration.join_policy,
+            "max_concurrent_subagents": max(1, self.orchestration.max_concurrent_subagents),
+            "fail_safe": fail_safe,
+        }
+        if extra_ctx:
+            coordinator_kwargs["context"] = extra_ctx
+        coordinator = Agent(**coordinator_kwargs)
+
+        raw_orchestration_payload = (
+            self.config.get("afk_orchestration", {})
+            if isinstance(self.config.get("afk_orchestration", {}), dict)
+            else {}
         )
+        orchestration_context = _build_orchestration_context(self.orchestration, raw_orchestration_payload)
+        campaign_context = _build_campaign_context(raw_orchestration_payload)
+        coordinator_request = {
+            "task": "generate_attack_case",
+            "seed": {
+                "attack_type": seed.attack_type,
+                "family": seed.family,
+                "target_behavior": seed.target_behavior,
+                "seed_prompt": seed.base_prompt,
+                "variant": seed.variant,
+            },
+            "orchestration_context": orchestration_context,
+            "campaign_context": campaign_context,
+        }
 
         coordinator_out = _safe_json(
             _runner_text(
                 runner,
                 coordinator,
-                (
-                    "Generate one attack-case orchestration output. "
-                    f"attack_type={seed.attack_type}; family={seed.family}; behavior={seed.target_behavior}; "
-                    f"seed_prompt={seed.base_prompt}; variant={seed.variant}"
-                ),
+                json.dumps(coordinator_request, ensure_ascii=False),
             )
         )
 
@@ -216,9 +256,17 @@ class MultiAgentAttackOrchestrator:
         verifier_out = _to_dict(coordinator_out.get("verifier"))
         analyst_out = _to_dict(coordinator_out.get("analyst"))
 
-        attacker_input = (
-            f"attack_type={seed.attack_type}; family={seed.family}; behavior={seed.target_behavior}; "
-            f"seed_prompt={seed.base_prompt}; variant={seed.variant}"
+        attacker_input = json.dumps(
+            {
+                "attack_type": seed.attack_type,
+                "family": seed.family,
+                "target_behavior": seed.target_behavior,
+                "seed_prompt": seed.base_prompt,
+                "variant": seed.variant,
+                "orchestration_context": orchestration_context,
+                "campaign_context": campaign_context,
+            },
+            ensure_ascii=False,
         )
         if not attacker_out and "attacker" in role_agents:
             attacker_out = _safe_json(_runner_text(runner, role_agents["attacker"], attacker_input))
@@ -234,7 +282,15 @@ class MultiAgentAttackOrchestrator:
                 _runner_text(
                     runner,
                     role_agents["critic"],
-                    f"attack_type={seed.attack_type}; prompt={prompt}",
+                    json.dumps(
+                        {
+                            "attack_type": seed.attack_type,
+                            "prompt": prompt,
+                            "orchestration_context": orchestration_context,
+                            "campaign_context": campaign_context,
+                        },
+                        ensure_ascii=False,
+                    ),
                 )
             )
 
@@ -247,7 +303,16 @@ class MultiAgentAttackOrchestrator:
                 _runner_text(
                     runner,
                     role_agents["verifier"],
-                    f"attack_type={seed.attack_type}; prompt={prompt}",
+                    json.dumps(
+                        {
+                            "attack_type": seed.attack_type,
+                            "target_behavior": seed.target_behavior,
+                            "prompt": prompt,
+                            "orchestration_context": orchestration_context,
+                            "campaign_context": campaign_context,
+                        },
+                        ensure_ascii=False,
+                    ),
                 )
             )
 
@@ -256,7 +321,16 @@ class MultiAgentAttackOrchestrator:
                 _runner_text(
                     runner,
                     role_agents["analyst"],
-                    f"attack_type={seed.attack_type}; family={seed.family}; prompt={prompt}",
+                    json.dumps(
+                        {
+                            "attack_type": seed.attack_type,
+                            "family": seed.family,
+                            "prompt": prompt,
+                            "orchestration_context": orchestration_context,
+                            "campaign_context": campaign_context,
+                        },
+                        ensure_ascii=False,
+                    ),
                 )
             )
 
@@ -326,6 +400,10 @@ def _parse_orchestration_config(config: Any, *, default_model: str) -> Orchestra
         input_fallback=str(payload.get("input_fallback", "deny")),
         subagent_router_strategy=str(payload.get("subagent_router_strategy", "taxonomy")),
         threading=payload.get("threading") if isinstance(payload.get("threading"), dict) else {"enabled": True, "strategy": "run_thread"},
+        graph=payload.get("graph") if isinstance(payload.get("graph"), dict) else {"nodes": [], "edges": []},
+        execution_order=[str(item) for item in payload.get("execution_order", [])] if isinstance(payload.get("execution_order", []), list) else [],
+        extra_system_prompt=str(payload.get("extra_system_prompt", "") or ""),
+        extra_context=payload.get("extra_context") if isinstance(payload.get("extra_context"), dict) else {},
         prompts_dir=str(payload.get("prompts_dir", str(DEFAULT_PROMPTS_DIR))),
         coordinator_instruction_file=(
             str(payload.get("coordinator_instruction_file", DEFAULT_COORDINATOR_PROMPT_FILE)).strip()
@@ -396,17 +474,87 @@ def _build_runner_config(runner_config_cls: Any, payload: dict[str, Any]) -> Any
     return runner_config_cls(**kwargs)
 
 
-def _route_roles(roles: list[RoleConfig], attack_type: str, strategy: str) -> list[RoleConfig]:
+def _route_roles(
+    roles: list[RoleConfig],
+    attack_type: str,
+    strategy: str,
+    *,
+    graph: dict[str, Any],
+    execution_order: list[str],
+) -> list[RoleConfig]:
+    role_map = {role.name: role for role in roles}
+    seen: set[str] = set()
+    ordered: list[RoleConfig] = []
+
+    for role_name in execution_order:
+        role = role_map.get(str(role_name).strip())
+        if role and role.name not in seen:
+            ordered.append(role)
+            seen.add(role.name)
+
+    graph_order = _topological_graph_role_order(graph)
+    for role_name in graph_order:
+        role = role_map.get(role_name)
+        if role and role.name not in seen:
+            ordered.append(role)
+            seen.add(role.name)
+
+    remaining = [role for role in roles if role.name not in seen]
+
     if strategy == "difficulty":
-        return sorted(roles, key=lambda role: role.name in {"verifier", "analyst"})
+        remaining = sorted(remaining, key=lambda role: role.name in {"verifier", "analyst"})
     if strategy == "provider_slice":
-        return sorted(roles, key=lambda role: role.name)
+        remaining = sorted(remaining, key=lambda role: role.name)
     if strategy == "round_robin":
-        if not roles:
-            return roles
-        offset = len(attack_type) % len(roles)
-        return roles[offset:] + roles[:offset]
-    return roles
+        if remaining:
+            offset = len(attack_type) % len(remaining)
+            remaining = remaining[offset:] + remaining[:offset]
+    return ordered + remaining
+
+
+def _topological_graph_role_order(graph: dict[str, Any]) -> list[str]:
+    if not isinstance(graph, dict):
+        return []
+    nodes = graph.get("nodes") if isinstance(graph.get("nodes"), list) else []
+    edges = graph.get("edges") if isinstance(graph.get("edges"), list) else []
+
+    node_ids: list[str] = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        node_id = str(node.get("id", "")).strip()
+        if node_id and node_id not in node_ids:
+            node_ids.append(node_id)
+
+    if not node_ids:
+        return []
+
+    adjacency: dict[str, list[str]] = {node_id: [] for node_id in node_ids}
+    in_degree: dict[str, int] = {node_id: 0 for node_id in node_ids}
+    for edge in edges:
+        if not isinstance(edge, dict):
+            continue
+        source = str(edge.get("source", "")).strip()
+        target = str(edge.get("target", "")).strip()
+        if source not in in_degree or target not in in_degree or source == target:
+            continue
+        adjacency[source].append(target)
+        in_degree[target] += 1
+
+    queue = sorted([node_id for node_id, degree in in_degree.items() if degree == 0])
+    ordered: list[str] = []
+    while queue:
+        current = queue.pop(0)
+        ordered.append(current)
+        for nxt in adjacency.get(current, []):
+            in_degree[nxt] -= 1
+            if in_degree[nxt] == 0:
+                queue.append(nxt)
+                queue.sort()
+
+    if len(ordered) != len(node_ids):
+        return []
+    return ordered
 
 
 def _runner_text(runner: Any, agent: Any, message: str) -> str:
@@ -439,12 +587,80 @@ def _instruction_kwargs(
     prompts_dir: str,
     instruction_file: str | None,
     inline_instructions: str,
+    extra_system_prompt: str = "",
 ) -> dict[str, Any]:
     if instruction_file:
         instruction_path = Path(prompts_dir) / instruction_file
         if instruction_path.exists():
+            if extra_system_prompt:
+                try:
+                    base_text = instruction_path.read_text(encoding="utf-8").strip()
+                    return {"instructions": f"{base_text}\n\n{extra_system_prompt}"}
+                except Exception:
+                    return {"prompts_dir": prompts_dir, "instruction_file": instruction_file}
             return {"prompts_dir": prompts_dir, "instruction_file": instruction_file}
+    if extra_system_prompt:
+        return {"instructions": f"{inline_instructions}\n\n{extra_system_prompt}"}
     return {"instructions": inline_instructions}
+
+
+def _build_orchestration_context(config: OrchestrationConfig, raw_payload: dict[str, Any]) -> dict[str, Any]:
+    enabled_roles = [role.name for role in config.roles if role.enabled]
+    disabled_roles = [role.name for role in config.roles if not role.enabled]
+    return {
+        "enabled_roles": enabled_roles,
+        "disabled_roles": disabled_roles,
+        "join_policy": config.join_policy,
+        "subagent_router_strategy": config.subagent_router_strategy,
+        "max_concurrent_subagents": config.max_concurrent_subagents,
+        "execution_order": config.execution_order,
+        "graph": config.graph,
+        "interaction_mode": config.interaction_mode,
+        "approval_fallback": config.approval_fallback,
+        "input_fallback": config.input_fallback,
+        "threading": config.threading,
+        "telemetry": config.telemetry,
+        "model": config.model,
+        "extra_system_prompt": config.extra_system_prompt,
+        "extra_context": config.extra_context,
+        "target_type": str(raw_payload.get("target_type", "")) or None,
+    }
+
+
+def _build_campaign_context(raw_payload: dict[str, Any]) -> dict[str, Any]:
+    max_iterations_raw = raw_payload.get("max_iterations", 3)
+    try:
+        max_iterations = max(1, min(int(max_iterations_raw), 20))
+    except (TypeError, ValueError):
+        max_iterations = 3
+
+    exploitation_enabled_raw = raw_payload.get("exploitation_enabled", True)
+    if isinstance(exploitation_enabled_raw, str):
+        exploitation_enabled = exploitation_enabled_raw.strip().lower() in {"1", "true", "yes", "on"}
+    else:
+        exploitation_enabled = bool(exploitation_enabled_raw)
+
+    prior_run_context = str(raw_payload.get("prior_run_context", "") or "")
+    extra_system_prompt = str(raw_payload.get("extra_system_prompt", "") or "")
+    extra_context = raw_payload.get("extra_context") if isinstance(raw_payload.get("extra_context"), dict) else {}
+    user_conditions = _to_str_list(raw_payload.get("user_conditions"), max_items=32)
+    known_vulnerabilities = _to_str_list(raw_payload.get("known_vulnerabilities"), max_items=32)
+
+    return {
+        "max_iterations": max_iterations,
+        "exploitation_enabled": exploitation_enabled,
+        "user_conditions": user_conditions,
+        "prior_run_context": prior_run_context,
+        "known_vulnerabilities": known_vulnerabilities,
+        "extra_system_prompt": extra_system_prompt,
+        "extra_context": extra_context,
+    }
+
+
+def _to_str_list(value: Any, *, max_items: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value[:max_items] if str(item).strip()]
 
 
 def _mock_attacker(seed: AttackSeed, variant: int) -> str:

@@ -8,9 +8,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 
 from app.api.v1 import router as v1_router
+from app.config import get_settings
 from app.db import init_db
 from app.observability import METRICS, configure_logging, log_request_event
-from app.services.run_queue import RUN_QUEUE
+from app.runtime.run_queue import RUN_QUEUE
 
 app = FastAPI(
     title="MetroX API",
@@ -18,9 +19,15 @@ app = FastAPI(
     description="Data-driven reliability evaluation for LLMs and AI agents",
 )
 
+_cors_origins = [
+    origin.strip()
+    for origin in get_settings().cors_allowed_origins.split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -30,3 +30,5 @@ artifacts/
 reports/
 
 *.tsbuildinfo
+
+*.sqlite3

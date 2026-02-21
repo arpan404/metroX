@@ -65,24 +65,25 @@ from app.schemas import (
     SessionCreate,
     SessionOut,
 )
-from app.services.clustering import list_clusters
-from app.services.compare import compare_runs
-from app.services.costing import cost_timeseries, pricing_profile_payload, rebuild_run_cost_aggregate, upsert_pricing_profile
-from app.services.drift import drift_payload
-from app.services.features import feature_table_for_run
-from app.services.mitigation import create_mitigation_experiment, mitigation_payload
-from app.services.orchestration_profiles import (
+from app.stats.clustering import list_clusters
+from app.pipeline.compare import compare_runs
+from app.pipeline.costing import cost_timeseries, pricing_profile_payload, rebuild_run_cost_aggregate, upsert_pricing_profile
+from app.stats.drift import drift_payload
+from app.stats.features import feature_table_for_run
+from app.pipeline.mitigation import create_mitigation_experiment, mitigation_payload
+from app.agents.orchestration_profiles import (
     bound_orchestration_snapshot,
     validate_orchestration_config,
 )
-from app.services.orchestrator import RunOrchestrator
-from app.services.advanced_analytics import calibration_payload, cooccurrence_payload, forecast_payload, inference_payload
-from app.services.providers import provider_capabilities, validate_provider
-from app.services.reporting import generate_markdown_report
-from app.services.risk import risk_cards
-from app.services.run_queue import RUN_QUEUE
-from app.services.adapters import normalize_target_type
-from app.services.security import (
+from app.pipeline.orchestrator import RunOrchestrator
+from app.stats.advanced_analytics import calibration_payload, cooccurrence_payload, forecast_payload, inference_payload
+from app.runtime.providers import provider_capabilities, validate_provider
+from app.pipeline.reporting import generate_markdown_report
+from app.stats.risk import risk_cards
+from app.runtime.run_queue import RUN_QUEUE
+from app.runtime.adapters import normalize_target_type
+from app.utils.common import log_event
+from app.security.service import (
     SecretCipher,
     activate_key,
     create_key,
@@ -91,6 +92,24 @@ from app.services.security import (
     reencrypt_credentials,
     retire_key,
 )
+
+_SENSITIVE_HEADER_NAMES = frozenset({
+    "authorization", "x-api-key", "api-key", "x-auth-token",
+    "proxy-authorization", "cookie", "set-cookie",
+})
+
+
+def _redact_target_config(target_config: dict) -> dict:
+    """Return a copy of target_config with sensitive auth_headers values redacted."""
+    redacted = dict(target_config)
+    headers = redacted.get("auth_headers")
+    if headers and isinstance(headers, dict):
+        redacted["auth_headers"] = {
+            k: "**REDACTED**" if k.lower() in _SENSITIVE_HEADER_NAMES else v
+            for k, v in headers.items()
+        }
+    return redacted
+
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(auth_dependency)])
 
@@ -459,7 +478,7 @@ def create_orchestration_profile(
     db: Session = Depends(get_db),
 ) -> OrchestrationProfileOut:
     try:
-        validated_config = validate_orchestration_config(payload.config)
+        validated_config = validate_orchestration_config(payload.config.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     row = OrchestrationProfile(
@@ -511,7 +530,7 @@ def update_orchestration_profile(
         row.status = payload.status
     if payload.config is not None:
         try:
-            merged_config = {**(row.config or {}), **payload.config}
+            merged_config = {**(row.config or {}), **payload.config.model_dump(exclude_unset=True)}
             row.config = validate_orchestration_config(merged_config)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -564,7 +583,7 @@ def create_profile(payload: ConfigProfileCreate, db: Session = Depends(get_db)) 
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    orchestration_cfg = payload.benchmark_config.afk_orchestration
+    orchestration_cfg = payload.benchmark_config.afk_orchestration.model_dump()
     orchestration_meta: dict[str, str] | None = None
     if payload.orchestration_profile_id:
         orchestration_profile = (
@@ -662,7 +681,7 @@ def create_run(
         config_profile_id=profile.id,
         run_id=run.id,
         snapshot={
-            "target_config": profile.target_config,
+            "target_config": _redact_target_config(profile.target_config or {}),
             "benchmark_config": profile.benchmark_config,
             "scoring_config": profile.scoring_config,
             "runtime_config": profile.runtime_config,

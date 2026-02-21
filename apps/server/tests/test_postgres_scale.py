@@ -25,7 +25,7 @@ from app.models import (
     Run,
     RunEvent,
 )
-from app.services.costing import rebuild_run_cost_aggregate
+from app.pipeline.costing import rebuild_run_cost_aggregate
 
 
 def _headers() -> dict[str, str]:

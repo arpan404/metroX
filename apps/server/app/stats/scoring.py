@@ -6,7 +6,7 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.models import Detection, Execution, Run, RunCostAggregate, ScoreCard, StatisticalTest
-from app.services.common import bootstrap_ci
+from app.utils.common import bootstrap_ci
 
 METRIC_KEYS = [
     "asr",
@@ -194,6 +194,8 @@ def power_estimate_for_rate(baseline_rate: float, min_detectable_delta: float, a
     baseline_rate = min(max(baseline_rate, 0.001), 0.999)
     p1 = baseline_rate
     p2 = min(max(p1 + min_detectable_delta, 0.001), 0.999)
+    if abs(p2 - p1) < 1e-9:
+        return 999999
     pooled = (p1 + p2) / 2
     z_alpha = 1.96 if alpha == 0.05 else 1.64
     z_beta = 0.84

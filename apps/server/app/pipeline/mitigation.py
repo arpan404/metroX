@@ -11,7 +11,7 @@ from app.models import (
     Recommendation,
     ScoreCard,
 )
-from app.services.compare import compare_runs
+from app.pipeline.compare import compare_runs
 
 MITIGATION_LIBRARY = {
     "hallucination_rate": {

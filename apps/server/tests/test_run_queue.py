@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from app.config import get_settings
-from app.services.run_queue import RunQueue
+from app.runtime.run_queue import RunQueue
 
 
 class _FakeRedis:

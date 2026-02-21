@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import queue
 import socket
 import threading
@@ -8,11 +9,13 @@ import time
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import cast
-
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Run
-from app.services.common import log_event
+from app.utils.common import log_event
+
+
+logger = logging.getLogger("metrox.queue")
 
 try:
     import redis
@@ -31,7 +34,9 @@ class QueueStats:
 
 class RunQueue:
     def __init__(self) -> None:
-        self._queue: queue.Queue[tuple[str, int]] = queue.Queue()
+        self._queue: queue.Queue[tuple[str, int]] = queue.Queue(
+            maxsize=get_settings().run_queue_max_size
+        )
         self._started = False
         self._lock = threading.Lock()
         self._workers: list[threading.Thread] = []
@@ -46,7 +51,7 @@ class RunQueue:
         if redis is None:
             raise RuntimeError("redis queue backend requested but redis package is not installed")
         settings = get_settings()
-        self._redis_client = cast("redis.Redis", redis.from_url(settings.redis_url, decode_responses=True))
+        self._redis_client = cast("redis.Redis", redis.from_url(settings.redis_url, decode_responses=True)) # type: ignore
         return self._redis_client
 
     def start(self) -> None:
@@ -103,7 +108,10 @@ class RunQueue:
             settings = get_settings()
             self._get_redis_client().rpush(settings.run_queue_redis_key, self._serialize_item(run_id, attempt))
             return
-        self._queue.put((run_id, attempt))
+        try:
+            self._queue.put_nowait((run_id, attempt))
+        except queue.Full:
+            raise RuntimeError("Run queue is full; try again later")
 
     def _enqueue_retry_or_dlq(self, run_id: str, attempt: int, error: str) -> None:
         settings = get_settings()
@@ -175,7 +183,7 @@ class RunQueue:
             return
         db = SessionLocal()
         try:
-            from app.services.orchestrator import RunOrchestrator
+            from app.pipeline.orchestrator import RunOrchestrator
 
             log_event(
                 db,
@@ -223,8 +231,27 @@ class RunQueue:
             _, payload = item
             try:
                 run_id, attempt = self._deserialize_item(str(payload))
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "run_dequeued",
+                            "run_id": run_id,
+                            "attempt": attempt,
+                        },
+                        sort_keys=True,
+                    )
+                )
                 self._process_one(run_id, attempt)
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    json.dumps(
+                        {
+                            "event": "run_dequeue_error",
+                            "error": str(exc),
+                        },
+                        sort_keys=True,
+                    )
+                )
                 continue
 
 

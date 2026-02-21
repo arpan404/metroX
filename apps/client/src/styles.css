@@ -77,11 +77,11 @@
     stroke-width: 1.5 !important;
   }
 
-  /* Animated edges (running) get a foreground-tinted stroke */
+  /* Animated edges: tinted stroke; let ReactFlow drive the dashoffset keyframe */
   .react-flow__edge.animated .react-flow__edge-path {
     stroke: var(--muted-foreground) !important;
-    stroke-dasharray: 5 3;
-    stroke-dashoffset: 0;
+    stroke-width: 1.5 !important;
+    /* Do NOT set stroke-dashoffset here — ReactFlow's dashdraw keyframe owns it */
   }
 
   /* ─── ReactFlow handles & selection ────────────────────────── */

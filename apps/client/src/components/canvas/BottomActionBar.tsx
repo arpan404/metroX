@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'motion/react'
 import { Rocket, BarChart2, Swords, ListCollapse, Plus, Activity } from 'lucide-react'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import type { ToolbarMode } from './FloatingToolbar'
 
 type BottomActionBarProps = {
@@ -13,9 +14,9 @@ type BottomActionBarProps = {
   onAddStudioNode?: (role: string) => void
 }
 
-const attackActions: { mode: ToolbarMode; label: string; icon: React.ReactNode; title: string }[] = [
-  { mode: 'config',   label: 'Config',     icon: <Rocket size={15} />,   title: 'Launch config' },
-  { mode: 'analytics', label: 'Analytics', icon: <BarChart2 size={15} />, title: 'Analytics' },
+const attackActions: { mode: ToolbarMode; label: string; icon: React.ReactNode; tooltip: string }[] = [
+  { mode: 'config',    label: 'Config',    icon: <Rocket size={15} />,    tooltip: 'Launch config panel' },
+  { mode: 'analytics', label: 'Analytics', icon: <BarChart2 size={15} />, tooltip: 'View analytics' },
 ]
 
 const studioRoles = ['attacker', 'critic', 'verifier', 'analyst'] as const
@@ -62,16 +63,19 @@ export function BottomActionBar({
         }}
       >
         {/* Attack panel toggles */}
-        {attackActions.map(({ mode, label, icon, title }) => (
-          <ActionBtn
-            key={mode}
-            active={activeMode === mode}
-            title={title}
-            onClick={() => onModeChange(mode)}
-          >
-            {icon}
-            <span style={{ fontSize: '11px', fontWeight: 500 }}>{label}</span>
-          </ActionBtn>
+        {attackActions.map(({ mode, label, icon, tooltip }) => (
+          <Tooltip key={mode}>
+            <TooltipTrigger asChild>
+              <ActionBtn
+                active={activeMode === mode}
+                onClick={() => onModeChange(mode)}
+              >
+                {icon}
+                <span style={{ fontSize: '11px', fontWeight: 500 }}>{label}</span>
+              </ActionBtn>
+            </TooltipTrigger>
+            <TooltipContent side="top">{tooltip}</TooltipContent>
+          </Tooltip>
         ))}
 
         {/* Attack detail — only in attack mode */}
@@ -83,14 +87,18 @@ export function BottomActionBar({
               exit={{ opacity: 0, width: 0 }}
               style={{ overflow: 'hidden' }}
             >
-              <ActionBtn
-                active={activeMode === 'attack-detail'}
-                title="Attack detail"
-                onClick={() => onModeChange('attack-detail')}
-              >
-                <Swords size={15} />
-                <span style={{ fontSize: '11px', fontWeight: 500 }}>Detail</span>
-              </ActionBtn>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ActionBtn
+                    active={activeMode === 'attack-detail'}
+                    onClick={() => onModeChange('attack-detail')}
+                  >
+                    <Swords size={15} />
+                    <span style={{ fontSize: '11px', fontWeight: 500 }}>Detail</span>
+                  </ActionBtn>
+                </TooltipTrigger>
+                <TooltipContent side="top">Attack detail panel</TooltipContent>
+              </Tooltip>
             </motion.div>
           )}
         </AnimatePresence>
@@ -107,15 +115,18 @@ export function BottomActionBar({
               style={{ display: 'flex', alignItems: 'center', gap: '2px', overflow: 'hidden' }}
             >
               {studioRoles.map((role) => (
-                <ActionBtn
-                  key={role}
-                  active={false}
-                  title={`Add ${role} node`}
-                  onClick={() => onAddStudioNode(role)}
-                >
-                  <Plus size={12} />
-                  <span style={{ fontSize: '11px', fontWeight: 500, textTransform: 'capitalize' }}>{role}</span>
-                </ActionBtn>
+                <Tooltip key={role}>
+                  <TooltipTrigger asChild>
+                    <ActionBtn
+                      active={false}
+                      onClick={() => onAddStudioNode(role)}
+                    >
+                      <Plus size={12} />
+                      <span style={{ fontSize: '11px', fontWeight: 500, textTransform: 'capitalize' }}>{role}</span>
+                    </ActionBtn>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Add {role} node</TooltipContent>
+                </Tooltip>
               ))}
               <Divider />
             </motion.div>
@@ -123,36 +134,39 @@ export function BottomActionBar({
         </AnimatePresence>
 
         {/* Events toggle */}
-        <ActionBtn
-          active={eventsOpen}
-          title="Event timeline"
-          onClick={onEventsToggle}
-        >
-          <ListCollapse size={15} />
-          <span style={{ fontSize: '11px', fontWeight: 500 }}>Events</span>
-          {streaming && (
-            <span
-              style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                background: '#818cf8',
-                flexShrink: 0,
-                boxShadow: '0 0 6px rgba(129,140,248,0.7)',
-              }}
-            />
-          )}
-        </ActionBtn>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <ActionBtn active={eventsOpen} onClick={onEventsToggle}>
+              <ListCollapse size={15} />
+              <span style={{ fontSize: '11px', fontWeight: 500 }}>Events</span>
+              {streaming && (
+                <span
+                  style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: '#818cf8',
+                    flexShrink: 0,
+                    boxShadow: '0 0 6px rgba(129,140,248,0.7)',
+                  }}
+                />
+              )}
+            </ActionBtn>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            {eventsOpen ? 'Close event timeline' : 'Open event timeline'}
+          </TooltipContent>
+        </Tooltip>
 
         {/* Refresh */}
-        <ActionBtn
-          active={false}
-          title="Refresh data"
-          onClick={onRefresh}
-          iconOnly
-        >
-          <Activity size={14} />
-        </ActionBtn>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <ActionBtn active={false} onClick={onRefresh} iconOnly>
+              <Activity size={14} />
+            </ActionBtn>
+          </TooltipTrigger>
+          <TooltipContent side="top">Refresh data</TooltipContent>
+        </Tooltip>
       </motion.div>
     </div>
   )
@@ -166,19 +180,16 @@ function ActionBtn({
   children,
   active,
   onClick,
-  title,
   iconOnly = false,
 }: {
   children: React.ReactNode
   active: boolean
   onClick: () => void
-  title?: string
   iconOnly?: boolean
 }) {
   return (
     <button
       onClick={onClick}
-      title={title}
       style={{
         display: 'flex',
         alignItems: 'center',

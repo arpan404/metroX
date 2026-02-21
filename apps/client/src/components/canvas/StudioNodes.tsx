@@ -24,7 +24,7 @@ export function StudioRoleNode({
   return (
     <div
       className={cn(
-        'w-48 rounded-lg border-2 bg-card p-3 shadow-sm transition-all duration-200',
+        'w-48 rounded-lg border-2 bg-background p-3 transition-all duration-200',
         roleColors[data.role] ?? 'border-border',
         selected && 'ring-2 ring-primary shadow-md',
       )}

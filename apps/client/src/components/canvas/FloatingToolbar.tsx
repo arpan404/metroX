@@ -1,4 +1,5 @@
 import { RefreshCw, Activity, Settings, Swords, Workflow } from 'lucide-react'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 
 /* ToolbarMode is the shared panel/navigation mode type used across the app */
 export type ToolbarMode =
@@ -81,39 +82,45 @@ export function FloatingToolbar({
         }}
       >
         {(['attack', 'studio'] as const).map((mode) => (
-          <button
-            key={mode}
-            onClick={() => onCanvasModeChange(mode)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px',
-              padding: '4px 12px',
-              background: canvasMode === mode ? 'rgba(130, 165, 235, 0.18)' : 'transparent',
-              border: canvasMode === mode ? '1px solid rgba(130, 165, 235, 0.28)' : '1px solid transparent',
-              borderRadius: '7px',
-              color: canvasMode === mode ? 'rgba(186, 210, 255, 0.95)' : 'rgba(184, 196, 214, 0.5)',
-              fontSize: '12px',
-              fontWeight: canvasMode === mode ? 600 : 400,
-              cursor: 'pointer',
-              transition: 'all 0.15s cubic-bezier(0.22,1,0.36,1)',
-            }}
-            onMouseEnter={(e) => {
-              if (canvasMode !== mode) {
-                ;(e.currentTarget as HTMLButtonElement).style.color = 'rgba(184, 210, 255, 0.78)'
-                ;(e.currentTarget as HTMLButtonElement).style.background = 'rgba(130, 165, 235, 0.08)'
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (canvasMode !== mode) {
-                ;(e.currentTarget as HTMLButtonElement).style.color = 'rgba(184, 196, 214, 0.5)'
-                ;(e.currentTarget as HTMLButtonElement).style.background = 'transparent'
-              }
-            }}
-          >
-            {mode === 'attack' ? <Swords size={12} /> : <Workflow size={12} />}
-            {mode === 'attack' ? 'Attack' : 'Studio'}
-          </button>
+          <Tooltip key={mode}>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => onCanvasModeChange(mode)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '4px 12px',
+                  background: canvasMode === mode ? 'rgba(130, 165, 235, 0.18)' : 'transparent',
+                  border: canvasMode === mode ? '1px solid rgba(130, 165, 235, 0.28)' : '1px solid transparent',
+                  borderRadius: '7px',
+                  color: canvasMode === mode ? 'rgba(186, 210, 255, 0.95)' : 'rgba(184, 196, 214, 0.5)',
+                  fontSize: '12px',
+                  fontWeight: canvasMode === mode ? 600 : 400,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s cubic-bezier(0.22,1,0.36,1)',
+                }}
+                onMouseEnter={(e) => {
+                  if (canvasMode !== mode) {
+                    ;(e.currentTarget as HTMLButtonElement).style.color = 'rgba(184, 210, 255, 0.78)'
+                    ;(e.currentTarget as HTMLButtonElement).style.background = 'rgba(130, 165, 235, 0.08)'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (canvasMode !== mode) {
+                    ;(e.currentTarget as HTMLButtonElement).style.color = 'rgba(184, 196, 214, 0.5)'
+                    ;(e.currentTarget as HTMLButtonElement).style.background = 'transparent'
+                  }
+                }}
+              >
+                {mode === 'attack' ? <Swords size={12} /> : <Workflow size={12} />}
+                {mode === 'attack' ? 'Attack' : 'Studio'}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {mode === 'attack' ? 'Attack canvas' : 'Studio canvas'}
+            </TooltipContent>
+          </Tooltip>
         ))}
       </div>
 
@@ -155,51 +162,64 @@ export function FloatingToolbar({
       </div>
 
       {/* Refresh */}
-      <TopBarIconBtn onClick={onRefresh} title="Refresh run data">
-        <RefreshCw size={13} />
-      </TopBarIconBtn>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <TopBarIconBtn onClick={onRefresh}>
+            <RefreshCw size={13} />
+          </TopBarIconBtn>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Refresh run data</TooltipContent>
+      </Tooltip>
 
       {/* Command palette */}
-      <button
-        onClick={onCommandPalette}
-        title="Command palette (⌘K)"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-          height: '30px',
-          padding: '0 9px',
-          background: 'rgba(13, 20, 33, 0.55)',
-          border: '1px solid rgba(171, 187, 214, 0.12)',
-          borderRadius: '7px',
-          color: 'rgba(111, 125, 147, 0.75)',
-          fontSize: '10px',
-          cursor: 'pointer',
-          userSelect: 'none',
-          letterSpacing: '0.04em',
-          fontFamily: "'IBM Plex Mono', monospace",
-          transition: 'background 0.15s, border-color 0.15s',
-        }}
-        onMouseEnter={(e) => {
-          ;(e.currentTarget as HTMLButtonElement).style.background = 'rgba(28, 40, 68, 0.7)'
-          ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(171, 187, 214, 0.2)'
-        }}
-        onMouseLeave={(e) => {
-          ;(e.currentTarget as HTMLButtonElement).style.background = 'rgba(13, 20, 33, 0.55)'
-          ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(171, 187, 214, 0.12)'
-        }}
-      >
-        ⌘K
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={onCommandPalette}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              height: '30px',
+              padding: '0 9px',
+              background: 'rgba(13, 20, 33, 0.55)',
+              border: '1px solid rgba(171, 187, 214, 0.12)',
+              borderRadius: '7px',
+              color: 'rgba(111, 125, 147, 0.75)',
+              fontSize: '10px',
+              cursor: 'pointer',
+              userSelect: 'none',
+              letterSpacing: '0.04em',
+              fontFamily: "'IBM Plex Mono', monospace",
+              transition: 'background 0.15s, border-color 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              ;(e.currentTarget as HTMLButtonElement).style.background = 'rgba(28, 40, 68, 0.7)'
+              ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(171, 187, 214, 0.2)'
+            }}
+            onMouseLeave={(e) => {
+              ;(e.currentTarget as HTMLButtonElement).style.background = 'rgba(13, 20, 33, 0.55)'
+              ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(171, 187, 214, 0.12)'
+            }}
+          >
+            ⌘K
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Command palette</TooltipContent>
+      </Tooltip>
 
       {/* Settings — top right */}
-      <TopBarIconBtn
-        onClick={() => onModeChange('settings')}
-        title="Settings"
-        active={activeMode === 'settings'}
-      >
-        <Settings size={14} />
-      </TopBarIconBtn>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <TopBarIconBtn
+            onClick={() => onModeChange('settings')}
+            active={activeMode === 'settings'}
+          >
+            <Settings size={14} />
+          </TopBarIconBtn>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Settings</TooltipContent>
+      </Tooltip>
     </div>
   )
 }
@@ -209,18 +229,15 @@ export function FloatingToolbar({
 function TopBarIconBtn({
   children,
   onClick,
-  title,
   active = false,
 }: {
   children: React.ReactNode
   onClick: () => void
-  title?: string
   active?: boolean
 }) {
   return (
     <button
       onClick={onClick}
-      title={title}
       style={{
         display: 'flex',
         alignItems: 'center',

@@ -137,9 +137,9 @@ export function AppPage() {
     () => [
       { id: 's1', source: 'trigger', target: 'attacker', animated: true, markerEnd: { type: MarkerType.ArrowClosed } },
       { id: 's2', source: 'trigger', target: 'critic', animated: true, markerEnd: { type: MarkerType.ArrowClosed } },
-      { id: 's3', source: 'attacker', target: 'verifier', markerEnd: { type: MarkerType.ArrowClosed } },
-      { id: 's4', source: 'critic', target: 'verifier', markerEnd: { type: MarkerType.ArrowClosed } },
-      { id: 's5', source: 'verifier', target: 'analyst', markerEnd: { type: MarkerType.ArrowClosed } },
+      { id: 's3', source: 'attacker', target: 'verifier', animated: true, markerEnd: { type: MarkerType.ArrowClosed } },
+      { id: 's4', source: 'critic', target: 'verifier', animated: true, markerEnd: { type: MarkerType.ArrowClosed } },
+      { id: 's5', source: 'verifier', target: 'analyst', animated: true, markerEnd: { type: MarkerType.ArrowClosed } },
     ],
     [],
   )
@@ -224,6 +224,7 @@ export function AppPage() {
         source: n.id,
         target: 'analytics',
         markerEnd: { type: MarkerType.ArrowClosed },
+        animated: run?.status === 'running',
       })),
     ]
 

@@ -48,18 +48,25 @@ function ToggleGroup({
   )
 }
 
-function ToggleGroupItem({
-  className,
-  children,
-  variant,
-  size,
-  ...props
-}: React.ComponentProps<typeof ToggleGroupPrimitive.Item> &
-  VariantProps<typeof toggleVariants>) {
+const ToggleGroupItem = React.forwardRef<
+  React.ElementRef<typeof ToggleGroupPrimitive.Item>,
+  React.ComponentProps<typeof ToggleGroupPrimitive.Item> &
+    VariantProps<typeof toggleVariants>
+>(function ToggleGroupItem(
+  {
+    className,
+    children,
+    variant,
+    size,
+    ...props
+  },
+  ref,
+) {
   const context = React.useContext(ToggleGroupContext)
 
   return (
     <ToggleGroupPrimitive.Item
+      ref={ref}
       data-slot="toggle-group-item"
       data-variant={context.variant || variant}
       data-size={context.size || size}
@@ -78,6 +85,8 @@ function ToggleGroupItem({
       {children}
     </ToggleGroupPrimitive.Item>
   )
-}
+})
+
+ToggleGroupItem.displayName = "ToggleGroupItem"
 
 export { ToggleGroup, ToggleGroupItem }

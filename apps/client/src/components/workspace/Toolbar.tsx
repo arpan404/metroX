@@ -93,8 +93,8 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
       className={cn(
         'absolute top-3 left-3 right-3 z-40 h-11',
         'flex items-center gap-2 px-3',
-        'rounded-xl border border-border/30 bg-background/35 dark:border-border/25 dark:bg-background/20 backdrop-blur-2xl backdrop-saturate-150',
-        'shadow-[0_2px_14px_-10px_rgba(0,0,0,0.25)]',
+        'rounded-xl border border-transparent bg-transparent backdrop-blur-sm',
+        'shadow-none',
       )}
       data-onboarding="toolbar"
     >
@@ -113,14 +113,14 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
       <div className="h-5 w-px bg-border/40 shrink-0" />
 
       {/* Run selector */}
-      <div className="flex items-center gap-1.5 flex-1 max-w-xs">
+      <div className="flex items-center gap-2 flex-1 max-w-[460px] min-w-[280px]">
         <Popover open={runSelectorOpen} onOpenChange={setRunSelectorOpen}>
           <PopoverTrigger asChild>
             <Button
               variant="outline"
               role="combobox"
               aria-expanded={runSelectorOpen}
-              className="h-7 w-full justify-between border-border/40 bg-transparent text-xs font-mono"
+              className="h-7 w-full justify-between border-border/35 bg-background/45 dark:bg-background/25 text-xs font-mono"
             >
               <span className="truncate">{selectorLabel}</span>
               <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-60" />
@@ -166,7 +166,7 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0"
+          className="h-7 w-7 shrink-0 rounded-md border border-border/35 bg-background/45 dark:bg-background/25 hover:bg-background/60"
           onClick={handleLoadRun}
           disabled={!runIdInput.trim()}
         >
@@ -177,8 +177,8 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
       {/* Run status pills */}
       {state.runData && (
         <>
-          <div className="h-5 w-px bg-border/40 shrink-0 hidden md:block" />
-          <div className="hidden md:flex items-center gap-1.5">
+          <div className="h-5 w-px bg-border/40 shrink-0 hidden md:block mx-1" />
+          <div className="hidden md:flex items-center gap-2 ml-1">
             <Badge
               variant={runStatus === 'completed' ? 'default' : runStatus === 'failed' ? 'destructive' : 'secondary'}
               className="text-[10px] h-5 px-2 font-mono"

@@ -364,6 +364,16 @@ def get_provider_credential(credential_id: str, db: Session = Depends(get_db)) -
     return ProviderCredentialOut.model_validate(row, from_attributes=True)
 
 
+@router.delete("/providers/credentials/{credential_id}")
+def delete_provider_credential(credential_id: str, db: Session = Depends(get_db)) -> dict:
+    row = db.query(ProviderCredential).filter(ProviderCredential.id == credential_id).one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Provider credential not found")
+    db.delete(row)
+    db.commit()
+    return {"deleted": True, "credential_id": credential_id}
+
+
 @router.post("/providers/credentials/{credential_id}/rotate", response_model=ProviderCredentialOut)
 def rotate_provider_credential(
     credential_id: str,

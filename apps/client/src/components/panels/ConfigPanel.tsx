@@ -354,6 +354,8 @@ export function ConfigPanel({ onRunLaunched }: { onRunLaunched: (runId: string) 
   const [apiKeyRef, setApiKeyRef] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [endpoint, setEndpoint] = useState('')
+  const [ollamaModels, setOllamaModels] = useState<string[]>([])
+  const [isLoadingOllamaModels, setIsLoadingOllamaModels] = useState(false)
   const [targetExtra, setTargetExtra] = useState('{}')
   const [policyProfile, setPolicyProfile] = useState('balanced_eval')
   const [allowedTools, setAllowedTools] = useState<string[]>([])
@@ -375,7 +377,7 @@ export function ConfigPanel({ onRunLaunched }: { onRunLaunched: (runId: string) 
   const [curatedRatio, setCuratedRatio] = useState(0.6)
   const [generatedRatio, setGeneratedRatio] = useState(0.4)
   const [agenticAttacking, setAgenticAttacking] = useState(true)
-  const [agenticProvider, setAgenticProvider] = useState<'auto' | 'mock' | 'afk_live'>('auto')
+  const [agenticProvider, setAgenticProvider] = useState<'auto' | 'afk_live'>('auto')
   const [agenticModel, setAgenticModel] = useState('')
 
   /* --- Orchestration (afk_orchestration) --- */
@@ -418,6 +420,41 @@ export function ConfigPanel({ onRunLaunched }: { onRunLaunched: (runId: string) 
   const [orchestrationProfileId, setOrchestrationProfileId] = useState('')
 
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    if (providerName !== 'ollama') {
+      setOllamaModels([])
+      setIsLoadingOllamaModels(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    setIsLoadingOllamaModels(true)
+    api.getOllamaModels(baseUrl || 'http://localhost:11434')
+      .then((models) => {
+        if (!cancelled) setOllamaModels(models)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOllamaModels([])
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingOllamaModels(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [providerName, baseUrl])
+
+  const modelOptions = useMemo(() => {
+    if (providerName !== 'ollama') return MODEL_OPTIONS
+    if (ollamaModels.length === 0) return MODEL_OPTIONS
+    return ollamaModels.map((name) => ({ value: name, label: name }))
+  }, [providerName, ollamaModels])
 
   /* --- Readiness --- */
   const readiness = useMemo(() => {
@@ -813,7 +850,7 @@ export function ConfigPanel({ onRunLaunched }: { onRunLaunched: (runId: string) 
               label="Model"
               value={model}
               onChange={setModel}
-              options={MODEL_OPTIONS}
+              options={modelOptions}
               placeholder="Select model..."
             />
             <ComboField
@@ -824,6 +861,12 @@ export function ConfigPanel({ onRunLaunched }: { onRunLaunched: (runId: string) 
               placeholder="Select provider..."
             />
           </div>
+
+          {providerName === 'ollama' && (
+            <p className="text-[10px] text-muted-foreground">
+              {isLoadingOllamaModels ? 'Loading Ollama models from /models...' : `Loaded ${ollamaModels.length} Ollama models`}
+            </p>
+          )}
 
           <div className="space-y-2">
             <Label className="text-xs">API Key Ref</Label>
@@ -1004,11 +1047,10 @@ export function ConfigPanel({ onRunLaunched }: { onRunLaunched: (runId: string) 
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1.5">
                 <Label className="text-xs">Provider</Label>
-                <Select value={agenticProvider} onValueChange={(v) => setAgenticProvider(v as 'auto' | 'mock' | 'afk_live')}>
+                <Select value={agenticProvider} onValueChange={(v) => setAgenticProvider(v as 'auto' | 'afk_live')}>
                   <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="auto" className="text-xs">auto</SelectItem>
-                    <SelectItem value="mock" className="text-xs">mock</SelectItem>
                     <SelectItem value="afk_live" className="text-xs">afk_live</SelectItem>
                   </SelectContent>
                 </Select>

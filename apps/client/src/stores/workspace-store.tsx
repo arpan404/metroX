@@ -2,7 +2,7 @@ import {
   createContext,
   useContext,
   useReducer,
-  useCallback,
+  useMemo,
   useRef,
   useEffect,
   type ReactNode,
@@ -334,6 +334,10 @@ type WorkspaceActions = ReturnType<typeof createActions>
 
 function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.MutableRefObject<WorkspaceState>) {
   const streamCleanupRef = { current: null as (() => void) | null }
+  // In-flight guards to prevent concurrent fetches
+  let fetchingRun = false
+  let fetchingAnalytics = false
+  let fetchedCapabilities = false
 
   return {
     setRunId(runId: string | null) {
@@ -358,7 +362,8 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
 
     async fetchRunData() {
       const runId = stateRef.current.currentRunId
-      if (!runId) return
+      if (!runId || fetchingRun) return
+      fetchingRun = true
       dispatch({ type: 'SET_LOADING_RUN', loading: true })
       try {
         const [runData, attackSummary] = await Promise.all([
@@ -369,12 +374,15 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
         if (attackSummary) dispatch({ type: 'SET_ATTACK_SUMMARY', data: attackSummary })
       } catch {
         dispatch({ type: 'SET_LOADING_RUN', loading: false })
+      } finally {
+        fetchingRun = false
       }
     },
 
     async fetchAnalytics() {
       const runId = stateRef.current.currentRunId
-      if (!runId) return
+      if (!runId || fetchingAnalytics) return
+      fetchingAnalytics = true
       dispatch({ type: 'SET_LOADING_ANALYTICS', loading: true })
       try {
         const results = await Promise.allSettled([
@@ -421,6 +429,7 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
         if (dv) dispatch({ type: 'SET_DETECTOR_VOTES', data: dv.votes })
       } finally {
         dispatch({ type: 'SET_LOADING_ANALYTICS', loading: false })
+        fetchingAnalytics = false
       }
     },
 
@@ -432,6 +441,8 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
     },
 
     async fetchCapabilities() {
+      if (fetchedCapabilities) return
+      fetchedCapabilities = true
       try {
         const caps = await api.getCapabilities()
         dispatch({ type: 'SET_AFK_CAPABILITIES', data: caps })
@@ -513,7 +524,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef(state)
   stateRef.current = state
 
-  const actions = useCallback(() => createActions(dispatch, stateRef), [])()
+  // useMemo (NOT useCallback+invoke) so `actions` is a stable reference across renders.
+  // useCallback(() => fn, [])() would call the factory on every render, producing a new
+  // object each time and causing every useEffect that depends on `actions` to re-fire.
+  const actions = useMemo(() => createActions(dispatch, stateRef), [])
 
   // Persist identifiers to localStorage
   useEffect(() => {

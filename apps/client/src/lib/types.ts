@@ -311,7 +311,7 @@ export type BenchmarkConfig = {
   seed: number
   slices: string[]
   agentic_attacking: boolean
-  agentic_provider: 'auto' | 'mock' | 'afk_live'
+  agentic_provider: 'auto' | 'afk_live'
   agentic_model: string | null
   afk_orchestration: Record<string, unknown>
 }

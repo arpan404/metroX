@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { motion } from 'motion/react'
 import {
   Sliders,
@@ -107,13 +107,15 @@ export function ConfigPanel() {
   const [apiKeyRef, setApiKeyRef] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [endpoint, setEndpoint] = useState('')
+  const [ollamaModels, setOllamaModels] = useState<string[]>([])
+  const [isLoadingOllamaModels, setIsLoadingOllamaModels] = useState(false)
 
   // ─── Benchmark ───
   const [taxonomy, setTaxonomy] = useState<string[]>(['prompt_injection', 'jailbreak', 'hallucination'])
   const [seed, setSeed] = useState(42)
   const [curatedRatio, setCuratedRatio] = useState(0.6)
   const [agenticAttacking, setAgenticAttacking] = useState(true)
-  const [agenticProvider, setAgenticProvider] = useState('auto')
+  const [agenticProvider, setAgenticProvider] = useState<'auto' | 'afk_live'>('auto')
   const [agenticModel, setAgenticModel] = useState('')
 
   // ─── Scoring ───
@@ -149,6 +151,41 @@ export function ConfigPanel() {
 
   const [isLaunching, setIsLaunching] = useState(false)
   const [isValidating, setIsValidating] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    if (providerName !== 'ollama') {
+      setOllamaModels([])
+      setIsLoadingOllamaModels(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    setIsLoadingOllamaModels(true)
+    api.getOllamaModels(baseUrl || 'http://localhost:11434')
+      .then((models) => {
+        if (!cancelled) setOllamaModels(models)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOllamaModels([])
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingOllamaModels(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [providerName, baseUrl])
+
+  const modelOptions = useMemo(() => {
+    if (providerName !== 'ollama') return MODEL_OPTIONS
+    if (ollamaModels.length > 0) return ollamaModels
+    return MODEL_OPTIONS
+  }, [providerName, ollamaModels])
 
   /* ─── Template application ─── */
   const applyTemplate = (t: ConfigTemplate) => {
@@ -412,9 +449,14 @@ export function ConfigPanel() {
             <Select value={model} onValueChange={setModel}>
               <SelectTrigger className="h-7 text-xs font-mono"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {MODEL_OPTIONS.map((m) => (
+                {modelOptions.map((m) => (
                   <SelectItem key={m} value={m} className="text-xs font-mono">{m}</SelectItem>
                 ))}
+                {providerName === 'ollama' && isLoadingOllamaModels && (
+                  <SelectItem value="__loading_ollama_models__" className="text-xs" disabled>
+                    Loading Ollama models...
+                  </SelectItem>
+                )}
               </SelectContent>
             </Select>
           </FieldGroup>
@@ -480,11 +522,10 @@ export function ConfigPanel() {
         {agenticAttacking && (
           <div className="grid grid-cols-2 gap-2">
             <FieldGroup label="Agentic Provider">
-              <Select value={agenticProvider} onValueChange={setAgenticProvider}>
+              <Select value={agenticProvider} onValueChange={(v) => setAgenticProvider(v as 'auto' | 'afk_live')}>
                 <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="auto" className="text-xs">Auto</SelectItem>
-                  <SelectItem value="mock" className="text-xs">Mock</SelectItem>
                   <SelectItem value="afk_live" className="text-xs">AFK Live</SelectItem>
                 </SelectContent>
               </Select>

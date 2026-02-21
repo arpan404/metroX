@@ -87,18 +87,23 @@ class MultiAgentAttackOrchestrator:
     """Role-based attacker orchestration.
 
     Modes:
-      - mock: deterministic, offline, test-safe
       - afk_live: AFK agents with live model calls
-      - auto: afk_live if OPENAI_API_KEY exists; otherwise mock
+      - auto: afk_live if OPENAI_API_KEY exists; otherwise fail fast
     """
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
         mode = str(config.get("agentic_provider", "auto")).lower()
+        if mode == "mock":
+            raise ValueError("agentic_provider=mock is not supported. Use 'auto' or 'afk_live'.")
         if mode == "auto":
-            self.mode = "afk_live" if os.getenv("OPENAI_API_KEY") else "mock"
+            if not os.getenv("OPENAI_API_KEY"):
+                raise RuntimeError("OPENAI_API_KEY is required when agentic_provider=auto.")
+            self.mode = "afk_live"
+        elif mode == "afk_live":
+            self.mode = "afk_live"
         else:
-            self.mode = mode
+            raise ValueError(f"Unsupported agentic_provider '{mode}'. Use 'auto' or 'afk_live'.")
 
         default_model = str(config.get("agentic_model", config.get("model", "gpt-4.1-mini")))
         self.orchestration = _parse_orchestration_config(
@@ -133,10 +138,9 @@ class MultiAgentAttackOrchestrator:
         if self.mode == "afk_live":
             try:
                 return self._generate_with_afk(seed)
-            except Exception:
-                # Fail-open to deterministic multi-agent mock path.
-                return self._generate_with_mock(seed, deterministic_seed)
-        return self._generate_with_mock(seed, deterministic_seed)
+            except Exception as exc:
+                raise RuntimeError("AFK live attack generation failed; no mock fallback is permitted.") from exc
+        raise RuntimeError(f"Unsupported agentic orchestration mode '{self.mode}'.")
 
     def _generate_with_mock(self, seed: AttackSeed, deterministic_seed: int) -> AttackArtifact:
         rnd = seeded_random(deterministic_seed + seed.variant)

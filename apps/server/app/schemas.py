@@ -166,7 +166,7 @@ class BenchmarkConfig(BaseModel):
     seed: int = 42
     slices: list[str] = Field(default_factory=lambda: ["default"])
     agentic_attacking: bool = True
-    agentic_provider: Literal["auto", "mock", "afk_live"] = "auto"
+    agentic_provider: Literal["auto", "afk_live"] = "auto"
     agentic_model: str | None = None
     afk_orchestration: AFKOrchestrationConfig = Field(default_factory=AFKOrchestrationConfig)
 

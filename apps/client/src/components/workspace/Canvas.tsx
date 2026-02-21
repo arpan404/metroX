@@ -478,7 +478,16 @@ function NodeContextMenu({
     const attackType = node.id.startsWith('attack-') ? node.id.replace('attack-', '') : null
     dispatch({ type: 'SELECT_NODE', nodeId: node.id, attackType })
     if (isStudioNode) {
-      dispatch({ type: 'OPEN_PANEL', panel: 'config' })
+      const details = [
+        nodeData?.role ? `Role: ${nodeData.role}` : null,
+        nodeData?.model ? `Model: ${nodeData.model}` : null,
+        nodeData?.description ? nodeData.description : null,
+      ]
+        .filter(Boolean)
+        .join(' | ')
+      toast.message(nodeData?.label ?? 'Node info', {
+        description: details || `Node ID: ${node.id}`,
+      })
       return
     }
     if (attackType) {

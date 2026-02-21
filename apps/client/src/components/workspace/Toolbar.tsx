@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'motion/react'
 import {
   Search,
   Command,
-  Settings2,
   Moon,
   Sun,
   RefreshCw,
@@ -11,8 +10,6 @@ import {
   Pause,
   SkipForward,
   Radio,
-  Wifi,
-  WifiOff,
   ChevronDown,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
@@ -162,29 +159,6 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs">Refresh data</TooltipContent>
         </Tooltip>
-
-        {/* Stream toggle */}
-        {state.currentRunId && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => state.isStreaming ? actions.stopStreaming() : actions.startStreaming()}
-              >
-                {state.isStreaming ? (
-                  <Wifi className="h-3.5 w-3.5 text-emerald-400" />
-                ) : (
-                  <WifiOff className="h-3.5 w-3.5" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              {state.isStreaming ? 'Stop streaming' : 'Start streaming'}
-            </TooltipContent>
-          </Tooltip>
-        )}
 
         {/* Resume run */}
         {state.runData?.status === 'interrupted' && (

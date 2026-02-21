@@ -89,8 +89,10 @@ It evaluates not only final answers, but full agent contracts:
 - Run orchestration and event streaming
 - AFK capability registry endpoint for orchestration tuning
 - Provider and pricing APIs (`/v1/providers/*`, `/v1/pricing-profiles/*`)
+- Provider credential lifecycle APIs (`create/list/get/rotate`) with encrypted secret persistence
 - Scorecards, risk cards, features, clusters, drift
 - Cost APIs (`/v1/runs/{id}/cost-summary`, `/v1/runs/{id}/cost-timeseries`)
+- Slice analytics API (`/v1/runs/{id}/execution-slices`) for attack/provider/model diagnostics
 - Advanced DS APIs (`/v1/runs/{id}/inference`, `/v1/runs/{id}/calibration`, `/v1/runs/{id}/cooccurrence-graph`, `/v1/runs/{id}/forecast`)
 - Resume endpoint (`POST /v1/runs/{id}/resume`) with AFK run-state tracking
 - Adjudication workflow
@@ -102,14 +104,19 @@ It evaluates not only final answers, but full agent contracts:
 - Immutable config snapshot per run
 - Full run event audit trail
 - Structured artifacts for every pipeline stage
+- AFK-native resume continuity via persisted run/thread lineage and checkpoint metadata
 
-## 9. Current Scope Boundary
+## 9. Operations and SRE Hooks
+- Structured JSON request logs with trace-id propagation
+- `/slo` endpoint for API-level request/error/latency summaries
+- Load-test harness for 10k execution-cost aggregation hot path
+## 10. Current Scope Boundary
 - Single-tenant API key auth (V1)
 - Raw + redacted data model
 - Frontend-first UX for setup and analysis
 - Synthetic target fallback for local validation
 
-## 10. Success Metrics
+## 11. Success Metrics
 1. Reproducible benchmark runs from saved configs
 2. Statistically grounded scorecards and gates
 3. Actionable risk and mitigation outputs

@@ -8,7 +8,7 @@ Create Date: 2026-02-21
 from __future__ import annotations
 
 from alembic import op
-import sqlalchemy as sa
+from app.models import Base
 
 
 # revision identifiers, used by Alembic.
@@ -19,10 +19,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Baseline migration marker. The current project still supports create_all fallback,
-    # and this revision is used to establish alembic control for subsequent diffs.
-    pass
+    bind = op.get_bind()
+    Base.metadata.create_all(bind=bind, checkfirst=True)
 
 
 def downgrade() -> None:
-    pass
+    bind = op.get_bind()
+    Base.metadata.drop_all(bind=bind, checkfirst=True)

@@ -9,6 +9,7 @@ import httpx
 
 from app.config import get_settings
 import time
+from app.services.policy import policy_decision_for_tool, resolve_policy_config
 
 
 @dataclass
@@ -175,7 +176,16 @@ class AFKAgentAdapter(TargetAdapter):
         else:
             agent = Agent(name=agent_name, model=request.model, instructions=instructions)
         thread_id = request.extra.get("thread_id") or f"run-{request.run_id}"
-        result, afk_events = _run_afk_stream_sync(runner, agent, request.prompt, thread_id)
+        resume_run_id = str(request.extra.get("afk_run_id", "")).strip() or None
+        resume_enabled = bool(request.extra.get("afk_resume", False)) and bool(resume_run_id)
+        result, afk_events = _run_afk_stream_sync(
+            runner,
+            agent,
+            request.prompt,
+            thread_id,
+            resume=resume_enabled,
+            run_id=resume_run_id,
+        )
 
         usage = getattr(result, "usage", None)
         token_usage = {
@@ -206,8 +216,24 @@ class AFKAgentAdapter(TargetAdapter):
                         "reason": event.get("reason"),
                     }
                 )
+            if event.get("type") in {"tool_started", "tool_completed"} and event.get("tool_name"):
+                policy = resolve_policy_config(request.extra)
+                approved, reason = policy_decision_for_tool(policy, tool_name=str(event.get("tool_name")))
+                tool_events.append(
+                    {
+                        "event_type": "policy_decision",
+                        "tool_name": event.get("tool_name"),
+                        "success": approved,
+                        "approved": approved,
+                        "mutating": False,
+                        "reason": reason,
+                        "policy_profile": policy.get("name"),
+                    }
+                )
 
         latency_ms = (perf_counter() - start) * 1000
+        run_id = getattr(result, "run_id", None)
+        thread_id_result = getattr(result, "thread_id", None)
         return TargetResponse(
             response_text=getattr(result, "final_text", "") or "",
             retrieved_docs=request.extra.get("retrieved_docs", []),
@@ -217,6 +243,8 @@ class AFKAgentAdapter(TargetAdapter):
             raw_payload={
                 "adapter": "afk",
                 "state": getattr(result, "state", "unknown"),
+                "run_id": run_id,
+                "thread_id": thread_id_result,
                 "afk_events": afk_events,
             },
             provider_name="afk",
@@ -308,13 +336,29 @@ def _litellm_with_retry(litellm_module: Any, **kwargs: Any) -> Any:
     raise RuntimeError("litellm retry reached invalid state")
 
 
-def _run_afk_stream_sync(runner: Any, agent: Any, prompt: str, thread_id: Any) -> tuple[Any, list[dict[str, Any]]]:
+def _run_afk_stream_sync(
+    runner: Any,
+    agent: Any,
+    prompt: str,
+    thread_id: Any,
+    *,
+    resume: bool = False,
+    run_id: str | None = None,
+) -> tuple[Any, list[dict[str, Any]]]:
     try:
         from afk.llms.utils import run_sync as afk_run_sync  # type: ignore
     except Exception:
+        if resume and run_id:
+            return runner.run_sync(agent, user_message=prompt, thread_id=thread_id), [
+                {"type": "run_resumed", "run_id": run_id, "thread_id": thread_id, "degraded": True}
+            ]
         return runner.run_sync(agent, user_message=prompt, thread_id=thread_id), []
 
     async def _collect() -> tuple[Any, list[dict[str, Any]]]:
+        if resume and run_id:
+            resumed_result = await runner.resume(agent, run_id=run_id, thread_id=thread_id)
+            return resumed_result, [{"type": "run_resumed", "run_id": run_id, "thread_id": thread_id}]
+
         handle = await runner.run_stream(agent, user_message=prompt, thread_id=thread_id)
         events: list[dict[str, Any]] = []
         async for event in handle:

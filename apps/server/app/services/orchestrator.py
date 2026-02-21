@@ -33,6 +33,7 @@ from app.services.drift import compute_drift
 from app.services.features import ensure_feature_definitions, rebuild_features_for_run
 from app.services.risk import build_risk_models
 from app.services.scoring import build_scorecard
+from app.services.policy import resolve_policy_config
 
 
 class RunOrchestrator:
@@ -152,6 +153,24 @@ class RunOrchestrator:
             budget_usd = float(runtime_cfg.get("budget_usd", 0.0) or 0.0)
             abort_on_cost_breach = bool(runtime_cfg.get("abort_on_cost_breach", False))
             pricing_profile_id = target_cfg.get("extra", {}).get("pricing_profile_id")
+            policy_cfg = resolve_policy_config(target_cfg.get("extra", {}))
+            log_event(
+                self.db,
+                run_id=run.id,
+                event_type="policy_profile_applied",
+                step=2,
+                message=f"policy_profile={policy_cfg['name']}",
+                data=policy_cfg,
+            )
+            last_afk_state = (
+                self.db.query(AFKRunState)
+                .filter(AFKRunState.run_id == run.id)
+                .order_by(AFKRunState.created_at.desc())
+                .first()
+            )
+            last_afk_run_id = None
+            if last_afk_state and isinstance(last_afk_state.checkpoint, dict):
+                last_afk_run_id = last_afk_state.checkpoint.get("last_afk_run_id")
 
             executions: list[Execution] = []
             low_confidence = []
@@ -187,10 +206,18 @@ class RunOrchestrator:
                         "provider_name": target_cfg.get("provider_name", target_cfg.get("target_type", "unknown")),
                         "base_url": target_cfg.get("base_url"),
                         "thread_id": run.thread_id,
+                        "policy_profile": policy_cfg["name"],
+                        "allowed_tools": sorted(policy_cfg["allowed_tools"]),
+                        "afk_resume": resume_requested and target_cfg.get("target_type") == "afk_agent",
+                        "afk_run_id": last_afk_run_id,
                     },
                 )
                 response = adapter.invoke(request)
                 afk_events = response.raw_payload.get("afk_events", []) if isinstance(response.raw_payload, dict) else []
+                if isinstance(response.raw_payload, dict):
+                    afk_run_id = response.raw_payload.get("run_id")
+                    if afk_run_id:
+                        last_afk_run_id = afk_run_id
 
                 execution = Execution(
                     run_id=run.id,
@@ -289,6 +316,7 @@ class RunOrchestrator:
                                 "total_attacks": run.total_attacks,
                                 "spent_usd": run.budget_spent_usd,
                                 "projected_final_usd": run.estimated_final_cost_usd,
+                                "last_afk_run_id": last_afk_run_id,
                             },
                         )
                     )
@@ -321,6 +349,7 @@ class RunOrchestrator:
                             "total_attacks": run.total_attacks,
                             "spent_usd": run.budget_spent_usd,
                             "budget_usd": budget_usd,
+                            "last_afk_run_id": last_afk_run_id,
                         },
                     )
                 )
@@ -371,7 +400,11 @@ class RunOrchestrator:
                     thread_id=run.thread_id or f"run-{run.id}",
                     state="completed",
                     step=8,
-                    checkpoint={"completed_attacks": run.completed_attacks, "total_attacks": run.total_attacks},
+                    checkpoint={
+                        "completed_attacks": run.completed_attacks,
+                        "total_attacks": run.total_attacks,
+                        "last_afk_run_id": last_afk_run_id,
+                    },
                 )
             )
             self.db.commit()
@@ -395,7 +428,7 @@ class RunOrchestrator:
                     thread_id=run.thread_id or f"run-{run.id}",
                     state="failed",
                     step=99,
-                    checkpoint={"error": str(exc)},
+                    checkpoint={"error": str(exc), "last_afk_run_id": locals().get("last_afk_run_id")},
                 )
             )
             self.db.commit()

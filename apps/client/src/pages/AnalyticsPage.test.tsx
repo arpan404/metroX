@@ -32,10 +32,19 @@ vi.mock('../lib/api', () => ({
       cost_gate: { pass: true },
     })),
     getCostTimeseries: vi.fn(async () => ({ run_id: 'r-1', points: [] })),
-    getInference: vi.fn(async () => ({ run_id: 'r-1', tests: [] })),
-    getCalibration: vi.fn(async () => ({ run_id: 'r-1', reports: [], bins: [] })),
-    getCooccurrence: vi.fn(async () => ({ run_id: 'r-1', nodes: [], edges: [] })),
-    getForecast: vi.fn(async () => ({ run_id: 'r-1', forecasts: [] })),
+    getExecutionSlices: vi.fn(async () => ({
+      run_id: 'r-1',
+      slices: [
+        {
+          attack_type: 'prompt_injection',
+          provider_name: 'synthetic',
+          model: 'gpt-4.1-mini',
+          count: 3,
+          avg_latency_ms: 120,
+          effective_cost_usd: 0.01,
+        },
+      ],
+    })),
     compareRuns: vi.fn(async () => ({ baseline_run_id: 'b', candidate_run_id: 'c', summary: {}, tests: {} })),
     generateReport: vi.fn(async () => ({ run_id: 'r-1', markdown: '# report', path: 'reports/r-1.md' })),
   },
@@ -53,7 +62,7 @@ describe('AnalyticsPage', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/scorecard/i)).toBeInTheDocument()
-      expect(screen.getByText(/calibrated risk cards/i)).toBeInTheDocument()
+      expect(screen.getByText(/risk cards/i)).toBeInTheDocument()
       expect(screen.getByText(/81.2000/i)).toBeInTheDocument()
     })
   })

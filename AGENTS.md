@@ -60,6 +60,7 @@ The product must function as **unit tests for AI behavior**, not as a prompt dem
 - Default interaction mode is `headless` with explicit `approval_fallback` and `input_fallback`.
 - Multi-agent attacking must support coordinator + routing strategy + join policy controls.
 - Policy-sensitive operations must emit auditable run events (`policy_decision`, `run_paused`, `run_resumed` when present).
+- Resume behavior must prefer AFK-native checkpoint continuation (`runner.resume`) when run/thread lineage is available.
 
 ## Provider and Cost Intelligence Requirements
 - Support `litellm` and `openai_compatible` provider configuration from frontend.
@@ -69,6 +70,13 @@ The product must function as **unit tests for AI behavior**, not as a prompt dem
   - fallback to configurable token pricing tables
   - persist provenance (`provider`, `fallback`, `mixed`) and confidence.
 - Runs must expose cost summary, timeseries, and budget/cost-gate state.
+- Provider credentials must support encrypted storage and rotation APIs; plaintext keys must not be returned from API responses.
+
+## Observability and Reliability Rules
+- Every HTTP request must include/emit a trace id (`X-Trace-Id`) for log correlation.
+- Structured JSON request logs are required in server runtime.
+- Expose SLO snapshot endpoint for error-rate and latency monitoring (`/slo`).
+- Maintain an operational runbook for triage steps when gate regressions or budget breaches occur.
 
 ## Frontend and DX Rules
 - Full run configuration must be possible from UI (no mandatory CLI edits).

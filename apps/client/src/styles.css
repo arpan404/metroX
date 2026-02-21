@@ -416,7 +416,7 @@ th {
 
 .bar-row {
   display: grid;
-  grid-template-columns: 1.5fr 2fr auto;
+  grid-template-columns: 1.4fr 2fr auto auto;
   align-items: center;
   gap: 8px;
 }
@@ -442,6 +442,16 @@ th {
   font-size: 11px;
   color: var(--text);
   font-family: 'JetBrains Mono', monospace;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  font-size: 10px;
+  color: var(--accent-c);
 }
 
 .report-overlay {

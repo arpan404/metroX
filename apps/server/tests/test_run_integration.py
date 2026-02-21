@@ -141,6 +141,7 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
     features = client.get(f"/v1/runs/{run_id}/features", headers=_headers())
     clusters = client.get(f"/v1/runs/{run_id}/clusters", headers=_headers())
     attack_summary = client.get(f"/v1/runs/{run_id}/attack-summary", headers=_headers())
+    execution_slices = client.get(f"/v1/runs/{run_id}/execution-slices", headers=_headers())
     drift = client.get(f"/v1/runs/{run_id}/drift", headers=_headers())
     cost_summary = client.get(f"/v1/runs/{run_id}/cost-summary", headers=_headers())
     cost_series = client.get(f"/v1/runs/{run_id}/cost-timeseries", headers=_headers())
@@ -169,6 +170,8 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
     assert attack_summary.status_code == 200
     assert "attack_types" in attack_summary.json()
     assert isinstance(attack_summary.json()["attack_types"], list)
+    assert execution_slices.status_code == 200
+    assert isinstance(execution_slices.json()["slices"], list)
 
     assert drift.status_code == 200
     assert "drift_signals" in drift.json()
@@ -187,6 +190,10 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
 
     assert report.status_code == 200
     assert report.json()["run_id"] == run_id
+
+    events = client.get(f"/v1/runs/{run_id}/policy-events", headers=_headers())
+    assert events.status_code == 200
+    assert isinstance(events.json()["events"], list)
 
 
 def test_resume_continues_from_checkpoint_without_duplicate_executions(integrated_client) -> None:

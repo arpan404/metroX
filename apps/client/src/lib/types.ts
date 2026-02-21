@@ -98,8 +98,19 @@ export type ProviderValidation = {
   provider_type: string
   model?: string
   api_key_ref?: string
+  credential_id?: string
   error?: string
   discovered_models?: string[]
+}
+
+export type ProviderCredential = {
+  id: string
+  name: string
+  provider_type: string
+  key_version: string
+  status: string
+  created_at: string
+  last_validated_at?: string | null
 }
 
 export type PricingProfilePayload = {
@@ -139,5 +150,17 @@ export type CostTimeseriesPayload = {
     cumulative_cost_usd: number
     source: string
     created_at: string
+  }>
+}
+
+export type ExecutionSlicesPayload = {
+  run_id: string
+  slices: Array<{
+    attack_type: string
+    provider_name: string
+    model: string
+    count: number
+    avg_latency_ms: number
+    effective_cost_usd: number
   }>
 }

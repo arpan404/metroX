@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import auth_dependency
@@ -18,6 +19,7 @@ from app.models import (
     Detection,
     EvaluationSession,
     Execution,
+    ExecutionCost,
     ProviderCredential,
     RunCostAggregate,
     Run,
@@ -35,6 +37,9 @@ from app.schemas import (
     MitigationExperimentCreate,
     MitigationExperimentOut,
     PricingProfileCreate,
+    ProviderCredentialCreate,
+    ProviderCredentialOut,
+    ProviderCredentialRotate,
     ProviderValidateRequest,
     RiskCardOut,
     RunCreate,
@@ -92,6 +97,21 @@ def _provider_key_ref(db: Session, provider_type: str, api_key: str) -> str:
     db.commit()
     db.refresh(row)
     return row.id
+
+
+def _read_provider_api_key(db: Session, payload: ProviderValidateRequest) -> str:
+    key = str(payload.api_key or "").strip()
+    if key:
+        return key
+    if not payload.credential_id:
+        return ""
+    row = db.query(ProviderCredential).filter(ProviderCredential.id == payload.credential_id).one_or_none()
+    if not row:
+        return ""
+    try:
+        return SecretCipher().decrypt(row.encrypted_secret)
+    except Exception:
+        return ""
 
 
 @router.get("/afk/capabilities")
@@ -178,10 +198,70 @@ def get_provider_capabilities() -> dict:
 
 @router.post("/providers/validate")
 def validate_provider_config(payload: ProviderValidateRequest, db: Session = Depends(get_db)) -> dict:
-    result = validate_provider(payload.model_dump())
-    if result.get("valid") and payload.api_key:
-        result["api_key_ref"] = _provider_key_ref(db, payload.provider_type, payload.api_key)
+    api_key = _read_provider_api_key(db, payload)
+    check_payload = payload.model_dump()
+    check_payload["api_key"] = api_key
+    result = validate_provider(check_payload)
+    if result.get("valid") and api_key:
+        result["api_key_ref"] = _provider_key_ref(db, payload.provider_type, api_key)
+    if payload.credential_id:
+        result["credential_id"] = payload.credential_id
+        row = db.query(ProviderCredential).filter(ProviderCredential.id == payload.credential_id).one_or_none()
+        if row and result.get("valid"):
+            row.last_validated_at = datetime.now(timezone.utc)
+            db.commit()
     return result
+
+
+@router.post("/providers/credentials", response_model=ProviderCredentialOut)
+def create_provider_credential(payload: ProviderCredentialCreate, db: Session = Depends(get_db)) -> ProviderCredentialOut:
+    row = ProviderCredential(
+        name=payload.name,
+        provider_type=payload.provider_type,
+        encrypted_secret=SecretCipher().encrypt(payload.api_key),
+        key_version="v1",
+        status=payload.status,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return ProviderCredentialOut.model_validate(row, from_attributes=True)
+
+
+@router.get("/providers/credentials")
+def list_provider_credentials(db: Session = Depends(get_db)) -> dict:
+    rows = db.query(ProviderCredential).order_by(ProviderCredential.created_at.desc()).all()
+    return {
+        "credentials": [ProviderCredentialOut.model_validate(row, from_attributes=True).model_dump() for row in rows]
+    }
+
+
+@router.get("/providers/credentials/{credential_id}", response_model=ProviderCredentialOut)
+def get_provider_credential(credential_id: str, db: Session = Depends(get_db)) -> ProviderCredentialOut:
+    row = db.query(ProviderCredential).filter(ProviderCredential.id == credential_id).one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Provider credential not found")
+    return ProviderCredentialOut.model_validate(row, from_attributes=True)
+
+
+@router.post("/providers/credentials/{credential_id}/rotate", response_model=ProviderCredentialOut)
+def rotate_provider_credential(
+    credential_id: str,
+    payload: ProviderCredentialRotate,
+    db: Session = Depends(get_db),
+) -> ProviderCredentialOut:
+    row = db.query(ProviderCredential).filter(ProviderCredential.id == credential_id).one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Provider credential not found")
+
+    row.encrypted_secret = SecretCipher().encrypt(payload.api_key)
+    if payload.key_version:
+        row.key_version = payload.key_version
+    if payload.status:
+        row.status = payload.status
+    db.commit()
+    db.refresh(row)
+    return ProviderCredentialOut.model_validate(row, from_attributes=True)
 
 
 @router.post("/pricing-profiles")
@@ -438,6 +518,43 @@ def get_attack_summary(run_id: str, db: Session = Depends(get_db)) -> dict:
         ordered.append(row)
 
     return {"run_id": run_id, "attack_types": ordered}
+
+
+@router.get("/runs/{run_id}/execution-slices")
+def get_execution_slices(run_id: str, db: Session = Depends(get_db)) -> dict:
+    run = db.query(Run).filter(Run.id == run_id).one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    rows = (
+        db.query(
+            AttackCase.attack_type,
+            Execution.provider_name,
+            Execution.model_resolved,
+            func.count(Execution.id),
+            func.avg(Execution.latency_ms),
+            func.sum(ExecutionCost.effective_cost_usd),
+        )
+        .join(AttackCase, AttackCase.id == Execution.attack_case_id)
+        .outerjoin(ExecutionCost, ExecutionCost.execution_id == Execution.id)
+        .filter(Execution.run_id == run_id)
+        .group_by(AttackCase.attack_type, Execution.provider_name, Execution.model_resolved)
+        .all()
+    )
+    return {
+        "run_id": run_id,
+        "slices": [
+            {
+                "attack_type": str(attack_type or "unknown"),
+                "provider_name": str(provider_name or "unknown"),
+                "model": str(model or "unknown"),
+                "count": int(count or 0),
+                "avg_latency_ms": float(avg_latency or 0.0),
+                "effective_cost_usd": float(cost or 0.0),
+            }
+            for attack_type, provider_name, model, count, avg_latency, cost in rows
+        ],
+    }
 
 
 @router.get("/runs/{run_id}/drift", response_model=DriftOut)

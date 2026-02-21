@@ -5,7 +5,9 @@ import type {
   CostSummaryPayload,
   CostTimeseriesPayload,
   DriftPayload,
+  ExecutionSlicesPayload,
   PricingProfilePayload,
+  ProviderCredential,
   ProviderValidation,
   RiskCards,
   RunOut,
@@ -67,6 +69,24 @@ export const api = {
     return request<{ providers: Array<Record<string, unknown>> }>('/v1/providers/capabilities')
   },
 
+  createProviderCredential(payload: { name: string; provider_type: string; api_key: string; status?: string }) {
+    return request<ProviderCredential>('/v1/providers/credentials', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  listProviderCredentials() {
+    return request<{ credentials: ProviderCredential[] }>('/v1/providers/credentials')
+  },
+
+  rotateProviderCredential(credentialId: string, payload: { api_key: string; key_version?: string; status?: string }) {
+    return request<ProviderCredential>(`/v1/providers/credentials/${credentialId}/rotate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
   createPricingProfile(payload: Record<string, unknown>) {
     return request<PricingProfilePayload>('/v1/pricing-profiles', {
       method: 'POST',
@@ -111,6 +131,10 @@ export const api = {
 
   getAttackSummary(runId: string) {
     return request<AttackSummaryPayload>(`/v1/runs/${runId}/attack-summary`)
+  },
+
+  getExecutionSlices(runId: string) {
+    return request<ExecutionSlicesPayload>(`/v1/runs/${runId}/execution-slices`)
   },
 
   getCostSummary(runId: string) {

@@ -182,3 +182,26 @@ This remains frontend-first: users fully configure targets, scoring, and session
 2. Implement true AFK checkpoint resume semantics (stateful continuation vs replay).
 3. Add richer statistical inference math and multiple-testing correction workflow.
 4. Upgrade graph/forecast panels from JSON payload render to charted visual components.
+
+## V1.6.1 Delta (Current)
+
+### AFK runtime and policy hardening
+- AFK adapter now supports native `runner.resume(agent, run_id, thread_id)` path when resume metadata exists.
+- Orchestrator persists `last_afk_run_id` in AFK run-state checkpoints and injects it on resume requests.
+- Policy profile resolution is enforced at runtime (`strict_readonly`, `balanced_eval`, `live_exploratory`) and logged as auditable events.
+
+### Provider credentials lifecycle
+- Added encrypted credential APIs:
+  - `POST /v1/providers/credentials`
+  - `GET /v1/providers/credentials`
+  - `GET /v1/providers/credentials/{id}`
+  - `POST /v1/providers/credentials/{id}/rotate`
+- Provider validation can now use either inline `api_key` or stored `credential_id`.
+
+### Analytics and slicing
+- Added `GET /v1/runs/{id}/execution-slices` for attack/provider/model-level breakdowns (count, latency, cost).
+- Analytics UI now supports interactive attack/provider/model filtering with hover tooltip state.
+
+### Performance and operations
+- Added load test fixture for 10k execution-cost hot path (`pytest -m load`, env-gated).
+- Added structured request logging with trace IDs and `GET /slo` runtime metrics endpoint.

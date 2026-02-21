@@ -302,6 +302,30 @@ class ProviderValidateRequest(BaseModel):
     model: str | None = None
     base_url: str | None = None
     api_key: str | None = None
+    credential_id: str | None = None
+
+
+class ProviderCredentialCreate(BaseModel):
+    name: str
+    provider_type: Literal["synthetic", "litellm", "openai_compatible", "afk_agent"]
+    api_key: str
+    status: Literal["active", "disabled"] = "active"
+
+
+class ProviderCredentialRotate(BaseModel):
+    api_key: str
+    key_version: str | None = None
+    status: Literal["active", "disabled"] | None = None
+
+
+class ProviderCredentialOut(BaseModel):
+    id: str
+    name: str
+    provider_type: str
+    key_version: str
+    status: str
+    created_at: datetime
+    last_validated_at: datetime | None
 
 
 class PricingProfileCreate(BaseModel):

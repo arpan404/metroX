@@ -200,3 +200,31 @@ def test_provider_and_pricing_contract(api_client) -> None:
     got = client.get(f"/v1/pricing-profiles/{profile_id}", headers=_headers())
     assert got.status_code == 200
     assert got.json()["id"] == profile_id
+
+
+def test_provider_credential_lifecycle(api_client) -> None:
+    client, _ = api_client
+    created = client.post(
+        "/v1/providers/credentials",
+        json={
+            "name": "contract-openai",
+            "provider_type": "openai_compatible",
+            "api_key": "sk-test-123",
+            "status": "active",
+        },
+        headers=_headers(),
+    )
+    assert created.status_code == 200
+    credential_id = created.json()["id"]
+
+    listed = client.get("/v1/providers/credentials", headers=_headers())
+    assert listed.status_code == 200
+    assert any(row["id"] == credential_id for row in listed.json()["credentials"])
+
+    rotated = client.post(
+        f"/v1/providers/credentials/{credential_id}/rotate",
+        json={"api_key": "sk-new-456", "key_version": "v2"},
+        headers=_headers(),
+    )
+    assert rotated.status_code == 200
+    assert rotated.json()["key_version"] == "v2"

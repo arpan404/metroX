@@ -44,4 +44,5 @@ include = ["app*"]
 [tool.pytest.ini_options]
 markers = [
   "nightly: marks tests that are intended for nightly/live pipelines",
+  "load: marks heavyweight performance/load tests",
 ]

@@ -21,11 +21,12 @@
 
   /* ─── ReactFlow: design system consistency ──────────────────── */
   .react-flow__minimap {
-    border-radius: 8px !important;
-    border: 1px solid var(--border) !important;
-    background: var(--card) !important;
-    opacity: 0.9;
+    border-radius: 10px;
+    overflow: hidden;
+    /* do not override inline styles — let the component prop control bg/border */
   }
+
+  /* node fills inside minimap come from the nodeColor prop, nothing to override */
 
   .react-flow__controls {
     border-radius: 8px !important;
@@ -40,6 +41,8 @@
     color: var(--foreground) !important;
     width: 28px !important;
     height: 28px !important;
+    /* ensure SVG does not swallow pointer events */
+    cursor: pointer !important;
   }
 
   .react-flow__controls button:hover {
@@ -48,6 +51,16 @@
 
   .react-flow__controls button svg {
     fill: var(--foreground) !important;
+    pointer-events: none; /* clicks go to the button element, not the SVG */
+  }
+
+  /* Locked state: interactive button shows "unlock interaction" title when locked */
+  .react-flow__controls-interactive[title="unlock interaction"] {
+    background: rgba(239, 68, 68, 0.12) !important;
+    border-color: rgba(239, 68, 68, 0.35) !important;
+  }
+  .react-flow__controls-interactive[title="unlock interaction"] svg {
+    fill: rgb(248 113 113) !important;
   }
 
   .react-flow__attribution {

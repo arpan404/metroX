@@ -439,7 +439,16 @@ export function AppPage() {
           setContextMenu({ x: e.clientX, y: e.clientY, nodeId: null, nodeType: null })
         }}
       >
-        {isAttack ? (
+        {/* Attack canvas — always mounted, hidden when in studio mode */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            opacity: isAttack ? 1 : 0,
+            pointerEvents: isAttack ? 'auto' : 'none',
+            transition: 'opacity 0.18s ease',
+          }}
+        >
           <ReactFlow
             className="h-full w-full"
             nodes={attackFlow.nodes}
@@ -487,7 +496,18 @@ export function AppPage() {
               }}
             />
           </ReactFlow>
-        ) : (
+        </div>
+
+        {/* Studio canvas — always mounted, hidden when in attack mode */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            opacity: isAttack ? 0 : 1,
+            pointerEvents: isAttack ? 'none' : 'auto',
+            transition: 'opacity 0.18s ease',
+          }}
+        >
           <ReactFlow
             className="h-full w-full"
             nodes={studioNodes}
@@ -522,7 +542,7 @@ export function AppPage() {
               }}
             />
           </ReactFlow>
-        )}
+        </div>
       </div>
 
       {/* ---- Custom context menu ---- */}

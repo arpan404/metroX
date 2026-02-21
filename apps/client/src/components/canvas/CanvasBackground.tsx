@@ -11,7 +11,7 @@ export function CanvasBackground({
     <div
       data-onboarding="canvas"
       className={cn(
-        'relative h-screen w-screen overflow-hidden bg-background canvas-dot-grid',
+        'relative h-screen w-screen overflow-hidden bg-background',
         className,
       )}
     >

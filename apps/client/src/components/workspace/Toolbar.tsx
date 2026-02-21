@@ -116,7 +116,7 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
               aria-expanded={runSelectorOpen}
               className="relative h-8 w-full min-w-0 rounded-lg border-border/35 bg-background/45 dark:bg-background/25 px-3 text-sm font-mono"
             >
-              <span className="block w-full truncate text-center pr-6">{selectorLabel}</span>
+              <span className="block w-full truncate text-right pr-6">{selectorLabel}</span>
               <ChevronsUpDown className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 shrink-0 opacity-60" />
             </Button>
           </PopoverTrigger>

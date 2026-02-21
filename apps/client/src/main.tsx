@@ -5,6 +5,7 @@ import App from './App'
 import { ThemeProvider } from './components/theme-provider'
 import { TooltipProvider } from './components/ui/tooltip'
 import { Toaster } from './components/ui/sonner'
+import { OnboardingProvider } from './components/onboarding/OnboardingProvider'
 import './index.css'
 import './styles.css'
 
@@ -13,7 +14,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <ThemeProvider>
       <TooltipProvider>
         <BrowserRouter>
-          <App />
+          <OnboardingProvider>
+            <App />
+          </OnboardingProvider>
         </BrowserRouter>
         <Toaster />
       </TooltipProvider>

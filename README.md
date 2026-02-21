@@ -49,3 +49,6 @@ make client-test
 - `POST /v1/security/keys/{id}/reencrypt-credentials`
 - `POST /v1/security/keys/{id}/retire`
 - `GET /v1/security/keys/events`
+
+## Architecture Docs
+- Backend core architecture (L3 Mermaid pack): `docs/backend-architecture.mdx`

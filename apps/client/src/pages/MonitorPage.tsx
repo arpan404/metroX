@@ -2,22 +2,30 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import ReactFlow, {
   addEdge,
   Background,
+  BackgroundVariant,
   Connection,
   Controls,
   Edge,
-  Handle,
   MarkerType,
   MiniMap,
   Node,
-  NodeProps,
-  Position,
   useEdgesState,
   useNodesState,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
+import { motion } from 'motion/react'
+import {
+  RefreshCw,
+  Activity,
+  Plus,
+  ListCollapse,
+  Swords,
+  Workflow,
+  Copy,
+} from 'lucide-react'
 
-import { api } from '../lib/api'
-import { loadState, saveState } from '../lib/state'
+import { api } from '@/lib/api'
+import { loadState, saveState } from '@/lib/state'
 import type {
   AttackSummaryPayload,
   NodeTelemetryPayload,
@@ -25,7 +33,53 @@ import type {
   RunOut,
   RunTelemetryPayload,
   Scorecard,
-} from '../lib/types'
+} from '@/lib/types'
+
+import {
+  attackNodeTypes,
+  type AttackNodeData,
+  type RootNodeData,
+  type AnalyticsNodeData,
+} from '@/components/canvas/AttackFlowNodes'
+import {
+  studioNodeTypes,
+  type StudioNodeData,
+} from '@/components/canvas/StudioNodes'
+import { FloatingPanel } from '@/components/canvas/FloatingPanel'
+
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Badge } from '@/components/ui/badge'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet'
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+} from '@/components/ui/drawer'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+
+/* ------------------------------------------------------------------ */
+/*  Local types                                                       */
+/* ------------------------------------------------------------------ */
 
 type EventRow = {
   id: number
@@ -36,102 +90,12 @@ type EventRow = {
   created_at: string
 }
 
-type AttackNodeData = {
-  label: string
-  attackType: string
-  total: number
-  success: number
-  failure: number
-  successRate: number
-  confidence: number
-  severity: Record<string, number>
-}
-
-type RootNodeData = {
-  label: string
-  model: string
-  completed: number
-  total: number
-  status: string
-}
-
-type AnalyticsNodeData = {
-  label: string
-  composite: number
-  gatePass: boolean
-  riskCount: number
-}
-
-type StudioNodeData = {
-  label: string
-  role: string
-  model: string
-  description: string
-}
-
-function AttackNode({ data }: NodeProps<AttackNodeData>) {
-  return (
-    <div className="flow-node attack-node">
-      <Handle type="target" position={Position.Left} />
-      <div className="node-title">{data.label}</div>
-      <div className="node-sub">Success {data.success} / {data.total}</div>
-      <div className="node-sub">Failure {data.failure}</div>
-      <div className="node-risk-bar">
-        <span style={{ width: `${Math.min(100, Math.round(data.successRate * 100))}%` }} />
-      </div>
-      <small>Risk Rate {(data.successRate * 100).toFixed(1)}%</small>
-      <Handle type="source" position={Position.Right} />
-    </div>
-  )
-}
-
-function RootNode({ data }: NodeProps<RootNodeData>) {
-  return (
-    <div className="flow-node root-node">
-      <Handle type="source" position={Position.Right} />
-      <div className="node-title">{data.label}</div>
-      <div className="node-sub">Model: {data.model || 'unknown'}</div>
-      <div className="node-sub">Status: {data.status}</div>
-      <div className="node-sub">Progress: {data.completed}/{data.total}</div>
-    </div>
-  )
-}
-
-function AnalyticsNode({ data }: NodeProps<AnalyticsNodeData>) {
-  return (
-    <div className="flow-node analytics-node">
-      <Handle type="target" position={Position.Left} />
-      <div className="node-title">{data.label}</div>
-      <div className="node-sub">Composite {data.composite.toFixed(1)}</div>
-      <div className="node-sub">Gate {data.gatePass ? 'PASS' : 'FAIL'}</div>
-      <div className="node-sub">Risk Cards {data.riskCount}</div>
-    </div>
-  )
-}
-
-function StudioRoleNode({ data }: NodeProps<StudioNodeData>) {
-  return (
-    <div className="flow-node studio-node">
-      <Handle type="target" position={Position.Left} />
-      <div className="node-title">{data.label}</div>
-      <div className="node-sub">Role: {data.role}</div>
-      <small>{data.model}</small>
-      <Handle type="source" position={Position.Right} />
-    </div>
-  )
-}
-
-const attackNodeTypes = {
-  rootNode: RootNode,
-  attackNode: AttackNode,
-  analyticsNode: AnalyticsNode,
-}
-
-const studioNodeTypes = {
-  studioNode: StudioRoleNode,
-}
+/* ------------------------------------------------------------------ */
+/*  MonitorPage                                                       */
+/* ------------------------------------------------------------------ */
 
 export default function MonitorPage() {
+  /* ---- persisted & core state ---- */
   const persisted = useMemo(() => loadState(), [])
   const [runId, setRunId] = useState(persisted.currentRunId ?? '')
   const [run, setRun] = useState<RunOut | null>(null)
@@ -146,6 +110,11 @@ export default function MonitorPage() {
   const [selectedAttackType, setSelectedAttackType] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'attack' | 'studio'>('attack')
 
+  /* ---- UI overlay state ---- */
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+
+  /* ---- studio initial data ---- */
   const initialStudioNodes = useMemo<Node<StudioNodeData>[]>(
     () => [
       {
@@ -222,6 +191,7 @@ export default function MonitorPage() {
   const [studioEdges, setStudioEdges, onStudioEdgesChange] = useEdgesState(initialStudioEdges)
   const [selectedStudioNodeId, setSelectedStudioNodeId] = useState<string>('attacker')
 
+  /* ---- derived data ---- */
   const selectedAttack = useMemo(() => {
     return attackSummary?.attack_types.find((row) => row.attack_type === selectedAttackType) ?? null
   }, [attackSummary, selectedAttackType])
@@ -298,6 +268,7 @@ export default function MonitorPage() {
     return { nodes: [rootNode, ...attackNodes, analyticsNode], edges }
   }, [attackSummary, riskCards, run, scorecard])
 
+  /* ---- data fetching ---- */
   const refreshAll = useCallback(async () => {
     if (!runId) return
     try {
@@ -325,6 +296,7 @@ export default function MonitorPage() {
     }
   }, [runId, selectedAttackType])
 
+  /* ---- WebSocket / SSE streaming ---- */
   useEffect(() => {
     if (!runId) return
     setEvents([])
@@ -370,6 +342,7 @@ export default function MonitorPage() {
     }
   }, [runId, refreshAll])
 
+  /* ---- studio callbacks ---- */
   const onStudioConnect = useCallback(
     (params: Connection) => setStudioEdges((eds) => addEdge({ ...params, markerEnd: { type: MarkerType.ArrowClosed } }, eds)),
     [setStudioEdges],
@@ -414,220 +387,485 @@ export default function MonitorPage() {
     [studioNodes, studioEdges],
   )
 
+  /* ---------------------------------------------------------------- */
+  /*  Render                                                          */
+  /* ---------------------------------------------------------------- */
+
+  const isAttack = activeTab === 'attack'
+
   return (
-    <section className="stack-lg">
-      <div className="panel stack-md">
-        <div className="row gap-lg wrap">
-          <label className="grow">
-            Run ID
-            <input value={runId} onChange={(event) => setRunId(event.target.value)} placeholder="Paste run id" />
-          </label>
-          <button type="button" className="primary" onClick={() => void refreshAll()}>
-            Refresh
-          </button>
-          <button type="button" className={activeTab === 'attack' ? 'primary' : 'ghost'} onClick={() => setActiveTab('attack')}>
-            Attack Canvas
-          </button>
-          <button type="button" className={activeTab === 'studio' ? 'primary' : 'ghost'} onClick={() => setActiveTab('studio')}>
-            Orchestration Studio
-          </button>
-        </div>
-      </div>
+    <div className="absolute inset-0 pt-16">
+      {/* ---- ReactFlow canvas (fills entire viewport) ---- */}
+      {isAttack ? (
+        <ReactFlow
+          className="h-full w-full"
+          nodes={attackFlow.nodes}
+          edges={attackFlow.edges}
+          nodeTypes={attackNodeTypes}
+          onNodeClick={(_, node) => {
+            if (node.id.startsWith('attack-')) {
+              const attackType = (node.data as AttackNodeData).attackType
+              setSelectedAttackType(attackType)
+              setSheetOpen(true)
+            }
+          }}
+          fitView
+        >
+          <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
+          <Controls position="bottom-right" />
+          <MiniMap className="hidden sm:block" pannable zoomable />
+        </ReactFlow>
+      ) : (
+        <ReactFlow
+          className="h-full w-full"
+          nodes={studioNodes}
+          edges={studioEdges}
+          nodeTypes={studioNodeTypes}
+          onNodesChange={onStudioNodesChange}
+          onEdgesChange={onStudioEdgesChange}
+          onConnect={onStudioConnect}
+          onNodeClick={(_, node) => {
+            setSelectedStudioNodeId(node.id)
+            setSheetOpen(true)
+          }}
+          fitView
+        >
+          <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
+          <Controls position="bottom-right" />
+          <MiniMap className="hidden sm:block" pannable zoomable />
+        </ReactFlow>
+      )}
 
-      {error && <p className="error">{error}</p>}
-
-      {activeTab === 'attack' && (
-        <div className="canvas-layout panel">
-          <div className="report-overlay">
-            <h3>Live Overall Report</h3>
-            <p>Status: <strong>{run?.status ?? 'unknown'}</strong></p>
-            <p>Progress: <strong>{run?.completed_attacks ?? 0}/{run?.total_attacks ?? 0}</strong></p>
-            <p>Composite: <strong>{Number(scorecard?.metrics?.composite_score ?? 0).toFixed(1)}</strong></p>
-            <p>Gate: <strong>{scorecard?.gates?.pass ? 'PASS' : 'FAIL'}</strong></p>
-            <p>Stream: <strong>{streaming ? 'LIVE' : 'CLOSED'}</strong></p>
-            <p>Spent: <strong>${Number(telemetry?.cost?.spent_usd ?? run?.budget_spent_usd ?? 0).toFixed(3)}</strong></p>
-            <p>Projected: <strong>${Number(telemetry?.cost?.projected_final_usd ?? run?.estimated_final_cost_usd ?? 0).toFixed(3)}</strong></p>
-          </div>
-
-          <div className="flow-canvas">
-            <ReactFlow
-              nodes={attackFlow.nodes}
-              edges={attackFlow.edges}
-              nodeTypes={attackNodeTypes}
-              onNodeClick={(_, node) => {
-                if (node.id.startsWith('attack-')) {
-                  const attackType = (node.data as AttackNodeData).attackType
-                  setSelectedAttackType(attackType)
-                }
-              }}
-              fitView
+      {/* ---- Floating status panel -- top left ---- */}
+      <FloatingPanel position="top-left" className="p-4 w-64">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.1 }}
+          className="space-y-2"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">Run Status</span>
+            <Badge
+              variant={
+                run?.status === 'running'
+                  ? 'default'
+                  : run?.status === 'completed'
+                    ? 'secondary'
+                    : 'outline'
+              }
+              className="text-[10px]"
             >
-              <Background color="rgba(255,255,255,0.08)" gap={20} />
-              <Controls />
-              <MiniMap pannable zoomable />
-            </ReactFlow>
+              {run?.status ?? 'unknown'}
+            </Badge>
           </div>
 
-          <aside className="flow-details">
-            <h3>Node Details</h3>
-            {!selectedAttack && <p className="caption">Click an attack node to inspect analytics.</p>}
-            {selectedAttack && (
-              <div className="stack-sm">
-                <p><strong>{selectedAttack.attack_type.replaceAll('_', ' ')}</strong></p>
-                <p>Total: {selectedAttack.total}</p>
-                <p>Success: {selectedAttack.success}</p>
-                <p>Failure: {selectedAttack.failure}</p>
-                <p>Success Rate: {(selectedAttack.success_rate * 100).toFixed(2)}%</p>
-                <p>Avg Confidence: {(selectedAttack.avg_confidence * 100).toFixed(1)}%</p>
-                <div>
-                  <p className="caption">Severity Breakdown</p>
-                  <ul>
-                    {Object.entries(selectedAttack.severity_breakdown).map(([key, value]) => (
-                      <li key={key}>{key}: {value}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">Progress</span>
+            <span className="font-mono text-xs text-foreground">
+              {run?.completed_attacks ?? 0}/{run?.total_attacks ?? 0}
+            </span>
+          </div>
 
-            <div className="stack-sm">
-              <h3>Recent Events</h3>
-              <div className="events compact">
-                {events.slice(0, 12).map((event) => (
-                  <article key={event.id} className="event-row">
-                    <div className="row between">
-                      <strong>{event.event_type}</strong>
-                      <span>step {event.step}</span>
+          <Separator />
+
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">Spent</span>
+            <span className="font-mono text-xs text-foreground">
+              ${Number(telemetry?.cost?.spent_usd ?? run?.budget_spent_usd ?? 0).toFixed(3)}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">Projected</span>
+            <span className="font-mono text-xs text-foreground">
+              ${Number(telemetry?.cost?.projected_final_usd ?? run?.estimated_final_cost_usd ?? 0).toFixed(3)}
+            </span>
+          </div>
+
+          <Separator />
+
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">Stream</span>
+            <div className="flex items-center gap-1.5">
+              <span
+                className={
+                  streaming
+                    ? 'inline-block size-1.5 rounded-full bg-emerald-500 animate-pulse'
+                    : 'inline-block size-1.5 rounded-full bg-muted-foreground'
+                }
+              />
+              <span className={`text-[11px] font-mono text-foreground ${streaming ? 'live-pulse' : ''}`}>
+                {streaming ? 'LIVE' : 'CLOSED'}
+              </span>
+            </div>
+          </div>
+
+          {error && (
+            <p className="text-[11px] text-destructive mt-1 leading-tight">{error}</p>
+          )}
+        </motion.div>
+      </FloatingPanel>
+
+      {/* ---- Floating run input -- top right ---- */}
+      <FloatingPanel position="top-right" className="p-3 w-72">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.15 }}
+          className="flex items-center gap-2"
+        >
+          <Input
+            value={runId}
+            onChange={(event) => setRunId(event.target.value)}
+            placeholder="Paste run ID..."
+            className="h-8 text-xs"
+          />
+          <Button
+            variant="outline"
+            size="icon-sm"
+            onClick={() => void refreshAll()}
+            title="Refresh"
+          >
+            <RefreshCw className="size-3.5" />
+          </Button>
+        </motion.div>
+      </FloatingPanel>
+
+      {/* ---- Floating bottom-left: mode toggle + studio actions ---- */}
+      <FloatingPanel position="bottom-left" className="p-1.5">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          className="flex items-center gap-2"
+        >
+          <ToggleGroup
+            type="single"
+            value={activeTab}
+            onValueChange={(value) => {
+              if (value === 'attack' || value === 'studio') {
+                setActiveTab(value)
+                setSheetOpen(false)
+              }
+            }}
+            variant="outline"
+            size="sm"
+          >
+            <ToggleGroupItem value="attack" className="gap-1.5 text-xs">
+              <Swords className="size-3.5" />
+              Attack Canvas
+            </ToggleGroupItem>
+            <ToggleGroupItem value="studio" className="gap-1.5 text-xs">
+              <Workflow className="size-3.5" />
+              Studio
+            </ToggleGroupItem>
+          </ToggleGroup>
+
+          {activeTab === 'studio' && (
+            <motion.div
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex items-center gap-1"
+            >
+              <Separator orientation="vertical" className="h-5 mx-1" />
+              <Button variant="ghost" size="xs" onClick={() => addStudioNode('attacker')}>
+                <Plus className="size-3" /> Attacker
+              </Button>
+              <Button variant="ghost" size="xs" onClick={() => addStudioNode('critic')}>
+                <Plus className="size-3" /> Critic
+              </Button>
+              <Button variant="ghost" size="xs" onClick={() => addStudioNode('verifier')}>
+                <Plus className="size-3" /> Verifier
+              </Button>
+              <Button variant="ghost" size="xs" onClick={() => addStudioNode('analyst')}>
+                <Plus className="size-3" /> Analyst
+              </Button>
+            </motion.div>
+          )}
+
+          <Separator orientation="vertical" className="h-5 mx-1" />
+
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => setDrawerOpen(true)}
+            className="gap-1.5 text-xs"
+          >
+            <ListCollapse className="size-3.5" />
+            Events
+          </Button>
+        </motion.div>
+      </FloatingPanel>
+
+      {/* ---- Right Sheet for details ---- */}
+      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+        <SheetContent side="right" className="w-96 overflow-y-auto">
+          {isAttack ? (
+            <>
+              <SheetHeader>
+                <SheetTitle>
+                  {selectedAttack
+                    ? selectedAttack.attack_type.replaceAll('_', ' ').toUpperCase()
+                    : 'Node Details'}
+                </SheetTitle>
+                <SheetDescription>
+                  {selectedAttack
+                    ? 'Attack analytics and telemetry for this node'
+                    : 'Click an attack node on the canvas to inspect analytics.'}
+                </SheetDescription>
+              </SheetHeader>
+
+              {!selectedAttack && !run && (
+                <div className="space-y-3 px-4">
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-4 w-1/2" />
+                  <Skeleton className="h-20 w-full" />
+                </div>
+              )}
+
+              {selectedAttack && (
+                <ScrollArea className="flex-1 px-4 pb-6">
+                  <div className="space-y-4">
+                    {/* --- Attack metrics --- */}
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold text-foreground">Metrics</h4>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-md border p-2">
+                          <span className="text-muted-foreground">Total</span>
+                          <p className="font-mono font-semibold">{selectedAttack.total}</p>
+                        </div>
+                        <div className="rounded-md border p-2">
+                          <span className="text-muted-foreground">Success</span>
+                          <p className="font-mono font-semibold text-emerald-500">{selectedAttack.success}</p>
+                        </div>
+                        <div className="rounded-md border p-2">
+                          <span className="text-muted-foreground">Failure</span>
+                          <p className="font-mono font-semibold text-destructive">{selectedAttack.failure}</p>
+                        </div>
+                        <div className="rounded-md border p-2">
+                          <span className="text-muted-foreground">Success Rate</span>
+                          <p className="font-mono font-semibold">{(selectedAttack.success_rate * 100).toFixed(2)}%</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-md border p-2">
+                          <span className="text-muted-foreground">Avg Confidence</span>
+                          <p className="font-mono font-semibold">{(selectedAttack.avg_confidence * 100).toFixed(1)}%</p>
+                        </div>
+                      </div>
                     </div>
-                    {event.message && <p>{event.message}</p>}
-                  </article>
+
+                    <Separator />
+
+                    {/* --- Severity breakdown --- */}
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold text-foreground">Severity Breakdown</h4>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Object.entries(selectedAttack.severity_breakdown).map(([key, value]) => (
+                          <Badge key={key} variant="outline" className="text-[11px] gap-1">
+                            {key}: <span className="font-mono">{value}</span>
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    {/* --- Telemetry counters --- */}
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold text-foreground">Telemetry Counters</h4>
+                      {Object.keys(telemetry?.event_counts ?? {}).length > 0 ? (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-xs">Event</TableHead>
+                              <TableHead className="text-xs text-right">Count</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {Object.entries(telemetry?.event_counts ?? {}).map(([name, count]) => (
+                              <TableRow key={name}>
+                                <TableCell className="text-xs font-mono">{name}</TableCell>
+                                <TableCell className="text-xs font-mono text-right">{count}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No telemetry counters yet.</p>
+                      )}
+                    </div>
+
+                    <Separator />
+
+                    {/* --- Node telemetry --- */}
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold text-foreground">Node Telemetry</h4>
+                      {(nodeTelemetry?.nodes ?? []).length > 0 ? (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-xs">Attack</TableHead>
+                              <TableHead className="text-xs text-right">Pass</TableHead>
+                              <TableHead className="text-xs text-right">Fail</TableHead>
+                              <TableHead className="text-xs text-right">Avg ms</TableHead>
+                              <TableHead className="text-xs text-right">Cost</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {(nodeTelemetry?.nodes ?? []).slice(0, 12).map((row) => (
+                              <TableRow key={row.attack_type}>
+                                <TableCell className="text-xs font-mono">{row.attack_type}</TableCell>
+                                <TableCell className="text-xs font-mono text-right">{row.success}</TableCell>
+                                <TableCell className="text-xs font-mono text-right">{row.failure}</TableCell>
+                                <TableCell className="text-xs font-mono text-right">{row.avg_latency_ms.toFixed(1)}</TableCell>
+                                <TableCell className="text-xs font-mono text-right">${row.effective_cost_usd.toFixed(3)}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No node telemetry yet.</p>
+                      )}
+                    </div>
+                  </div>
+                </ScrollArea>
+              )}
+            </>
+          ) : (
+            /* ---- Studio node inspector ---- */
+            <>
+              <SheetHeader>
+                <SheetTitle>Workflow Inspector</SheetTitle>
+                <SheetDescription>
+                  {selectedStudioNode
+                    ? `Editing "${selectedStudioNode.data.label}"`
+                    : 'Select a workflow node to configure it.'}
+                </SheetDescription>
+              </SheetHeader>
+
+              {selectedStudioNode && (
+                <ScrollArea className="flex-1 px-4 pb-6">
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-muted-foreground">Label</label>
+                      <Input
+                        value={selectedStudioNode.data.label}
+                        onChange={(event) => updateStudioNode({ label: event.target.value })}
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-muted-foreground">Role</label>
+                      <Input
+                        value={selectedStudioNode.data.role}
+                        onChange={(event) => updateStudioNode({ role: event.target.value })}
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-muted-foreground">Model</label>
+                      <Input
+                        value={selectedStudioNode.data.model}
+                        onChange={(event) => updateStudioNode({ model: event.target.value })}
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-muted-foreground">Description</label>
+                      <Textarea
+                        rows={4}
+                        value={selectedStudioNode.data.description}
+                        onChange={(event) => updateStudioNode({ description: event.target.value })}
+                        className="text-sm"
+                      />
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-semibold text-foreground">Workflow JSON</h4>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => {
+                            void navigator.clipboard.writeText(exportWorkflowJson)
+                          }}
+                          title="Copy JSON"
+                        >
+                          <Copy className="size-3" />
+                        </Button>
+                      </div>
+                      <pre className="max-h-64 overflow-auto rounded-md border bg-muted/40 p-2 text-[11px] font-mono leading-relaxed">
+                        {exportWorkflowJson}
+                      </pre>
+                    </div>
+                  </div>
+                </ScrollArea>
+              )}
+
+              {!selectedStudioNode && (
+                <div className="space-y-3 px-4">
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-4 w-1/2" />
+                </div>
+              )}
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* ---- Bottom Drawer for events timeline ---- */}
+      <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
+        <DrawerContent>
+          <DrawerHeader>
+            <DrawerTitle className="flex items-center gap-2">
+              <Activity className="size-4" />
+              Event Timeline
+              <Badge variant="secondary" className="ml-2 text-[10px]">
+                {events.length} events
+              </Badge>
+              {streaming && (
+                <Badge variant="outline" className="text-[10px] gap-1">
+                  <span className="inline-block size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  LIVE
+                </Badge>
+              )}
+            </DrawerTitle>
+          </DrawerHeader>
+
+          <ScrollArea className="h-64 px-4 pb-4">
+            {events.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-sm text-muted-foreground">
+                No events received yet.
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {events.slice(0, 20).map((event) => (
+                  <motion.div
+                    key={event.id}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-start gap-3 rounded-md border px-3 py-2 text-xs"
+                  >
+                    <Badge variant="outline" className="shrink-0 text-[10px] mt-0.5">
+                      {event.event_type}
+                    </Badge>
+                    <span className="shrink-0 font-mono text-muted-foreground">
+                      step {event.step}
+                    </span>
+                    {event.message && (
+                      <span className="truncate text-foreground">{event.message}</span>
+                    )}
+                  </motion.div>
                 ))}
               </div>
-            </div>
-
-            <div className="stack-sm">
-              <h3>Telemetry Counters</h3>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Event</th>
-                      <th>Count</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(telemetry?.event_counts ?? {}).map(([name, count]) => (
-                      <tr key={name}>
-                        <td>{name}</td>
-                        <td>{count}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="stack-sm">
-              <h3>Node Telemetry</h3>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Attack</th>
-                      <th>Success</th>
-                      <th>Failure</th>
-                      <th>Avg ms</th>
-                      <th>Cost</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(nodeTelemetry?.nodes ?? []).slice(0, 12).map((row) => (
-                      <tr key={row.attack_type}>
-                        <td>{row.attack_type}</td>
-                        <td>{row.success}</td>
-                        <td>{row.failure}</td>
-                        <td>{row.avg_latency_ms.toFixed(1)}</td>
-                        <td>${row.effective_cost_usd.toFixed(3)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </aside>
-        </div>
-      )}
-
-      {activeTab === 'studio' && (
-        <div className="canvas-layout panel">
-          <div className="studio-toolbar">
-            <button type="button" className="ghost" onClick={() => addStudioNode('attacker')}>+ Attacker</button>
-            <button type="button" className="ghost" onClick={() => addStudioNode('critic')}>+ Critic</button>
-            <button type="button" className="ghost" onClick={() => addStudioNode('verifier')}>+ Verifier</button>
-            <button type="button" className="ghost" onClick={() => addStudioNode('analyst')}>+ Analyst</button>
-          </div>
-
-          <div className="flow-canvas">
-            <ReactFlow
-              nodes={studioNodes}
-              edges={studioEdges}
-              nodeTypes={studioNodeTypes}
-              onNodesChange={onStudioNodesChange}
-              onEdgesChange={onStudioEdgesChange}
-              onConnect={onStudioConnect}
-              onNodeClick={(_, node) => setSelectedStudioNodeId(node.id)}
-              fitView
-            >
-              <Background color="rgba(255,255,255,0.08)" gap={20} />
-              <Controls />
-              <MiniMap pannable zoomable />
-            </ReactFlow>
-          </div>
-
-          <aside className="flow-details">
-            <h3>Workflow Inspector</h3>
-            {!selectedStudioNode && <p className="caption">Select a workflow node to configure it.</p>}
-            {selectedStudioNode && (
-              <div className="stack-sm">
-                <label>
-                  Label
-                  <input
-                    value={selectedStudioNode.data.label}
-                    onChange={(event) => updateStudioNode({ label: event.target.value })}
-                  />
-                </label>
-                <label>
-                  Role
-                  <input
-                    value={selectedStudioNode.data.role}
-                    onChange={(event) => updateStudioNode({ role: event.target.value })}
-                  />
-                </label>
-                <label>
-                  Model
-                  <input
-                    value={selectedStudioNode.data.model}
-                    onChange={(event) => updateStudioNode({ model: event.target.value })}
-                  />
-                </label>
-                <label>
-                  Description
-                  <textarea
-                    rows={4}
-                    value={selectedStudioNode.data.description}
-                    onChange={(event) => updateStudioNode({ description: event.target.value })}
-                  />
-                </label>
-              </div>
             )}
-
-            <div className="stack-sm">
-              <h3>Workflow JSON</h3>
-              <pre className="json studio-json">{exportWorkflowJson}</pre>
-            </div>
-          </aside>
-        </div>
-      )}
-    </section>
+          </ScrollArea>
+        </DrawerContent>
+      </Drawer>
+    </div>
   )
 }

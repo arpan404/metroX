@@ -1,51 +1,108 @@
-.shell,
-.topbar,
-.content,
-.panel,
-.stack-lg,
-.stack-md,
-.stack-sm,
-.grid,
-.row,
-.caption,
-.error,
-.callout,
-.table-wrap,
-.table-row-active,
-.nav,
-.nav.active,
-.stepper,
-.step,
-.step.active,
-.flow-node,
-.studio-node,
-.metric,
-.chip,
-.badge,
-.legend,
-.legend-item,
-.overview-grid,
-.monitor-grid,
-.attack-node,
-.attack-node--success,
-.attack-node--fail,
-.attack-node--running,
-.attack-node--idle {
-  all: unset;
+/* Canvas dot-grid background */
+.canvas-dot-grid {
+  background-image: radial-gradient(circle, var(--border) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
 
-.panel { display:block; border:1px solid var(--border); border-radius:12px; padding:12px; background:color-mix(in oklch, var(--card) 92%, transparent); }
-.stack-lg,.stack-md,.stack-sm { display:grid; gap:12px; }
-.grid { display:grid; gap:12px; }
-.grid.two { grid-template-columns:repeat(2,minmax(0,1fr)); }
-.grid.three { grid-template-columns:repeat(3,minmax(0,1fr)); }
-.row { display:flex; gap:8px; align-items:center; }
-.row.wrap { flex-wrap: wrap; }
-.row.between { justify-content: space-between; }
-.caption { color: var(--muted-foreground); font-size: 12px; }
-.error { color: #dc2626; font-size: 13px; }
-.callout { border: 1px solid var(--border); border-radius: 10px; padding: 8px; }
-.table-wrap { overflow: auto; }
-.table-row-active { background: color-mix(in oklch, var(--accent) 30%, transparent); }
-.flow-node { border:1px solid var(--border); border-radius:10px; background:var(--card); padding:8px; min-width:140px; }
-@media (max-width: 900px) { .grid.two,.grid.three { grid-template-columns:1fr; } }
+/* ReactFlow overrides for design system consistency */
+.react-flow__minimap {
+  border-radius: 8px !important;
+  border: 1px solid var(--border) !important;
+  background: var(--card) !important;
+  opacity: 0.9;
+}
+.react-flow__controls {
+  border-radius: 8px !important;
+  border: 1px solid var(--border) !important;
+  background: var(--card) !important;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05) !important;
+}
+.react-flow__controls button {
+  border-color: var(--border) !important;
+  background: var(--card) !important;
+  color: var(--foreground) !important;
+  width: 28px !important;
+  height: 28px !important;
+}
+.react-flow__controls button:hover {
+  background: var(--accent) !important;
+}
+.react-flow__controls button svg {
+  fill: var(--foreground) !important;
+}
+.react-flow__attribution {
+  display: none !important;
+}
+.react-flow__background {
+  opacity: 0.5;
+}
+
+/* ReactFlow edge styling */
+.react-flow__edge-path {
+  stroke: var(--muted-foreground) !important;
+  stroke-width: 1.5 !important;
+}
+.react-flow__edge.animated .react-flow__edge-path {
+  stroke: var(--primary) !important;
+}
+
+/* ReactFlow handles and selection */
+.react-flow__handle {
+  background: var(--primary) !important;
+  border: 2px solid var(--card) !important;
+  width: 8px !important;
+  height: 8px !important;
+}
+.react-flow__node.selected > div {
+  box-shadow: 0 0 0 2px var(--primary);
+  border-radius: 8px;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
+
+/* Smooth theme transitions */
+body {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Node scale-up animation on render */
+.react-flow__node {
+  animation: nodeScaleIn 0.3s ease-out;
+}
+@keyframes nodeScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Pulsing LIVE text */
+.live-pulse {
+  animation: livePulse 2s ease-in-out infinite;
+}
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Responsive: full-width sheets on mobile */
+@media (max-width: 640px) {
+  [data-side="right"] > [data-slot="sheet-content"],
+  [data-side="left"] > [data-slot="sheet-content"] {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}
+
+/* Badge color transitions */
+[data-slot="badge"] {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}

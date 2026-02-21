@@ -2,30 +2,47 @@ import { FormEvent, useEffect, useMemo, useState } from 'react'
 import ReactFlow, {
   addEdge,
   Background,
+  BackgroundVariant,
   Connection,
   Controls,
   Edge,
   MarkerType,
+  MiniMap,
   Node,
   useEdgesState,
   useNodesState,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
+import { motion } from 'motion/react'
+import { Rocket, SlidersHorizontal } from 'lucide-react'
 
-import { api } from '../lib/api'
-import { loadState, saveState } from '../lib/state'
-import { Badge } from '../components/ui/badge'
-import { Button } from '../components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
-import { Input } from '../components/ui/input'
-import { Label } from '../components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
-import { Separator } from '../components/ui/separator'
-import { Switch } from '../components/ui/switch'
-import { Textarea } from '../components/ui/textarea'
-import { Progress } from '../components/ui/progress'
+import { api } from '@/lib/api'
+import { loadState, saveState } from '@/lib/state'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Progress } from '@/components/ui/progress'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
+import { FloatingPanel } from '@/components/canvas/FloatingPanel'
+import { studioNodeTypes } from '@/components/canvas/StudioNodes'
 
-const ONBOARDING_KEY = 'autoredteam-onboarding-complete-v1'
+// studioNodeTypes is imported for module registration but the wizard graph
+// uses default ReactFlow node types -- keep this reference so tree-shaking
+// doesn't strip the module in builds that rely on side-effects.
+void studioNodeTypes
 
 type TargetType = 'managed_llm_runtime' | 'managed_agent_runtime' | 'http' | 'openai_compatible' | 'agent_http'
 type Preset = 'quick' | 'standard' | 'deep'
@@ -47,9 +64,8 @@ const initialEdges: Edge[] = [
 
 export default function WizardPage() {
   const persisted = useMemo(() => loadState(), [])
-  const [onboardingCompleted, setOnboardingCompleted] = useState(
-    () => window.localStorage.getItem(ONBOARDING_KEY) === 'true',
-  )
+
+  const [configOpen, setConfigOpen] = useState(true)
 
   const [sessionName, setSessionName] = useState('Primary Reliability Session')
   const [sessionOwner, setSessionOwner] = useState('platform-team')
@@ -234,60 +250,41 @@ export default function WizardPage() {
     }
   }
 
-  if (!onboardingCompleted) {
-    return (
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card className="border-border/70">
-          <CardHeader>
-            <CardTitle>Welcome to AutoRedTeam</CardTitle>
-            <CardDescription>Configure managed runtimes, scoring strictness, and safety budget from one workbench.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {[
-              'Connect provider or managed runtime',
-              'Pick benchmark slices and strictness',
-              'Set budget and concurrency gates',
-              'Launch run and monitor live telemetry',
-            ].map((item, index) => (
-              <div key={item} className="rounded-lg border bg-muted/30 p-3 text-sm animate-in fade-in slide-in-from-bottom-1" style={{ animationDelay: `${index * 80}ms` }}>
-                {item}
-              </div>
-            ))}
-            <Button
-              onClick={() => {
-                window.localStorage.setItem(ONBOARDING_KEY, 'true')
-                setOnboardingCompleted(true)
-              }}
-            >
-              Start Setup
-            </Button>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Last Saved Context</CardTitle>
-            <CardDescription>Subsequent visits automatically load your most recent profile.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>Session: {persisted.sessionId ?? 'none'}</p>
-            <p>Profile: {persisted.configProfileId ?? 'none'}</p>
-            <p>Run: {persisted.currentRunId ?? 'none'}</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
   return (
-    <form onSubmit={launchRun} className="grid gap-4 lg:grid-cols-[1fr_340px]">
-      <div className="space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Config Workbench</CardTitle>
-            <CardDescription>Single-page setup for target runtime, benchmark strategy, and scoring.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
+    <div className="absolute inset-0 pt-16">
+      {/* Orchestration ReactFlow fills the background */}
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        className="h-full w-full"
+        fitView
+      >
+        <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
+        <Controls />
+        <MiniMap className="hidden sm:block" />
+      </ReactFlow>
+
+      {/* Left Sheet for config form -- open by default */}
+      <Sheet open={configOpen} onOpenChange={setConfigOpen} modal={false}>
+        <SheetContent side="left" className="w-[420px] sm:max-w-[420px] overflow-y-auto p-0">
+          <SheetHeader className="px-6 pt-6">
+            <SheetTitle>Config Workbench</SheetTitle>
+            <SheetDescription>
+              Single-page setup for target runtime, benchmark strategy, and scoring.
+            </SheetDescription>
+          </SheetHeader>
+
+          <ScrollArea className="px-6 pb-6">
+            {/* Section 1: Session info */}
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: 0 }}
+              className="space-y-4 py-4"
+            >
               <div className="space-y-2">
                 <Label>Session Name</Label>
                 <Input value={sessionName} onChange={(event) => setSessionName(event.target.value)} />
@@ -296,13 +293,21 @@ export default function WizardPage() {
                 <Label>Owner</Label>
                 <Input value={sessionOwner} onChange={(event) => setSessionOwner(event.target.value)} />
               </div>
-              <div className="space-y-2 md:col-span-2">
+              <div className="space-y-2">
                 <Label>Profile Name</Label>
                 <Input value={profileName} onChange={(event) => setProfileName(event.target.value)} />
               </div>
-            </div>
+            </motion.div>
+
             <Separator />
-            <div className="grid gap-4 md:grid-cols-2">
+
+            {/* Section 2: Target config */}
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: 0.06 }}
+              className="space-y-4 py-4"
+            >
               <div className="space-y-2">
                 <Label>Target Type</Label>
                 <Select value={targetType} onValueChange={(value) => setTargetType(value as TargetType)}>
@@ -328,105 +333,163 @@ export default function WizardPage() {
                 <Label>API Key Ref</Label>
                 <Input value={apiKeyRef} onChange={(event) => setApiKeyRef(event.target.value)} placeholder="optional credential id" />
               </div>
-              <div className="space-y-2 md:col-span-2">
+              <div className="space-y-2">
                 <Label>Base URL / Endpoint</Label>
-                <Input value={targetType === 'http' || targetType === 'agent_http' ? endpoint : baseUrl} onChange={(event) => (targetType === 'http' || targetType === 'agent_http' ? setEndpoint(event.target.value) : setBaseUrl(event.target.value))} placeholder="https://..." />
+                <Input
+                  value={targetType === 'http' || targetType === 'agent_http' ? endpoint : baseUrl}
+                  onChange={(event) => (targetType === 'http' || targetType === 'agent_http' ? setEndpoint(event.target.value) : setBaseUrl(event.target.value))}
+                  placeholder="https://..."
+                />
               </div>
-              <div className="space-y-2 md:col-span-2">
+              <div className="space-y-2">
                 <Label>Inline API Key (optional)</Label>
                 <Input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="used only when credential id is not provided" />
               </div>
-            </div>
-            <Button type="button" variant="secondary" onClick={validateProvider}>Validate Provider</Button>
-            {capabilityReport ? <p className="text-sm text-muted-foreground">{capabilityReport}</p> : null}
-          </CardContent>
-        </Card>
+              <Button type="button" variant="secondary" onClick={validateProvider}>Validate Provider</Button>
+              {capabilityReport ? <p className="text-sm text-muted-foreground">{capabilityReport}</p> : null}
+            </motion.div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Orchestration Studio</CardTitle>
-            <CardDescription>Drag and connect specialist nodes; graph is saved in orchestration config snapshot.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-2"><Label>Join Policy</Label><Input value={joinPolicy} onChange={(event) => setJoinPolicy(event.target.value)} /></div>
-              <div className="space-y-2"><Label>Router Strategy</Label><Input value={routerStrategy} onChange={(event) => setRouterStrategy(event.target.value)} /></div>
-              <div className="space-y-2"><Label>Max Subagents</Label><Input type="number" value={maxSubagents} onChange={(event) => setMaxSubagents(Number(event.target.value || 1))} /></div>
-            </div>
-            <div className="h-[300px] rounded-md border">
-              <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} fitView>
-                <Controls />
-                <Background />
-              </ReactFlow>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Benchmark + Scoring</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2 md:col-span-2">
-              <Label>Taxonomy (comma-separated)</Label>
-              <Textarea value={taxonomy} onChange={(event) => setTaxonomy(event.target.value)} rows={3} />
-            </div>
-            <div className="space-y-2"><Label>Seed</Label><Input type="number" value={seed} onChange={(event) => setSeed(Number(event.target.value || 42))} /></div>
-            <div className="space-y-2"><Label>Curated Ratio</Label><Input type="number" min={0} max={1} step={0.05} value={curatedRatio} onChange={(event) => setCuratedRatio(Number(event.target.value || 0.6))} /></div>
-            <div className="space-y-2"><Label>Strictness</Label><Input value={strictness} onChange={(event) => setStrictness(event.target.value)} /></div>
-            <div className="space-y-2">
-              <Label className="mb-2 block">Active Adjudication</Label>
-              <Switch checked={activeAdjudication} onCheckedChange={setActiveAdjudication} />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="space-y-4 lg:sticky lg:top-6 lg:h-fit">
-        <Card>
-          <CardHeader>
-            <CardTitle>Run Launcher</CardTitle>
-            <CardDescription>Live summary of gate-critical configuration and launch action.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div>
-              <div className="mb-2 flex items-center justify-between text-sm">
-                <span>Configuration readiness</span>
-                <span>{Math.round(progress)}%</span>
-              </div>
-              <Progress value={progress} />
-            </div>
-            <div className="grid gap-3">
-              <div className="space-y-2"><Label>Preset</Label><Select value={preset} onValueChange={(value) => setPreset(value as Preset)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="quick">quick</SelectItem><SelectItem value="standard">standard</SelectItem><SelectItem value="deep">deep</SelectItem></SelectContent></Select></div>
-              <div className="space-y-2"><Label>Mode</Label><Select value={mode} onValueChange={(value) => setMode(value as 'deterministic_ci' | 'live_nightly')}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="deterministic_ci">deterministic_ci</SelectItem><SelectItem value="live_nightly">live_nightly</SelectItem></SelectContent></Select></div>
-              <div className="space-y-2"><Label>Budget (USD)</Label><Input type="number" value={budgetUsd} onChange={(event) => setBudgetUsd(Number(event.target.value || 0))} /></div>
-              <div className="space-y-2"><Label>Max Concurrency</Label><Input type="number" value={maxConcurrency} onChange={(event) => setMaxConcurrency(Number(event.target.value || 1))} /></div>
-              <div className="space-y-2"><Label>Baseline Run (optional)</Label><Input value={baselineRunId} onChange={(event) => setBaselineRunId(event.target.value)} /></div>
-            </div>
             <Separator />
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <Badge variant="outline">Target: {targetType}</Badge>
-              <Badge variant="outline">Model: {model}</Badge>
-              <Badge variant="outline">Budget: ${budgetUsd.toFixed(2)}</Badge>
-            </div>
-            <Button className="w-full" type="submit" disabled={busy}>{busy ? 'Launching…' : 'Run Now'}</Button>
-            {status ? <p className="text-sm text-emerald-600 dark:text-emerald-400">{status}</p> : null}
-            {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
-          </CardContent>
-        </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Last Used Profile</CardTitle>
-            <CardDescription>Auto-loaded on return visits.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-1 text-sm text-muted-foreground">
-            <p>Session: {persisted.sessionId ?? 'none'}</p>
-            <p>Profile: {persisted.configProfileId ?? 'none'}</p>
-            <p>Run: {persisted.currentRunId ?? 'none'}</p>
-          </CardContent>
-        </Card>
-      </div>
-    </form>
+            {/* Section 3: Benchmark + Scoring */}
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: 0.12 }}
+              className="space-y-4 py-4"
+            >
+              <div className="space-y-2">
+                <Label>Taxonomy (comma-separated)</Label>
+                <Textarea value={taxonomy} onChange={(event) => setTaxonomy(event.target.value)} rows={3} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Seed</Label>
+                  <Input type="number" value={seed} onChange={(event) => setSeed(Number(event.target.value || 42))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Curated Ratio</Label>
+                  <Input type="number" min={0} max={1} step={0.05} value={curatedRatio} onChange={(event) => setCuratedRatio(Number(event.target.value || 0.6))} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Strictness</Label>
+                <Input value={strictness} onChange={(event) => setStrictness(event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label className="mb-2 block">Active Adjudication</Label>
+                <Switch checked={activeAdjudication} onCheckedChange={setActiveAdjudication} />
+              </div>
+            </motion.div>
+
+            <Separator />
+
+            {/* Section 4: Orchestration params */}
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: 0.18 }}
+              className="space-y-4 py-4"
+            >
+              <div className="space-y-2">
+                <Label>Join Policy</Label>
+                <Input value={joinPolicy} onChange={(event) => setJoinPolicy(event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Router Strategy</Label>
+                <Input value={routerStrategy} onChange={(event) => setRouterStrategy(event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Max Subagents</Label>
+                <Input type="number" value={maxSubagents} onChange={(event) => setMaxSubagents(Number(event.target.value || 1))} />
+              </div>
+            </motion.div>
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
+
+      {/* Toggle for opening the config sheet */}
+      <FloatingPanel position="top-left" visible={!configOpen} className="p-1.5">
+        <Button onClick={() => setConfigOpen(true)} variant="outline" size="sm">
+          <SlidersHorizontal className="mr-2 h-4 w-4" />
+          Open Config
+        </Button>
+      </FloatingPanel>
+
+      {/* Run Launcher -- bottom right */}
+      <FloatingPanel position="bottom-right" className="p-4 w-80">
+        <form onSubmit={launchRun} className="space-y-3">
+          <Card className="border-0 bg-transparent shadow-none p-0">
+            <CardHeader className="p-0 pb-3">
+              <CardTitle className="text-sm">Run Launcher</CardTitle>
+              <CardDescription className="text-xs">
+                Live summary of gate-critical configuration and launch action.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 p-0">
+              <div>
+                <div className="mb-2 flex items-center justify-between text-sm">
+                  <span>Configuration readiness</span>
+                  <span>{Math.round(progress)}%</span>
+                </div>
+                <Progress value={progress} />
+              </div>
+              <div className="grid gap-3">
+                <div className="space-y-2">
+                  <Label>Preset</Label>
+                  <Select value={preset} onValueChange={(value) => setPreset(value as Preset)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="quick">quick</SelectItem>
+                      <SelectItem value="standard">standard</SelectItem>
+                      <SelectItem value="deep">deep</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Mode</Label>
+                  <Select value={mode} onValueChange={(value) => setMode(value as 'deterministic_ci' | 'live_nightly')}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="deterministic_ci">deterministic_ci</SelectItem>
+                      <SelectItem value="live_nightly">live_nightly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Budget (USD)</Label>
+                  <Input type="number" value={budgetUsd} onChange={(event) => setBudgetUsd(Number(event.target.value || 0))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Max Concurrency</Label>
+                  <Input type="number" value={maxConcurrency} onChange={(event) => setMaxConcurrency(Number(event.target.value || 1))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Baseline Run (optional)</Label>
+                  <Input value={baselineRunId} onChange={(event) => setBaselineRunId(event.target.value)} />
+                </div>
+              </div>
+              <Separator />
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <Badge variant="outline">Target: {targetType}</Badge>
+                <Badge variant="outline">Model: {model}</Badge>
+                <Badge variant="outline">Budget: ${budgetUsd.toFixed(2)}</Badge>
+              </div>
+              <Button
+                className="w-full"
+                type="submit"
+                disabled={busy}
+                data-onboarding="launch-button"
+              >
+                <Rocket className="mr-2 h-4 w-4" />
+                {busy ? 'Launching...' : 'Run Now'}
+              </Button>
+              {status ? <p className="text-sm text-emerald-600 dark:text-emerald-400">{status}</p> : null}
+              {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
+            </CardContent>
+          </Card>
+        </form>
+      </FloatingPanel>
+    </div>
   )
 }

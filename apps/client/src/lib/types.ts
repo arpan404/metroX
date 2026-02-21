@@ -83,6 +83,8 @@ export type AttackSummaryPayload = {
     failure: number
     success_rate: number
     avg_confidence: number
+    avg_disagreement?: number
+    avg_uncertainty?: number
     severity_breakdown: Record<string, number>
   }>
 }
@@ -322,7 +324,7 @@ export type AdjudicationCreate = {
   run_id: string
   execution_id: string
   reviewer: string
-  decision: 'hallucination' | 'jailbreak_success' | 'prompt_injection_success' | 'tool_misuse' | 'toxicity' | 'none'
+  decision: 'agree' | 'disagree' | 'uncertain' | 'hallucination' | 'jailbreak_success' | 'prompt_injection_success' | 'tool_misuse' | 'toxicity' | 'none'
   rationale?: string
 }
 
@@ -384,6 +386,7 @@ export type AfkCapabilities = {
   memory: Record<string, unknown>
   high_impact_features: Array<Record<string, unknown>>
   recommended_profiles: Record<string, unknown>
+  tools?: Array<{ name: string; description?: string; category?: string }>
 }
 
 /* ------------------------------------------------------------------ */

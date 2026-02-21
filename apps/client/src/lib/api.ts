@@ -130,6 +130,12 @@ export const api = {
     })
   },
 
+  deleteProviderCredential(credentialId: string) {
+    return request<void>(`/v1/providers/credentials/${credentialId}`, {
+      method: 'DELETE',
+    })
+  },
+
   /* ---------------------------------------------------------------- */
   /*  Security Keys                                                   */
   /* ---------------------------------------------------------------- */
@@ -200,6 +206,12 @@ export const api = {
     })
   },
 
+  deleteOrchestrationProfile(profileId: string) {
+    return request<void>(`/v1/orchestration-profiles/${profileId}`, {
+      method: 'DELETE',
+    })
+  },
+
   /* ---------------------------------------------------------------- */
   /*  Pricing Profiles                                                */
   /* ---------------------------------------------------------------- */
@@ -211,8 +223,9 @@ export const api = {
     })
   },
 
-  getPricingProfile(profileId: string) {
-    return request<PricingProfilePayload>(`/v1/pricing-profiles/${profileId}`)
+  getPricingProfile(profileId?: string) {
+    const path = profileId ? `/v1/pricing-profiles/${profileId}` : '/v1/pricing-profiles/default'
+    return request<PricingProfilePayload>(path)
   },
 
   /* ---------------------------------------------------------------- */

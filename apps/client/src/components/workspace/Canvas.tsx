@@ -1,0 +1,388 @@
+import { useCallback, useMemo, useEffect, useState } from 'react'
+import ReactFlow, {
+  Background,
+  Controls,
+  MiniMap,
+  useNodesState,
+  useEdgesState,
+  addEdge,
+  type Connection,
+  type Node,
+  type Edge,
+  BackgroundVariant,
+  Panel,
+} from 'reactflow'
+import 'reactflow/dist/style.css'
+import { useWorkspace } from '@/stores/workspace-store'
+import { nodeTypes } from './Nodes'
+import { cn } from '@/lib/utils'
+
+/* ------------------------------------------------------------------ */
+/*  Build nodes/edges from attack summary                             */
+/* ------------------------------------------------------------------ */
+
+function buildEvaluateGraph(
+  state: ReturnType<typeof useWorkspace>['state'],
+): { nodes: Node[]; edges: Edge[] } {
+  const nodes: Node[] = []
+  const edges: Edge[] = []
+
+  const runData = state.runData
+  const attackSummary = state.attackSummary
+  const scorecard = state.scorecard
+
+  // Root target node
+  nodes.push({
+    id: 'target-root',
+    type: 'target',
+    position: { x: 300, y: 40 },
+    data: {
+      label: runData ? `Run ${runData.id.slice(0, 8)}` : 'Target System',
+      model: (runData as any)?.summary_metrics?.model ?? 'Configure target →',
+      status: runData?.status === 'completed'
+        ? 'completed'
+        : runData?.status === 'failed'
+          ? 'failed'
+          : runData?.status === 'running'
+            ? 'running'
+            : 'idle',
+      targetType: runData?.preset,
+      totalAttacks: runData?.total_attacks,
+      completedAttacks: runData?.completed_attacks,
+    },
+  })
+
+  // Attack type nodes
+  if (attackSummary?.attack_types) {
+    const types = attackSummary.attack_types
+    const cols = Math.min(types.length, 4)
+    const xSpacing = 260
+    const startX = 300 - ((cols - 1) * xSpacing) / 2
+
+    types.forEach((at, i) => {
+      const col = i % cols
+      const row = Math.floor(i / cols)
+      const nodeId = `attack-${at.attack_type}`
+
+      nodes.push({
+        id: nodeId,
+        type: 'attack',
+        position: { x: startX + col * xSpacing, y: 200 + row * 220 },
+        data: {
+          attackType: at.attack_type,
+          total: at.total,
+          success: at.success,
+          failure: at.failure,
+          successRate: at.success_rate,
+          avgConfidence: at.avg_confidence,
+          severityBreakdown: at.severity_breakdown,
+          status: runData?.status === 'running' ? 'active' : 'done',
+        },
+      })
+
+      edges.push({
+        id: `e-root-${nodeId}`,
+        source: 'target-root',
+        target: nodeId,
+        animated: runData?.status === 'running',
+      })
+    })
+
+    // Metrics summary node
+    if (scorecard) {
+      const metricsY = 200 + Math.ceil(types.length / cols) * 220
+      nodes.push({
+        id: 'metrics-summary',
+        type: 'metrics',
+        position: { x: 300, y: metricsY },
+        data: {
+          compositeScore: scorecard.metrics.composite_score ?? 0,
+          gatePass: scorecard.gates.pass,
+          gateReasons: scorecard.gates.reasons ?? [],
+          metrics: scorecard.metrics,
+          riskCount: state.riskCards?.risks?.length ?? 0,
+        },
+      })
+
+      types.forEach((at) => {
+        edges.push({
+          id: `e-${at.attack_type}-metrics`,
+          source: `attack-${at.attack_type}`,
+          target: 'metrics-summary',
+        })
+      })
+    }
+  }
+
+  return { nodes, edges }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Canvas Component                                                  */
+/* ------------------------------------------------------------------ */
+
+export function Canvas() {
+  const { state, dispatch } = useWorkspace()
+  const [nodes, setNodes, onNodesChange] = useNodesState([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState([])
+  const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null)
+
+  // Build graph from state
+  const graphData = useMemo(() => {
+    if (state.canvasMode === 'evaluate') {
+      return buildEvaluateGraph(state)
+    }
+    // Studio mode — use studio nodes/edges directly
+    return {
+      nodes: state.studioNodes.map((n) => ({
+        ...n,
+        type: 'studioRole',
+      })),
+      edges: state.studioEdges,
+    }
+  }, [state.canvasMode, state.runData, state.attackSummary, state.scorecard, state.riskCards, state.studioNodes, state.studioEdges])
+
+  // Sync graph data to ReactFlow state
+  useEffect(() => {
+    setNodes(graphData.nodes)
+    setEdges(graphData.edges)
+  }, [graphData, setNodes, setEdges])
+
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      setEdges((eds) => addEdge(connection, eds))
+      if (state.canvasMode === 'studio') {
+        dispatch({
+          type: 'SET_STUDIO_EDGES',
+          edges: [...state.studioEdges, {
+            id: `e-${connection.source}-${connection.target}`,
+            source: connection.source!,
+            target: connection.target!,
+          }],
+        })
+      }
+    },
+    [setEdges, state.canvasMode, state.studioEdges, dispatch],
+  )
+
+  const onNodeClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      const attackType = node.id.startsWith('attack-')
+        ? node.id.replace('attack-', '')
+        : null
+      dispatch({ type: 'SELECT_NODE', nodeId: node.id, attackType })
+      // Auto-open attack detail for attack nodes
+      if (attackType) {
+        dispatch({ type: 'OPEN_PANEL', panel: 'attack-detail' })
+      }
+    },
+    [dispatch],
+  )
+
+  const onPaneClick = useCallback(() => {
+    dispatch({ type: 'SELECT_NODE', nodeId: null })
+    setContextMenuPos(null)
+  }, [dispatch])
+
+  const onPaneContextMenu = useCallback((event: React.MouseEvent) => {
+    event.preventDefault()
+    setContextMenuPos({ x: event.clientX, y: event.clientY })
+  }, [])
+
+  return (
+    <div
+      className="absolute inset-0"
+      data-onboarding="canvas"
+      onClick={() => setContextMenuPos(null)}
+    >
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        onNodeClick={onNodeClick}
+        onPaneClick={onPaneClick}
+        onPaneContextMenu={onPaneContextMenu}
+        fitView={nodes.length > 0}
+        fitViewOptions={{ padding: 0.3, maxZoom: 1.2 }}
+        proOptions={{ hideAttribution: true }}
+        nodesDraggable={state.canvasMode === 'studio'}
+        nodesConnectable={state.canvasMode === 'studio'}
+        minZoom={0.15}
+        maxZoom={2.5}
+        className="workspace-canvas"
+      >
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={20}
+          size={1}
+          className="!bg-background"
+        />
+        <Controls
+          showInteractive={state.canvasMode === 'studio'}
+          className="!rounded-lg !border-border/60 !bg-background/80 !backdrop-blur-xl !shadow-lg"
+        />
+        <MiniMap
+          zoomable
+          pannable
+          className="!rounded-lg !border-border/60 !bg-background/80 !backdrop-blur-xl"
+          maskColor="rgba(0,0,0,0.2)"
+          nodeColor={(node) => {
+            if (node.type === 'target') return 'var(--primary)'
+            if (node.type === 'metrics') return 'var(--chart-2)'
+            return 'var(--muted-foreground)'
+          }}
+        />
+
+        {/* Empty state overlay */}
+        {nodes.length === 0 && (
+          <Panel position="top-center">
+            <div className="mt-[30vh] text-center select-none">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-muted/30 mb-4">
+                <Shield className="w-7 h-7 text-muted-foreground/50" />
+              </div>
+              <h3 className="text-lg font-[Syne] font-semibold text-muted-foreground/60 mb-1">
+                No active evaluation
+              </h3>
+              <p className="text-sm text-muted-foreground/40 max-w-xs mx-auto">
+                Open Configuration to set up a target and launch a run, or enter a Run ID to load results.
+              </p>
+            </div>
+          </Panel>
+        )}
+      </ReactFlow>
+
+      {/* Canvas context menu */}
+      {contextMenuPos && (
+        <CanvasContextMenu
+          x={contextMenuPos.x}
+          y={contextMenuPos.y}
+          onClose={() => setContextMenuPos(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Inline canvas context menu                                        */
+/* ------------------------------------------------------------------ */
+
+import {
+  Settings2,
+  BarChart3,
+  Sliders,
+  FileText,
+  RefreshCw,
+  Maximize,
+  Grid3X3,
+  Play,
+  RotateCcw,
+  Download,
+} from 'lucide-react'
+import { Shield } from 'lucide-react'
+import { motion, AnimatePresence } from 'motion/react'
+import { api } from '@/lib/api'
+import { toast } from 'sonner'
+
+function CanvasContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => void }) {
+  const { state, dispatch, actions } = useWorkspace()
+
+  const items = [
+    {
+      label: 'Open Configuration',
+      icon: Sliders,
+      action: () => dispatch({ type: 'TOGGLE_PANEL', panel: 'config' }),
+      shortcut: '1',
+    },
+    {
+      label: 'Open Analytics',
+      icon: BarChart3,
+      action: () => dispatch({ type: 'TOGGLE_PANEL', panel: 'analytics' }),
+      shortcut: '2',
+    },
+    {
+      label: 'Open Settings',
+      icon: Settings2,
+      action: () => dispatch({ type: 'TOGGLE_PANEL', panel: 'settings' }),
+      shortcut: '3',
+    },
+    { separator: true } as const,
+    {
+      label: 'Refresh Data',
+      icon: RefreshCw,
+      action: () => { actions.fetchRunData(); actions.fetchAnalytics() },
+    },
+    ...(state.currentRunId
+      ? [
+          {
+            label: 'Resume Run',
+            icon: Play,
+            action: () => actions.resumeRun(),
+          },
+          {
+            label: 'Generate Report',
+            icon: FileText,
+            action: async () => {
+              const result = await actions.generateReport()
+              if (result) toast.success('Report generated')
+            },
+          },
+        ]
+      : []),
+    { separator: true } as const,
+    {
+      label: state.canvasMode === 'evaluate' ? 'Switch to Studio' : 'Switch to Evaluate',
+      icon: RotateCcw,
+      action: () =>
+        dispatch({ type: 'SET_CANVAS_MODE', mode: state.canvasMode === 'evaluate' ? 'studio' : 'evaluate' }),
+    },
+  ]
+
+  // Clamp to viewport
+  const menuX = Math.min(x, window.innerWidth - 220)
+  const menuY = Math.min(y, window.innerHeight - items.length * 36 - 20)
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.1 }}
+      className={cn(
+        'fixed z-50 min-w-[200px] rounded-xl border border-border/60',
+        'bg-background/90 backdrop-blur-2xl shadow-[0_8px_40px_-12px_rgba(0,0,0,0.5)]',
+        'py-1.5 overflow-hidden',
+      )}
+      style={{ left: menuX, top: menuY }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {items.map((item, i) => {
+        if ('separator' in item) {
+          return <div key={i} className="h-px bg-border/40 my-1" />
+        }
+        return (
+          <button
+            key={i}
+            className={cn(
+              'flex items-center gap-2.5 w-full px-3 py-1.5 text-left text-[13px]',
+              'text-foreground/80 hover:text-foreground hover:bg-accent/60',
+              'transition-colors duration-100',
+            )}
+            onClick={() => { item.action(); onClose() }}
+          >
+            <item.icon className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="flex-1">{item.label}</span>
+            {'shortcut' in item && item.shortcut && (
+              <kbd className="text-[10px] text-muted-foreground font-mono bg-muted/50 rounded px-1 py-0.5">
+                {item.shortcut}
+              </kbd>
+            )}
+          </button>
+        )
+      })}
+    </motion.div>
+  )
+}

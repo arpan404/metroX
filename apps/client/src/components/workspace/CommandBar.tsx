@@ -62,19 +62,23 @@ export function CommandBar() {
       >
         <Tooltip>
           <TooltipTrigger asChild>
-            <ToggleGroupItem value="evaluate" className="h-7 px-2.5 text-[11px] rounded-lg data-[state=on]:bg-primary/15 data-[state=on]:text-primary">
-              <Activity className="h-3 w-3 mr-1" />
-              Evaluate
-            </ToggleGroupItem>
+            <span className="inline-flex">
+              <ToggleGroupItem value="evaluate" className="h-7 px-2.5 text-[11px] rounded-lg data-[state=on]:bg-primary/15 data-[state=on]:text-primary">
+                <Activity className="h-3 w-3 mr-1" />
+                Evaluate
+              </ToggleGroupItem>
+            </span>
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">Attack evaluation canvas</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <ToggleGroupItem value="studio" className="h-7 px-2.5 text-[11px] rounded-lg data-[state=on]:bg-primary/15 data-[state=on]:text-primary">
-              <Workflow className="h-3 w-3 mr-1" />
-              Studio
-            </ToggleGroupItem>
+            <span className="inline-flex">
+              <ToggleGroupItem value="studio" className="h-7 px-2.5 text-[11px] rounded-lg data-[state=on]:bg-primary/15 data-[state=on]:text-primary">
+                <Workflow className="h-3 w-3 mr-1" />
+                Studio
+              </ToggleGroupItem>
+            </span>
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">Workflow builder</TooltipContent>
         </Tooltip>

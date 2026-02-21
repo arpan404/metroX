@@ -564,11 +564,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [state.runData?.status, actions])
 
-  // Fetch capabilities on mount
-  useEffect(() => {
-    actions.fetchCapabilities()
-  }, [actions])
-
   return (
     <WorkspaceContext.Provider value={{ state, dispatch, actions }}>
       {children}

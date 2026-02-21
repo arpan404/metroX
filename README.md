@@ -46,6 +46,19 @@ make server-test
 make client-test
 ```
 
+### 5. Developer mode
+
+```bash
+# both backend + frontend
+make dev
+
+# backend only
+make dev server
+
+# frontend only
+make dev client
+```
+
 ## Core API Endpoints
 - `POST /v1/sessions`
 - `POST /v1/config-profiles`

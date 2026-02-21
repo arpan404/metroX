@@ -7,8 +7,9 @@ name = "autoredteam-server"
 version = "0.1.0"
 description = "AutoRedTeam DS+ backend"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
+  "afk-py @ file:///Users/arpanbhandari/code/afk-py",
   "fastapi>=0.116.0",
   "uvicorn[standard]>=0.35.0",
   "sqlalchemy>=2.0.36",

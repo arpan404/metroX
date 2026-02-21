@@ -8,3 +8,9 @@ FastAPI backend for the AutoRedTeam DS+ reliability platform.
 uv sync --dev
 uv run uvicorn app.main:app --reload
 ```
+
+Or from repo root:
+
+```bash
+make dev server
+```

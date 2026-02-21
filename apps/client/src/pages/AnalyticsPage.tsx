@@ -3,6 +3,44 @@ import { api } from '../lib/api'
 import { loadState } from '../lib/state'
 import type { ClusterPayload, CostSummaryPayload, CostTimeseriesPayload, DriftPayload, RiskCards, Scorecard } from '../lib/types'
 
+function Sparkline({ values, stroke }: { values: number[]; stroke: string }) {
+  if (!values.length) return <p className="caption">No chart data.</p>
+  const width = 320
+  const height = 90
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const span = max - min || 1
+  const points = values
+    .map((value, idx) => {
+      const x = (idx / Math.max(values.length - 1, 1)) * width
+      const y = height - ((value - min) / span) * height
+      return `${x},${y}`
+    })
+    .join(' ')
+  return (
+    <svg width={width} height={height} className="chart-svg" role="img" aria-label="line chart">
+      <polyline fill="none" stroke={stroke} strokeWidth="2" points={points} />
+    </svg>
+  )
+}
+
+function BarStrip({ items }: { items: Array<{ label: string; value: number }> }) {
+  const max = Math.max(1, ...items.map((item) => item.value))
+  return (
+    <div className="stack-sm">
+      {items.map((item) => (
+        <div key={item.label} className="bar-row">
+          <span className="bar-label">{item.label}</span>
+          <div className="bar-track">
+            <div className="bar-fill" style={{ width: `${(item.value / max) * 100}%` }} />
+          </div>
+          <span className="bar-value">{item.value.toFixed(3)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function AnalyticsPage() {
   const persisted = useMemo(() => loadState(), [])
   const [runId, setRunId] = useState(persisted.currentRunId ?? '')
@@ -22,6 +60,11 @@ export default function AnalyticsPage() {
   const [comparison, setComparison] = useState<Record<string, unknown> | null>(null)
   const [reportPath, setReportPath] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
+  const inferenceTests = ((inference as { tests?: Array<Record<string, unknown>> } | null)?.tests ?? []) as Array<Record<string, unknown>>
+  const calibrationBins = ((calibration as { bins?: Array<Record<string, unknown>> } | null)?.bins ?? []) as Array<Record<string, unknown>>
+  const graphNodes = ((cooccurrence as { nodes?: Array<Record<string, unknown>> } | null)?.nodes ?? []) as Array<Record<string, unknown>>
+  const graphEdges = ((cooccurrence as { edges?: Array<Record<string, unknown>> } | null)?.edges ?? []) as Array<Record<string, unknown>>
+  const forecasts = ((forecast as { forecasts?: Array<Record<string, unknown>> } | null)?.forecasts ?? []) as Array<Record<string, unknown>>
 
   async function loadAnalytics() {
     if (!runId) return
@@ -201,23 +244,66 @@ export default function AnalyticsPage() {
             <p className="caption">No cost summary loaded.</p>
           )}
           {costTimeseries && <p className="caption">Cost points: {costTimeseries.points.length}</p>}
+          {costTimeseries && costTimeseries.points.length > 0 && (
+            <Sparkline values={costTimeseries.points.map((point) => point.cumulative_cost_usd)} stroke="#0ea5e9" />
+          )}
         </div>
 
         <div className="panel stack-md">
           <h2>Inference + Calibration</h2>
-          {inference && <pre className="json">{JSON.stringify(inference, null, 2)}</pre>}
-          {calibration && <pre className="json">{JSON.stringify(calibration, null, 2)}</pre>}
+          {inferenceTests.length > 0 ? (
+            <BarStrip
+              items={inferenceTests.slice(0, 8).map((row) => ({
+                label: String(row.metric_name ?? 'metric'),
+                value: Number(row.effect_size ?? 0),
+              }))}
+            />
+          ) : (
+            <p className="caption">No inference tests loaded.</p>
+          )}
+          {calibrationBins.length > 0 && (
+            <Sparkline
+              values={calibrationBins.slice(0, 20).map((row) => Number(row.avg_accuracy ?? 0))}
+              stroke="#22c55e"
+            />
+          )}
         </div>
       </div>
 
       <div className="grid two">
         <div className="panel stack-md">
           <h2>Failure Path Graph</h2>
-          {cooccurrence ? <pre className="json">{JSON.stringify(cooccurrence, null, 2)}</pre> : <p className="caption">No graph payload loaded.</p>}
+          {graphNodes.length > 0 ? (
+            <>
+              <p>Nodes: {graphNodes.length} | Edges: {graphEdges.length}</p>
+              <BarStrip
+                items={graphEdges
+                  .slice(0, 8)
+                  .map((edge) => ({
+                    label: `${String(edge.source ?? '?')}→${String(edge.target ?? '?')}`.slice(0, 24),
+                    value: Number(edge.weight ?? 0),
+                  }))}
+              />
+            </>
+          ) : (
+            <p className="caption">No graph payload loaded.</p>
+          )}
         </div>
         <div className="panel stack-md">
           <h2>Forecast</h2>
-          {forecast ? <pre className="json">{JSON.stringify(forecast, null, 2)}</pre> : <p className="caption">No forecast payload loaded.</p>}
+          {forecasts.length > 0 ? (
+            <>
+              <Sparkline values={forecasts.map((row) => Number(row.predicted_value ?? 0))} stroke="#a855f7" />
+              <BarStrip
+                items={forecasts.map((row) => ({
+                  label: String(row.metric_name ?? 'metric'),
+                  value: Number(row.predicted_value ?? 0),
+                }))}
+              />
+            </>
+          ) : (
+            <p className="caption">No forecast payload loaded.</p>
+          )}
         </div>
       </div>
 

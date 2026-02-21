@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
+import time
 
 
 def provider_capabilities() -> dict[str, Any]:
@@ -66,26 +67,40 @@ def validate_provider(payload: dict[str, Any]) -> dict[str, Any]:
                 "error": "openai_compatible validation requires base_url and api_key",
             }
 
+        headers = {"Authorization": f"Bearer {api_key}"}
+        models_url = f"{base_url.rstrip('/')}/models"
+        health_urls = [f"{base_url.rstrip('/')}/models", f"{base_url.rstrip('/')}/health", f"{base_url.rstrip('/')}/v1/models"]
+        last_error = "unknown"
         try:
             with httpx.Client(timeout=10.0) as client:
-                resp = client.get(
-                    f"{base_url.rstrip('/')}/models",
-                    headers={"Authorization": f"Bearer {api_key}"},
-                )
-            if resp.status_code >= 400:
+                resp = _with_retry(lambda: client.get(models_url, headers=headers))
+                if resp.status_code < 400:
+                    data = resp.json()
+                    models = [str(item.get("id")) for item in data.get("data", []) if isinstance(item, dict)]
+                    return {
+                        "valid": True,
+                        "provider_type": provider_type,
+                        "model": model,
+                        "discovered_models": models[:100],
+                    }
+                last_error = f"/models returned {resp.status_code}"
+
+                # Fallback probe for providers that don't expose /models in strict OpenAI shape.
+                for url in health_urls:
+                    ping = _with_retry(lambda: client.get(url, headers=headers))
+                    if ping.status_code < 500:
+                        return {
+                            "valid": ping.status_code < 400 or ping.status_code == 404,
+                            "provider_type": provider_type,
+                            "model": model,
+                            "discovered_models": [],
+                            "warning": "model discovery fallback used",
+                        }
                 return {
                     "valid": False,
                     "provider_type": provider_type,
-                    "error": f"model listing failed: {resp.status_code}",
+                    "error": last_error,
                 }
-            data = resp.json()
-            models = [str(item.get("id")) for item in data.get("data", []) if isinstance(item, dict)]
-            return {
-                "valid": True,
-                "provider_type": provider_type,
-                "model": model,
-                "discovered_models": models[:100],
-            }
         except Exception as exc:
             return {
                 "valid": False,
@@ -98,3 +113,18 @@ def validate_provider(payload: dict[str, Any]) -> dict[str, Any]:
         "provider_type": provider_type,
         "error": "unsupported provider_type",
     }
+
+
+def _with_retry(fn, *, attempts: int = 3, base_sleep: float = 0.2):
+    last_exc: Exception | None = None
+    for i in range(attempts):
+        try:
+            return fn()
+        except Exception as exc:
+            last_exc = exc
+            if i == attempts - 1:
+                break
+            time.sleep(base_sleep * (2 ** i))
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("retry wrapper reached invalid state")

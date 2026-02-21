@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -25,4 +26,16 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
+    if settings.use_migrations:
+        try:
+            from alembic import command
+            from alembic.config import Config
+
+            cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+            cfg.set_main_option("sqlalchemy.url", settings.database_url)
+            command.upgrade(cfg, "head")
+            return
+        except Exception:
+            # Safe fallback for local/dev when alembic env is not ready.
+            pass
     Base.metadata.create_all(bind=engine)

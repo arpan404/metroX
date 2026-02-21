@@ -20,6 +20,12 @@ jobs:
         run: |
           cd apps/server
           uv sync --dev --frozen
+      - name: Migration smoke check
+        env:
+          AUTOREDTEAM_DATABASE_URL: sqlite:///./ci.db
+        run: |
+          cd apps/server
+          uv run alembic upgrade head
       - name: Run deterministic backend tests
         env:
           AUTOREDTEAM_DATABASE_URL: sqlite:///./ci.db

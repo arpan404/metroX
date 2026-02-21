@@ -8,6 +8,10 @@ on:
 jobs:
   nightly-live:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [litellm, openai_compatible]
     steps:
       - uses: actions/checkout@v4
       - name: Setup uv
@@ -25,6 +29,10 @@ jobs:
           AUTOREDTEAM_DATABASE_URL: sqlite:///./nightly.db
           AUTOREDTEAM_API_KEY: ${{ secrets.AUTOREDTEAM_API_KEY }}
           AUTOREDTEAM_LIVE_PROVIDER_KEY: ${{ secrets.AUTOREDTEAM_LIVE_PROVIDER_KEY }}
+          AUTOREDTEAM_NIGHTLY_PROVIDER: ${{ matrix.provider }}
+          AUTOREDTEAM_OPENAI_COMPAT_BASE_URL: ${{ secrets.AUTOREDTEAM_OPENAI_COMPAT_BASE_URL }}
+          AUTOREDTEAM_OPENAI_COMPAT_API_KEY: ${{ secrets.AUTOREDTEAM_OPENAI_COMPAT_API_KEY }}
+          AUTOREDTEAM_NIGHTLY_MODEL: ${{ secrets.AUTOREDTEAM_NIGHTLY_MODEL }}
         run: |
           cd apps/server
           uv run pytest -q -m nightly

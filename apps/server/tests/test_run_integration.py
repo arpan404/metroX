@@ -312,3 +312,46 @@ def test_nightly_live_placeholder() -> None:
     if not key:
         pytest.skip("AUTOREDTEAM_LIVE_PROVIDER_KEY is not configured")
     assert len(key) >= 8
+
+
+@pytest.mark.nightly
+def test_nightly_multi_provider_smoke_matrix() -> None:
+    import os
+
+    provider = os.getenv("AUTOREDTEAM_NIGHTLY_PROVIDER", "litellm")
+    if provider == "litellm":
+        key = os.getenv("AUTOREDTEAM_LIVE_PROVIDER_KEY")
+        model = os.getenv("AUTOREDTEAM_NIGHTLY_MODEL", "gpt-4.1-mini")
+        if not key:
+            pytest.skip("AUTOREDTEAM_LIVE_PROVIDER_KEY missing for litellm smoke")
+        from app.services.providers import validate_provider
+
+        out = validate_provider(
+            {
+                "provider_type": "litellm",
+                "api_key": key,
+                "model": model,
+            }
+        )
+        assert out["valid"] is True
+        return
+
+    if provider == "openai_compatible":
+        base_url = os.getenv("AUTOREDTEAM_OPENAI_COMPAT_BASE_URL")
+        key = os.getenv("AUTOREDTEAM_OPENAI_COMPAT_API_KEY")
+        if not base_url or not key:
+            pytest.skip("OpenAI-compatible credentials are not configured")
+        from app.services.providers import validate_provider
+
+        out = validate_provider(
+            {
+                "provider_type": "openai_compatible",
+                "base_url": base_url,
+                "api_key": key,
+                "model": os.getenv("AUTOREDTEAM_NIGHTLY_MODEL", "gpt-4.1-mini"),
+            }
+        )
+        assert out["valid"] is True
+        return
+
+    pytest.skip(f"Unsupported nightly provider matrix value: {provider}")

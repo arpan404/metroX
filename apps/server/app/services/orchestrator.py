@@ -186,9 +186,11 @@ class RunOrchestrator:
                         **target_cfg.get("extra", {}),
                         "provider_name": target_cfg.get("provider_name", target_cfg.get("target_type", "unknown")),
                         "base_url": target_cfg.get("base_url"),
+                        "thread_id": run.thread_id,
                     },
                 )
                 response = adapter.invoke(request)
+                afk_events = response.raw_payload.get("afk_events", []) if isinstance(response.raw_payload, dict) else []
 
                 execution = Execution(
                     run_id=run.id,
@@ -246,6 +248,20 @@ class RunOrchestrator:
 
                 if self.settings.low_confidence_min <= detection.confidence < self.settings.low_confidence_max:
                     low_confidence.append(execution.id)
+
+                for event in afk_events:
+                    if not isinstance(event, dict):
+                        continue
+                    event_type = str(event.get("type", "")).strip()
+                    if event_type in {"policy_decision", "run_paused", "run_resumed", "tool_started", "tool_completed"}:
+                        log_event(
+                            self.db,
+                            run_id=run.id,
+                            event_type=event_type,
+                            step=2,
+                            message=str(event.get("reason") or event.get("tool_name") or event_type),
+                            data=event,
+                        )
 
                 if run.completed_attacks % 100 == 0 or run.completed_attacks == len(attack_cases):
                     self.db.commit()

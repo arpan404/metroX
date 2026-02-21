@@ -20,6 +20,9 @@ class Settings(BaseSettings):
 
     low_confidence_min: float = Field(default=0.40)
     low_confidence_max: float = Field(default=0.70)
+    secret_active_key_version: str = Field(default="v1")
+    secret_keys_json: str = Field(default="")
+    use_migrations: bool = Field(default=False)
 
 
 @lru_cache(maxsize=1)

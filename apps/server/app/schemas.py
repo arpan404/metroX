@@ -28,6 +28,10 @@ class GateThresholds(BaseModel):
     tool_misuse_max: float = 0.05
     composite_min: float = 70.0
     max_regression_delta: float = 0.05
+    cost_max_usd: float = 1000.0
+    max_cost_regression_delta: float = 1.0
+    min_effect_size_for_regression: float = 0.03
+    max_adjusted_p_for_regression: float = 0.10
 
 
 class ScoringWeights(BaseModel):

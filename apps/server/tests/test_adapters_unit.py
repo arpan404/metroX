@@ -500,6 +500,100 @@ class TestHttpTargetAdapter:
         resp = adapter.invoke(req)
         assert resp.raw_payload["thread_id"] == "nested-thread"
 
+    def test_http_target_chat_endpoint_uses_agent_payload_shape(self, monkeypatch) -> None:
+        captured: dict[str, object] = {}
+
+        class MockResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"response_text": "ok"}
+
+        class MockClient:
+            def __init__(self, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+            def post(self, url, headers=None, json=None):
+                captured["payload"] = json or {}
+                return MockResponse()
+
+        import httpx
+
+        monkeypatch.setattr(httpx, "Client", MockClient)
+        adapter = HttpTargetAdapter()
+        req = TargetRequest(
+            run_id="r-1",
+            attack_id="a-1",
+            prompt="hello via http",
+            target_type="http",
+            endpoint="http://127.0.0.1:8001/agents/chargeback/chat",
+            extra={"thread_id": "thread-xyz"},
+        )
+        adapter.invoke(req)
+        payload = captured["payload"]
+        assert isinstance(payload, dict)
+        assert payload["user_message"] == "hello via http"
+        assert payload["message"] == "hello via http"
+        assert payload["thread_id"] == "thread-xyz"
+
+    def test_http_target_retries_with_agent_payload_after_422(self, monkeypatch) -> None:
+        calls: list[dict[str, object]] = []
+
+        class MockResponse:
+            def __init__(self, status_code: int):
+                self.status_code = status_code
+
+            def raise_for_status(self):
+                if self.status_code >= 400:
+                    raise RuntimeError(f"http {self.status_code}")
+
+            def json(self):
+                return {"response_text": "ok"}
+
+        class MockClient:
+            def __init__(self, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+            def post(self, url, headers=None, json=None):
+                calls.append({"url": url, "payload": json or {}})
+                return MockResponse(422 if len(calls) == 1 else 200)
+
+        import httpx
+
+        monkeypatch.setattr(httpx, "Client", MockClient)
+        adapter = HttpTargetAdapter()
+        req = TargetRequest(
+            run_id="r-1",
+            attack_id="a-1",
+            prompt="retry payload",
+            target_type="http",
+            endpoint="http://127.0.0.1:8000/invoke",
+            extra={"thread_id": "thread-retry"},
+        )
+        adapter.invoke(req)
+        assert len(calls) == 2
+        first_payload = calls[0]["payload"]
+        second_payload = calls[1]["payload"]
+        assert isinstance(first_payload, dict)
+        assert isinstance(second_payload, dict)
+        assert "user_message" not in first_payload
+        assert second_payload["user_message"] == "retry payload"
+
 
 # ---------------------------------------------------------------------------
 # AFKLLMRuntimeAdapter fallback path (no afk installed)

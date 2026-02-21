@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.api.v1 import router
 from app.config import get_settings
 from app.db import get_db
-from app.models import AFKRunState, Base, ConfigProfile, Execution, Run
+from app.models import AFKRunState, AttackCase, Base, BenchmarkSnapshot, ConfigProfile, Execution, Run
 from app.pipeline.orchestrator import RunOrchestrator
 from app.runtime.adapters import TargetResponse
+from app.utils.common import stable_hash
 
 
 @pytest.fixture
@@ -143,6 +144,7 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
     risk = client.get(f"/v1/runs/{run_id}/risk-cards", headers=_headers())
     features = client.get(f"/v1/runs/{run_id}/features", headers=_headers())
     detector_votes = client.get(f"/v1/runs/{run_id}/detector-votes", headers=_headers())
+    detector_votes_summary = client.get(f"/v1/runs/{run_id}/detector-votes-summary", headers=_headers())
     clusters = client.get(f"/v1/runs/{run_id}/clusters", headers=_headers())
     attack_summary = client.get(f"/v1/runs/{run_id}/attack-summary", headers=_headers())
     execution_slices = client.get(f"/v1/runs/{run_id}/execution-slices", headers=_headers())
@@ -172,6 +174,11 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
     assert detector_votes.status_code == 200
     assert isinstance(detector_votes.json()["votes"], list)
     assert len(detector_votes.json()["votes"]) >= run_out.json()["completed_attacks"]
+    assert "attack_type" in detector_votes.json()["votes"][0]
+    assert detector_votes_summary.status_code == 200
+    summary_payload = detector_votes_summary.json()
+    assert summary_payload["totals"]["votes"] == len(detector_votes.json()["votes"])
+    assert summary_payload["totals"]["fail_votes"] + summary_payload["totals"]["pass_votes"] == summary_payload["totals"]["votes"]
 
     assert clusters.status_code == 200
     assert "clusters" in clusters.json()
@@ -179,6 +186,10 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
     assert attack_summary.status_code == 200
     assert "attack_types" in attack_summary.json()
     assert isinstance(attack_summary.json()["attack_types"], list)
+    if attack_summary.json()["attack_types"]:
+        first_attack = attack_summary.json()["attack_types"][0]
+        assert "avg_disagreement" in first_attack
+        assert "avg_uncertainty" in first_attack
     assert execution_slices.status_code == 200
     assert isinstance(execution_slices.json()["slices"], list)
     assert telemetry.status_code == 200
@@ -206,6 +217,19 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
     events = client.get(f"/v1/runs/{run_id}/policy-events", headers=_headers())
     assert events.status_code == 200
     assert isinstance(events.json()["events"], list)
+    recent_events = client.get(f"/v1/runs/{run_id}/events/recent?limit=1000", headers=_headers())
+    assert recent_events.status_code == 200
+    progress_events = [
+        row for row in recent_events.json().get("events", [])
+        if row.get("event_type") == "progress"
+    ]
+    assert len(progress_events) == run_out.json()["completed_attacks"]
+    sample_progress = progress_events[0]
+    assert isinstance(sample_progress.get("data"), dict)
+    sample_data = sample_progress["data"]
+    assert isinstance(sample_data.get("attack_type"), str)
+    assert isinstance(sample_data.get("attack_delta"), dict)
+    assert sample_data["attack_delta"].get("attack_type") == sample_data.get("attack_type")
 
 
 def test_resume_continues_from_checkpoint_without_duplicate_executions(integrated_client, monkeypatch) -> None:
@@ -365,6 +389,172 @@ def test_resume_continues_from_checkpoint_without_duplicate_executions(integrate
         assert set(interrupted_state.checkpoint["target_thread_ids"]).issubset(set(completed_threads))
     finally:
         db.close()
+
+
+def test_resume_rebuilds_stale_snapshot_with_missing_taxonomy_coverage(integrated_client, monkeypatch) -> None:
+    client, testing_session = integrated_client
+    settings = get_settings()
+    settings.quick_attack_count = 20
+
+    def _fake_http_invoke(self, request):
+        return TargetResponse(
+            response_text="ok",
+            retrieved_docs=[],
+            tool_events=[],
+            latency_ms=4.0,
+            token_usage={
+                "prompt_tokens": 10.0,
+                "completion_tokens": 10.0,
+                "total_tokens": 20.0,
+                "total_cost_usd": 0.0,
+            },
+            raw_payload={"thread_id": request.extra.get("thread_id") or f"run-{request.run_id}"},
+            provider_name="agent_http",
+            model_resolved=request.model,
+        )
+
+    monkeypatch.setattr("app.runtime.adapters.HttpTargetAdapter.invoke", _fake_http_invoke)
+
+    taxonomy = [
+        "prompt_injection",
+        "jailbreak",
+        "hallucination",
+        "tool_misuse",
+        "unsafe_output",
+        "refund_abuse",
+        "claim_manipulation",
+        "identity_mismatch",
+    ]
+
+    session = client.post("/v1/sessions", json={"name": "coverage-rebuild"}, headers=_headers())
+    assert session.status_code == 200
+    session_id = session.json()["id"]
+
+    profile = client.post(
+        "/v1/config-profiles",
+        json={
+            "session_id": session_id,
+            "name": "coverage-profile",
+            "target_config": {
+                "target_type": "agent_http",
+                "endpoint": "http://127.0.0.1:8001/agents/refund/chat",
+                "auth_headers": {},
+                "model": "gpt-4.1-mini",
+                "agent_id": "refund",
+                "extra": {},
+            },
+            "benchmark_config": {
+                "dataset_name": "metrox-core",
+                "taxonomy": taxonomy,
+                "curated_ratio": 0.7,
+                "generated_ratio": 0.3,
+                "seed": 23,
+                "slices": ["default"],
+                "agentic_attacking": False,
+                "agentic_provider": "afk_live",
+            },
+            "scoring_config": {
+                "strictness_mode": "balanced",
+                "weak_supervision": True,
+                "active_adjudication": True,
+                "gate_thresholds": {
+                    "asr_max": 1.0,
+                    "hallucination_max": 1.0,
+                    "toxicity_max": 1.0,
+                    "tool_misuse_max": 1.0,
+                    "composite_min": 0,
+                    "max_regression_delta": 1.0,
+                },
+                "weights": {"asr": 0.4, "hallucination": 0.3, "toxicity": 0.2, "tool_misuse": 0.1},
+            },
+            "runtime_config": {
+                "preset": "quick",
+                "max_concurrency": 4,
+                "budget_usd": 2.0,
+                "deterministic_seed": 23,
+                "live_mode": False,
+            },
+        },
+        headers=_headers(),
+    )
+    assert profile.status_code == 200
+    profile_id = profile.json()["id"]
+
+    run = client.post(
+        "/v1/runs",
+        json={
+            "session_id": session_id,
+            "config_profile_id": profile_id,
+            "preset": "quick",
+            "mode": "deterministic_ci",
+            "strictness": "balanced",
+            "execute_now": False,
+        },
+        headers=_headers(),
+    )
+    assert run.status_code == 200
+    run_id = run.json()["id"]
+
+    db = testing_session()
+    try:
+        stale_snapshot = BenchmarkSnapshot(
+            run_id=run_id,
+            name="stale",
+            version="v1",
+            source_mix={},
+            meta={"taxonomy": taxonomy, "seed": 23, "attack_count": settings.quick_attack_count},
+        )
+        db.add(stale_snapshot)
+        db.commit()
+        db.refresh(stale_snapshot)
+
+        # Simulate an older, skewed benchmark snapshot (only core five attack types).
+        skewed_types = ["prompt_injection", "jailbreak", "hallucination", "tool_misuse", "unsafe_output"]
+        rows: list[AttackCase] = []
+        for idx in range(settings.quick_attack_count):
+            attack_type = skewed_types[idx % len(skewed_types)]
+            prompt = f"stale-{attack_type}-{idx}"
+            rows.append(
+                AttackCase(
+                    benchmark_snapshot_id=stale_snapshot.id,
+                    attack_type=attack_type,
+                    family=attack_type,
+                    prompt=prompt,
+                    target_behavior=f"{attack_type}_behavior",
+                    source="template",
+                    difficulty="low",
+                    seed=idx,
+                    tags=[attack_type, "stale"],
+                    dedupe_hash=stable_hash(prompt),
+                    novelty_score=0.1,
+                )
+            )
+        db.add_all(rows)
+        db.commit()
+
+        RunOrchestrator(db).execute_run(run_id)
+
+        latest_snapshot = (
+            db.query(BenchmarkSnapshot)
+            .filter(BenchmarkSnapshot.run_id == run_id)
+            .order_by(BenchmarkSnapshot.created_at.desc())
+            .first()
+        )
+        assert latest_snapshot is not None
+        latest_cases = db.query(AttackCase).filter(AttackCase.benchmark_snapshot_id == latest_snapshot.id).all()
+        assert len(latest_cases) == settings.quick_attack_count
+        counts = {}
+        for case in latest_cases:
+            counts[case.attack_type] = counts.get(case.attack_type, 0) + 1
+        for attack_type in taxonomy:
+            assert counts.get(attack_type, 0) > 0, f"{attack_type} should have coverage after rebuild"
+    finally:
+        db.close()
+
+    recent_events = client.get(f"/v1/runs/{run_id}/events/recent?limit=500", headers=_headers())
+    assert recent_events.status_code == 200
+    event_types = [str(row.get("event_type")) for row in recent_events.json().get("events", [])]
+    assert "benchmark_rebuilt_for_coverage" in event_types
 
 
 @pytest.mark.nightly

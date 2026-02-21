@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,25 +100,32 @@ class MultiAgentAttackOrchestrator:
     """Role-based attacker orchestration.
 
     Modes:
-      - afk_live: runtime agents with live model calls
-      - auto: afk_live if OPENAI_API_KEY exists; otherwise fail fast
+      - afk_live: runtime agents with live model calls; hard-fail if runtime generation fails
+      - auto: runtime-first generation with deterministic fallback when runtime is unavailable
     """
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
         mode = str(config.get("agentic_provider", "auto")).lower()
+        self.allow_runtime_fallback = False
         if mode == "mock":
             raise ValueError("agentic_provider=mock is not supported. Use 'auto' or 'afk_live'.")
         if mode == "auto":
-            if not os.getenv("OPENAI_API_KEY"):
-                raise RuntimeError("OPENAI_API_KEY is required when agentic_provider=auto.")
             self.mode = "afk_live"
+            self.allow_runtime_fallback = True
         elif mode == "afk_live":
             self.mode = "afk_live"
         else:
             raise ValueError(f"Unsupported agentic_provider '{mode}'. Use 'auto' or 'afk_live'.")
 
-        default_model = str(config.get("agentic_model", config.get("model", "gpt-4.1-mini")))
+        default_model = "ollama_chat/gpt-oss:20b"
+        agentic_model_raw = config.get("agentic_model")
+        if isinstance(agentic_model_raw, str) and agentic_model_raw.strip():
+            default_model = agentic_model_raw.strip()
+        else:
+            model_raw = config.get("model")
+            if isinstance(model_raw, str) and model_raw.strip():
+                default_model = model_raw.strip()
         self.orchestration = _parse_orchestration_config(
             config.get("afk_orchestration", {}),
             default_model=default_model,
@@ -181,6 +187,7 @@ class MultiAgentAttackOrchestrator:
                 "thread_strategy": self.threading_strategy,
                 "thread_ids": dict(self.target_thread_ids),
             },
+            "runtime_fallback_enabled": self.allow_runtime_fallback,
         }
 
     def _resolve_target_thread_id(self, attack_type: str) -> str:
@@ -264,6 +271,8 @@ class MultiAgentAttackOrchestrator:
             try:
                 return self._generate_with_afk(seed)
             except Exception as exc:
+                if self.allow_runtime_fallback:
+                    return self._generate_with_mock(seed, deterministic_seed)
                 raise RuntimeError("Live runtime attack generation failed; no mock fallback is permitted.") from exc
         raise RuntimeError(f"Unsupported agentic orchestration mode '{self.mode}'.")
 
@@ -565,8 +574,14 @@ def _parse_orchestration_config(config: Any, *, default_model: str) -> Orchestra
             for name, instructions in DEFAULT_ROLE_INSTRUCTIONS.items()
         ]
 
+    configured_model = payload.get("model")
+    if isinstance(configured_model, str) and configured_model.strip():
+        model_name = configured_model.strip()
+    else:
+        model_name = default_model
+
     return OrchestrationConfig(
-        model=str(payload.get("model", default_model)).strip() or default_model,
+        model=model_name,
         telemetry=telemetry,
         join_policy=payload.get("join_policy", "all_required"),
         max_concurrent_subagents=max(int(payload.get("max_concurrent_subagents", 3)), 1),

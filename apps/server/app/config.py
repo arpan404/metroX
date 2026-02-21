@@ -51,9 +51,12 @@ class Settings(BaseSettings):
 
     run_queue_enabled: bool = Field(default=True)
     run_queue_backend: str = Field(default="inprocess")
-    run_worker_threads: int = Field(default=1)
+    run_worker_threads: int = Field(default=4)
     run_queue_max_retries: int = Field(default=2)
     run_queue_retry_backoff_s: float = Field(default=0.5)
+    run_queue_min_priority: int = Field(default=0)
+    run_queue_default_priority: int = Field(default=2)
+    run_queue_max_priority: int = Field(default=4)
     run_queue_redis_key: str = Field(default="metrox:runs:queue")
     run_queue_redis_dlq_key: str = Field(default="metrox:runs:dlq")
     run_queue_redis_workers_key: str = Field(default="metrox:runs:workers")

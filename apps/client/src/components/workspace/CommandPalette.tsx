@@ -34,6 +34,7 @@ import {
   Layout,
   Maximize,
   Grid3X3,
+  ListTodo,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useWorkspace } from '@/stores/workspace-store'
@@ -89,6 +90,11 @@ export function CommandPalette() {
             <Boxes className="mr-2 h-4 w-4" />
             <span>Toggle Studio Inspector</span>
             <kbd className="ml-auto pointer-events-none text-[10px] text-muted-foreground border px-1 rounded">4</kbd>
+          </CommandItem>
+          <CommandItem onSelect={() => runAction(() => dispatch({ type: 'TOGGLE_PANEL', panel: 'queue-center' }))}>
+            <ListTodo className="mr-2 h-4 w-4" />
+            <span>Toggle Queue Center</span>
+            <kbd className="ml-auto pointer-events-none text-[10px] text-muted-foreground border px-1 rounded">5</kbd>
           </CommandItem>
           <CommandItem onSelect={() => runAction(() => dispatch({ type: 'TOGGLE_EVENTS' }))}>
             <Radio className="mr-2 h-4 w-4" />

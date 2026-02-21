@@ -128,6 +128,50 @@ export function AnalyticsPanel() {
   const { scorecard, riskCards, costSummary, costTimeseries, clusters, drift, executionSlices, features, forecasts, telemetry, nodeTelemetry, detectorVotes, policyEvents } = state
 
   const noData = !scorecard && !state.attackSummary
+  const attackDistribution = useMemo(
+    () =>
+      (state.attackSummary?.attack_types ?? []).map((row) => ({
+        attack_type: row.attack_type,
+        blocked: row.failure,
+        compromised: row.success,
+      })),
+    [state.attackSummary],
+  )
+  const detectorFailRate = useMemo(() => {
+    const buckets: Record<string, { detector_name: string; votes: number; fail_votes: number }> = {}
+    for (const vote of detectorVotes) {
+      const key = vote.detector_name
+      const bucket = buckets[key] ?? { detector_name: key, votes: 0, fail_votes: 0 }
+      bucket.votes += 1
+      if (Object.values(vote.failure_flags ?? {}).some(Boolean)) bucket.fail_votes += 1
+      buckets[key] = bucket
+    }
+    return Object.values(buckets)
+      .map((bucket) => ({
+        ...bucket,
+        fail_rate_pct: (bucket.fail_votes / Math.max(bucket.votes, 1)) * 100,
+      }))
+      .sort((a, b) => b.fail_rate_pct - a.fail_rate_pct)
+  }, [detectorVotes])
+  const disagreementUncertainty = useMemo(
+    () =>
+      (state.attackSummary?.attack_types ?? []).map((row) => ({
+        attack_type: row.attack_type,
+        avg_disagreement: row.avg_disagreement ?? 0,
+        avg_uncertainty: row.avg_uncertainty ?? 0,
+      })),
+    [state.attackSummary],
+  )
+  const latencyCostFrontier = useMemo(
+    () =>
+      (nodeTelemetry?.nodes ?? []).map((row) => ({
+        attack_type: row.attack_type,
+        avg_latency_ms: row.avg_latency_ms,
+        effective_cost_usd: row.effective_cost_usd ?? row.cost_usd ?? 0,
+        total: row.total,
+      })),
+    [nodeTelemetry],
+  )
 
   return (
     <PanelShell
@@ -164,8 +208,9 @@ export function AnalyticsPanel() {
         />
       ) : (
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="w-full grid grid-cols-4 h-8 mb-4">
+          <TabsList className="w-full grid grid-cols-5 h-8 mb-4">
             <TabsTrigger value="overview" className="text-[10px]">Overview</TabsTrigger>
+            <TabsTrigger value="data-science" className="text-[10px]">Data Science</TabsTrigger>
             <TabsTrigger value="cost" className="text-[10px]">Cost</TabsTrigger>
             <TabsTrigger value="risk" className="text-[10px]">Risk</TabsTrigger>
             <TabsTrigger value="compare" className="text-[10px]">Compare</TabsTrigger>
@@ -372,6 +417,96 @@ export function AnalyticsPanel() {
                 </div>
               </PanelSection>
             )}
+          </TabsContent>
+
+          {/* ─── Data Science Tab ─── */}
+          <TabsContent value="data-science" className="space-y-4 mt-0">
+            <PanelSection title="Attack Outcome Distribution" description="Compromised vs blocked counts per attack type">
+              {attackDistribution.length > 0 ? (
+                <div className="h-[220px] -mx-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ReBarChart data={attackDistribution}>
+                      <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" />
+                      <XAxis dataKey="attack_type" tick={{ fontSize: 9, fill: colors.axis }} />
+                      <YAxis tick={{ fontSize: 9, fill: colors.axis }} />
+                      <ReTooltip contentStyle={{ background: colors.tooltipBg, border: `1px solid ${colors.tooltipBorder}`, borderRadius: 8, fontSize: 10 }} />
+                      <Bar dataKey="blocked" stackId="outcome" fill={colors.chart2} radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="compromised" stackId="outcome" fill={colors.chart3} radius={[4, 4, 0, 0]} />
+                    </ReBarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No attack distribution data.</p>
+              )}
+            </PanelSection>
+
+            <PanelSection title="Detector Fail Rates" description="Aggregated fail-rate by detector across the run">
+              {detectorFailRate.length > 0 ? (
+                <div className="h-[200px] -mx-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ReBarChart data={detectorFailRate}>
+                      <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" />
+                      <XAxis dataKey="detector_name" tick={{ fontSize: 9, fill: colors.axis }} />
+                      <YAxis tick={{ fontSize: 9, fill: colors.axis }} tickFormatter={(v) => `${v}%`} />
+                      <ReTooltip
+                        formatter={(value: number, _name, ctx: any) => [`${Number(value).toFixed(2)}%`, `${ctx?.payload?.fail_votes ?? 0}/${ctx?.payload?.votes ?? 0}`]}
+                        contentStyle={{ background: colors.tooltipBg, border: `1px solid ${colors.tooltipBorder}`, borderRadius: 8, fontSize: 10 }}
+                      />
+                      <Bar dataKey="fail_rate_pct" fill={colors.chart3} radius={[4, 4, 0, 0]} />
+                    </ReBarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No detector vote data.</p>
+              )}
+            </PanelSection>
+
+            <PanelSection title="Disagreement vs Uncertainty" description="Per-attack consensus diagnostics">
+              {disagreementUncertainty.length > 0 ? (
+                <div className="h-[200px] -mx-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ScatterChart margin={{ top: 10, right: 12, bottom: 8, left: 0 }}>
+                      <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" />
+                      <XAxis type="number" dataKey="avg_disagreement" name="disagreement" tick={{ fontSize: 9, fill: colors.axis }} />
+                      <YAxis type="number" dataKey="avg_uncertainty" name="uncertainty" tick={{ fontSize: 9, fill: colors.axis }} />
+                      <ReTooltip
+                        cursor={{ strokeDasharray: '3 3' }}
+                        formatter={(_value, _name, ctx: any) => [ctx?.payload?.attack_type ?? '', `d=${ctx?.payload?.avg_disagreement?.toFixed(3)} u=${ctx?.payload?.avg_uncertainty?.toFixed(3)}`]}
+                        contentStyle={{ background: colors.tooltipBg, border: `1px solid ${colors.tooltipBorder}`, borderRadius: 8, fontSize: 10 }}
+                      />
+                      <Scatter data={disagreementUncertainty} fill={colors.chart4} />
+                    </ScatterChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No disagreement/uncertainty data.</p>
+              )}
+            </PanelSection>
+
+            <PanelSection title="Latency-Cost Frontier" description="Attack type efficiency frontier (bubble size = case count)">
+              {latencyCostFrontier.length > 0 ? (
+                <div className="h-[220px] -mx-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ScatterChart margin={{ top: 10, right: 12, bottom: 8, left: 0 }}>
+                      <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" />
+                      <XAxis type="number" dataKey="avg_latency_ms" name="latency" tick={{ fontSize: 9, fill: colors.axis }} />
+                      <YAxis type="number" dataKey="effective_cost_usd" name="cost" tick={{ fontSize: 9, fill: colors.axis }} />
+                      <ReTooltip
+                        formatter={(_value, _name, ctx: any) => [ctx?.payload?.attack_type ?? '', `latency=${ctx?.payload?.avg_latency_ms?.toFixed(1)}ms cost=$${ctx?.payload?.effective_cost_usd?.toFixed(4)}`]}
+                        contentStyle={{ background: colors.tooltipBg, border: `1px solid ${colors.tooltipBorder}`, borderRadius: 8, fontSize: 10 }}
+                      />
+                      <Scatter data={latencyCostFrontier} fill={colors.chart1}>
+                        {latencyCostFrontier.map((row, index) => (
+                          <Cell key={`${row.attack_type}-${index}`} fill={colors.chart1} />
+                        ))}
+                      </Scatter>
+                    </ScatterChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No latency-cost telemetry data.</p>
+              )}
+            </PanelSection>
           </TabsContent>
 
           {/* ─── Cost Tab ─── */}

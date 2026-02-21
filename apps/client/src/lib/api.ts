@@ -9,6 +9,7 @@ import type {
   CostSummaryPayload,
   CostTimeseriesPayload,
   DetectorVote,
+  DetectorVoteSummaryPayload,
   DriftPayload,
   ExecutionSlicesPayload,
   FeaturePayload,
@@ -22,6 +23,8 @@ import type {
   ProviderCredential,
   ProviderCredentialListPayload,
   ProviderValidation,
+  QueueActionResponse,
+  QueueRunsPayload,
   QueueStats,
   SecretAccessAudit,
   SecretKey,
@@ -398,6 +401,14 @@ export const api = {
     return request<{ run_id: string; votes: DetectorVote[] }>(`/v1/runs/${runId}/detector-votes`)
   },
 
+  getDetectorVotesSummary(runId: string, attackType?: string, limitRaw = 100) {
+    const params = new URLSearchParams()
+    if (attackType) params.set('attack_type', attackType)
+    params.set('limit_raw', String(limitRaw))
+    const suffix = params.toString() ? `?${params.toString()}` : ''
+    return request<DetectorVoteSummaryPayload>(`/v1/runs/${runId}/detector-votes-summary${suffix}`)
+  },
+
   getFeatures(runId: string) {
     return request<FeaturePayload>(`/v1/runs/${runId}/features`)
   },
@@ -463,6 +474,24 @@ export const api = {
 
   getQueueStats() {
     return request<QueueStats>('/v1/queue/stats')
+  },
+
+  listQueueRuns(limit = 100) {
+    const params = new URLSearchParams({ limit: String(limit) })
+    return request<QueueRunsPayload>(`/v1/queue/runs?${params.toString()}`)
+  },
+
+  moveQueueRunUp(runId: string) {
+    return request<QueueActionResponse>(`/v1/queue/runs/${runId}/move-up`, { method: 'POST' })
+  },
+
+  setQueueRunPriority(runId: string, priority: number) {
+    const params = new URLSearchParams({ priority: String(priority) })
+    return request<QueueActionResponse>(`/v1/queue/runs/${runId}/priority?${params.toString()}`, { method: 'POST' })
+  },
+
+  stopRun(runId: string) {
+    return request<RunOut>(`/v1/runs/${runId}/stop`, { method: 'POST' })
   },
 
   /* ---------------------------------------------------------------- */

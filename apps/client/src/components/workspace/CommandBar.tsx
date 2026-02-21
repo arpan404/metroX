@@ -14,6 +14,7 @@ import {
   Plus,
   ToggleLeft,
   Workflow,
+  ListTodo,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -170,6 +171,22 @@ export function CommandBar() {
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
           Studio Inspector <kbd className="ml-1 font-mono text-[10px]">4</kbd>
+        </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn('h-7 w-7', isActive('queue-center') && 'bg-primary/15 text-primary')}
+            onClick={() => togglePanel('queue-center')}
+          >
+            <ListTodo className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">
+          Queue Center <kbd className="ml-1 font-mono text-[10px]">5</kbd>
         </TooltipContent>
       </Tooltip>
 

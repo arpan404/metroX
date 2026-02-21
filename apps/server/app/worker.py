@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import threading
 
 from app.config import get_settings
 from app.observability import configure_logging
@@ -41,6 +42,7 @@ def main() -> None:
         )
         return
 
+    worker_count = max(1, int(settings.run_worker_threads))
     try:
         logger.info(
             json.dumps(
@@ -50,11 +52,22 @@ def main() -> None:
                     "dlq_key": settings.run_queue_redis_dlq_key,
                     "workers_key": settings.run_queue_redis_workers_key,
                     "block_s": settings.run_queue_redis_block_s,
+                    "worker_threads": worker_count,
                 },
                 sort_keys=True,
             )
         )
-        RUN_QUEUE.run_redis_worker_forever()
+        workers: list[threading.Thread] = []
+        for index in range(worker_count):
+            thread = threading.Thread(
+                target=RUN_QUEUE.run_redis_worker_forever,
+                daemon=True,
+                name=f"redis-worker-{index}",
+            )
+            thread.start()
+            workers.append(thread)
+        for thread in workers:
+            thread.join()
     except KeyboardInterrupt:
         logger.info("Worker interrupted; exiting.")
         return

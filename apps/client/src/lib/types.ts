@@ -103,6 +103,11 @@ export type AttackSummaryPayload = {
     avg_uncertainty?: number
     severity_breakdown: Record<string, number>
   }>
+  detector_summary?: {
+    avg_disagreement: number
+    avg_uncertainty: number
+    count: number
+  }
 }
 
 export type ClusterPayload = {
@@ -251,8 +256,10 @@ export type NodeTelemetryPayload = {
     success: number
     failure: number
     avg_latency_ms: number
+    cost_usd?: number
     effective_cost_usd: number
     tool_events: number
+    policy_decisions?: number
     policy_events: number
   }>
 }
@@ -402,8 +409,49 @@ export type QueueStats = {
   dlq_pending: number
   workers: number
   live_workers: number
-  started: number
+  started: boolean
   backend: string
+}
+
+export type QueueRunItem = {
+  id: string
+  session_id: string
+  config_profile_id: string
+  preset: string
+  mode: string
+  strictness: string
+  status: string
+  total_attacks: number
+  completed_attacks: number
+  budget_spent_usd: number
+  estimated_final_cost_usd: number
+  created_at?: string | null
+  started_at?: string | null
+  ended_at?: string | null
+}
+
+export type QueuePendingItem = {
+  run_id: string
+  attempt: number
+  priority: number
+  position: number
+  run?: QueueRunItem | null
+}
+
+export type QueueRunsPayload = {
+  backend: string
+  pending: QueuePendingItem[]
+  running: QueueRunItem[]
+  completed: QueueRunItem[]
+}
+
+export type QueueActionResponse = {
+  ok: boolean
+  updated: {
+    run_id: string
+    attempt: number
+    priority: number
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -429,12 +477,42 @@ export type AfkCapabilities = {
 export type DetectorVote = {
   id: string
   execution_id: string
+  attack_type?: string
   detector_name: string
   failure_flags: Record<string, boolean>
   confidence: number
-  evidence: string
+  evidence: Record<string, unknown>
   latency_ms: number
   created_at: string
+}
+
+export type DetectorVoteSummaryPayload = {
+  run_id: string
+  attack_type: string | null
+  totals: {
+    votes: number
+    executions: number
+    detectors: number
+    fail_votes: number
+    pass_votes: number
+    avg_confidence: number
+    avg_latency_ms: number
+  }
+  detectors: Array<{
+    detector_name: string
+    votes: number
+    fail_votes: number
+    pass_votes: number
+    fail_rate: number
+    avg_confidence: number
+    avg_latency_ms: number
+    failure_key_rates: Record<string, number>
+  }>
+  consensus: {
+    avg_disagreement: number
+    avg_uncertainty: number
+  }
+  raw_sample: DetectorVote[]
 }
 
 /* ------------------------------------------------------------------ */

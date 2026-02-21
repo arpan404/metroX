@@ -1,4 +1,4 @@
-export const STUDIO_BASE_MODEL = 'gpt-4.1-mini'
+export const STUDIO_BASE_MODEL = 'ollama_chat/gpt-oss:20b'
 
 export const STUDIO_ROLES = ['attacker', 'critic', 'verifier', 'analyst', 'fraud_analyst'] as const
 export type StudioRole = (typeof STUDIO_ROLES)[number]

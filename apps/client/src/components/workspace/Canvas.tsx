@@ -165,6 +165,15 @@ export function Canvas() {
     setEdges(graphData.edges)
   }, [graphData, setNodes, setEdges])
 
+  // Keep evaluate-mode detail panel useful by preselecting the first attack node when available.
+  useEffect(() => {
+    if (state.canvasMode !== 'evaluate') return
+    if (state.selectedAttackType) return
+    const firstAttackType = state.attackSummary?.attack_types?.[0]?.attack_type
+    if (!firstAttackType) return
+    dispatch({ type: 'SELECT_NODE', nodeId: `attack-${firstAttackType}`, attackType: firstAttackType })
+  }, [dispatch, state.attackSummary, state.canvasMode, state.selectedAttackType])
+
   const onConnect = useCallback(
     (connection: Connection) => {
       setEdges((eds) => addEdge(connection, eds))
@@ -191,6 +200,8 @@ export function Canvas() {
       // Auto-open attack detail for attack nodes
       if (attackType) {
         dispatch({ type: 'OPEN_PANEL', panel: 'attack-detail' })
+      } else if (node.id === 'metrics-summary') {
+        dispatch({ type: 'OPEN_PANEL', panel: 'analytics' })
       } else if (state.canvasMode === 'studio' && node.type === 'studioRole') {
         dispatch({ type: 'OPEN_PANEL', panel: 'studio-inspector' })
       }
@@ -347,6 +358,7 @@ import {
   Play,
   RotateCcw,
   Download,
+  ListTodo,
 } from 'lucide-react'
 import { Shield } from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react'
@@ -374,6 +386,12 @@ function CanvasContextMenu({ x, y, onClose }: { x: number; y: number; onClose: (
       icon: Settings2,
       action: () => dispatch({ type: 'TOGGLE_PANEL', panel: 'settings' }),
       shortcut: '3',
+    },
+    {
+      label: 'Open Queue Center',
+      icon: ListTodo,
+      action: () => dispatch({ type: 'TOGGLE_PANEL', panel: 'queue-center' }),
+      shortcut: '5',
     },
     { separator: true } as const,
     {
@@ -553,7 +571,7 @@ function NodeContextMenu({
           data: { run_id: rerun.id },
         },
       })
-      actions.startStreaming()
+      actions.startStreaming(rerun.id)
       if (!state.eventsOpen) dispatch({ type: 'TOGGLE_EVENTS' })
       toast.success(`Rerun launched: ${rerun.id.slice(0, 8)}`)
     } catch (error) {

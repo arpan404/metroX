@@ -121,7 +121,7 @@ export default function WizardPage() {
 
         setProfileName(profile.name)
         setTargetType(String(target.target_type || 'managed_llm_runtime') as TargetType)
-        setModel(String(target.model || 'gpt-4.1-mini'))
+        setModel(String(target.model || 'ollama_chat/gpt-oss:20b'))
         setProviderName(String(target.provider_name || 'openai'))
         setBaseUrl(String(target.base_url || ''))
         setApiKeyRef(String(target.api_key_ref || ''))

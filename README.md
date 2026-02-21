@@ -22,9 +22,23 @@ Data-driven reliability testing platform for LLMs and agent systems.
 - Run orchestration persists `target_thread_ids` with `per_attack_type` thread strategy for multi-turn probing continuity.
 - Agentic attack generation includes target-chat probing via `chat_target_agent` tool when target URL is available.
 
+## Stats Reliability + DS Analytics Revamp
+- Added `GET /v1/runs/{id}/detector-votes-summary` for scoped detector aggregation by attack type.
+- `GET /v1/runs/{id}/detector-votes` now includes `attack_type` on each vote row (backward compatible additive field).
+- `GET /v1/runs/{id}/attack-summary` now exposes per-attack `avg_disagreement` and `avg_uncertainty`.
+- `GET /v1/runs/{id}/node-telemetry` now includes alias fields:
+  - `cost_usd` + `effective_cost_usd`
+  - `policy_decisions` + `policy_events`
+- Attack Detail panel now uses scoped detector summary + raw vote tab fallback.
+- Analytics panel now includes a Data Science tab:
+  - attack outcome distribution
+  - detector fail-rate comparison
+  - disagreement vs uncertainty scatter
+  - latency vs effective-cost frontier
+
 ## Dev Commands
 ```bash
-# backend + frontend + test-agents
+# backend + frontend + test-agents (+ queue worker for redis backend)
 make dev
 
 # backend only
@@ -37,6 +51,9 @@ make dev frontend
 
 # test-agents only
 make dev test-agents
+
+# queue worker only (required for redis backend; no-op guidance for inprocess)
+make dev worker
 ```
 
 ## Tests
@@ -62,6 +79,7 @@ make client-test
 - `GET /v1/config-profiles`
 - `GET /v1/runs`
 - `GET /v1/runs/{id}/detector-votes`
+- `GET /v1/runs/{id}/detector-votes-summary`
 - `POST /v1/security/keys`
 - `GET /v1/security/keys`
 - `POST /v1/security/keys/{id}/activate`

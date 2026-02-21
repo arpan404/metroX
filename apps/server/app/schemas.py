@@ -56,7 +56,7 @@ class TargetConfig(BaseModel):
     ] = "managed_llm_runtime"
     endpoint: str | None = None
     auth_headers: dict[str, str] = Field(default_factory=dict)
-    model: str = "gpt-4.1-mini"
+    model: str = "ollama_chat/gpt-oss:20b"
     provider_name: str | None = None
     base_url: str | None = None
     api_key_ref: str | None = None
@@ -70,7 +70,7 @@ class TargetConfig(BaseModel):
 
 class AgentIndexAgentCreate(BaseModel):
     name: str
-    model: str = "gpt-4.1-mini"
+    model: str = "ollama_chat/gpt-oss:20b"
     instructions: str | None = None
     instruction_file: str | None = None
     prompts_dir: str | None = None
@@ -208,8 +208,8 @@ class BenchmarkConfig(BaseModel):
     seed: int = 42
     slices: list[str] = Field(default_factory=lambda: ["default"])
     agentic_attacking: bool = True
-    agentic_provider: Literal["auto", "afk_live"] = "auto"
-    agentic_model: str | None = None
+    agentic_provider: Literal["auto", "afk_live"] = "afk_live"
+    agentic_model: str | None = "ollama_chat/gpt-oss:20b"
     afk_orchestration: AFKOrchestrationConfig = Field(default_factory=AFKOrchestrationConfig)
 
 

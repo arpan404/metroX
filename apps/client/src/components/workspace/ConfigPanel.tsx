@@ -32,7 +32,7 @@ import {
   STUDIO_BASE_MODEL,
   STUDIO_ROLES,
   STUDIO_GRAPH_TEMPLATES,
-  resolveStudioRoleModel,
+  createStudioNodeData,
   createStudioMapFromTemplate,
   type StudioTemplateId,
 } from '@/lib/studio-defaults'
@@ -137,6 +137,14 @@ const PRESET_ATTACK_ESTIMATE: Record<string, number> = {
   deep: 12000,
 }
 
+const DEFAULT_STUDIO_POSITIONS = createStudioMapFromTemplate('fraud_triage').nodes.reduce<Record<string, { x: number; y: number }>>(
+  (acc, node) => {
+    acc[String(node.data.role)] = { x: node.position.x, y: node.position.y }
+    return acc
+  },
+  {},
+)
+
 /* ------------------------------------------------------------------ */
 /*  ConfigPanel                                                       */
 /* ------------------------------------------------------------------ */
@@ -158,7 +166,7 @@ export function ConfigPanel() {
   const [lastLoadedProfileId, setLastLoadedProfileId] = useState<string | null>(null)
 
   // ─── Target ───
-  const [model, setModel] = useState('gpt-4.1-mini')
+  const [model, setModel] = useState('ollama_chat/gpt-oss:20b')
   const [agentId, setAgentId] = useState('refund')
   const [agentName, setAgentName] = useState('financial-agent')
   const [agentDescription, setAgentDescription] = useState('Financial assistant agent under fraud-resilience testing.')
@@ -170,8 +178,8 @@ export function ConfigPanel() {
   const [seed, setSeed] = useState(42)
   const [curatedRatio, setCuratedRatio] = useState(0.6)
   const [agenticAttacking, setAgenticAttacking] = useState(true)
-  const [agenticProvider, setAgenticProvider] = useState<'auto' | 'afk_live'>('auto')
-  const [agenticModel, setAgenticModel] = useState('')
+  const [agenticProvider, setAgenticProvider] = useState<'auto' | 'afk_live'>('afk_live')
+  const [agenticModel, setAgenticModel] = useState('ollama_chat/gpt-oss:20b')
 
   // ─── Scoring ───
   const [strictness, setStrictness] = useState('balanced')
@@ -214,24 +222,55 @@ export function ConfigPanel() {
         : [],
     [sessionRunHistory, state.configProfileId],
   )
+  const profileConfigDirty = useMemo(() => {
+    if (!selectedProfile) return false
+    const selectedTarget = (selectedProfile.target_config ?? {}) as Record<string, unknown>
+    const selectedBenchmark = (selectedProfile.benchmark_config ?? {}) as Record<string, unknown>
+    const profileTaxonomy = Array.isArray(selectedBenchmark.taxonomy)
+      ? selectedBenchmark.taxonomy.map((entry) => String(entry).trim()).filter(Boolean)
+      : []
+    const sameTaxonomy =
+      taxonomy.length === profileTaxonomy.length
+      && taxonomy.every((entry) => profileTaxonomy.includes(entry))
+    const profileCuratedRatio = typeof selectedBenchmark.curated_ratio === 'number'
+      ? selectedBenchmark.curated_ratio
+      : Number(selectedBenchmark.curated_ratio ?? 0.6)
+    const profileSeed = typeof selectedBenchmark.seed === 'number'
+      ? selectedBenchmark.seed
+      : Number(selectedBenchmark.seed ?? 42)
+    const profileAgenticAttacking = Boolean(selectedBenchmark.agentic_attacking ?? true)
+
+    return !(
+      String(selectedTarget.agent_id ?? '') === agentId
+      && String(selectedTarget.agent_name ?? '') === agentName
+      && String(selectedTarget.agent_description ?? '') === agentDescription
+      && sameTaxonomy
+      && Math.abs(Number(profileCuratedRatio) - curatedRatio) < 0.001
+      && Number(profileSeed) === seed
+      && profileAgenticAttacking === agenticAttacking
+    )
+  }, [selectedProfile, taxonomy, agentId, agentName, agentDescription, curatedRatio, seed, agenticAttacking])
 
   const studioOrchestration = useMemo(() => {
-    const isStudioRole = (value: string): value is (typeof STUDIO_ROLES)[number] =>
-      STUDIO_ROLES.includes(value as (typeof STUDIO_ROLES)[number])
-
     const baseModel = (agenticModel || model || STUDIO_BASE_MODEL).trim() || STUDIO_BASE_MODEL
     const roleNodes = state.studioNodes.filter((node) =>
-      STUDIO_ROLES.includes(node.data.role as (typeof STUDIO_ROLES)[number]),
+      String(node.data.role || '').trim().length > 0,
     )
 
     const roleByName = new Map<string, (typeof roleNodes)[number]>()
     for (const node of roleNodes) {
-      if (!roleByName.has(node.data.role)) roleByName.set(node.data.role, node)
+      const roleName = String(node.data.role || '').trim()
+      if (!roleName) continue
+      if (!roleByName.has(roleName)) roleByName.set(roleName, node)
     }
 
-    const roles = STUDIO_ROLES.map((role) => {
+    const orderedRoleNames = roleNodes.length > 0
+      ? Array.from(roleByName.keys())
+      : [...STUDIO_ROLES]
+
+    const roles = orderedRoleNames.map((role) => {
       const node = roleByName.get(role)
-      const resolved = resolveStudioRoleModel(role, node?.data?.model)
+      const resolved = (node?.data?.model || '').trim() || baseModel
       const inlineInstructions = (node?.data?.instructions ?? '').trim()
       return {
         name: role,
@@ -248,7 +287,7 @@ export function ConfigPanel() {
     })
 
     const graphNodes = roleNodes.length > 0
-      ? STUDIO_ROLES.filter((role) => roleByName.has(role)).map((role) => ({ id: role }))
+      ? orderedRoleNames.filter((role) => roleByName.has(role)).map((role) => ({ id: role }))
       : []
 
     const validRoleSet = new Set(graphNodes.map((node) => node.id))
@@ -256,7 +295,7 @@ export function ConfigPanel() {
     for (const edge of state.studioEdges) {
       const source = roleNodes.find((node) => node.id === edge.source)?.data.role
       const target = roleNodes.find((node) => node.id === edge.target)?.data.role
-      if (!source || !target || !isStudioRole(source) || !isStudioRole(target)) continue
+      if (!source || !target) continue
       if (!validRoleSet.has(source) || !validRoleSet.has(target) || source === target) continue
       graphEdges.push({ source, target })
     }
@@ -264,7 +303,7 @@ export function ConfigPanel() {
     return {
       baseModel,
       roles,
-      executionOrder: roles.filter((role) => role.enabled).map((role) => role.name),
+      executionOrder: orderedRoleNames.filter((role) => roles.find((entry) => entry.name === role)?.enabled),
       graph: { nodes: graphNodes, edges: graphEdges },
     }
   }, [agenticModel, model, state.studioNodes, state.studioEdges])
@@ -272,6 +311,92 @@ export function ConfigPanel() {
   const asRecord = (value: unknown): Record<string, unknown> => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
     return value as Record<string, unknown>
+  }
+
+  const hydrateStudioGraphFromOrchestration = (orchestrationConfig: Record<string, unknown>, baseModel: string) => {
+    const rolesRaw = Array.isArray(orchestrationConfig.roles) ? orchestrationConfig.roles : []
+    if (rolesRaw.length === 0) return
+
+    const graphRaw = asRecord(orchestrationConfig.graph)
+    const graphNodesRaw = Array.isArray(graphRaw.nodes) ? graphRaw.nodes : []
+    const graphEdgesRaw = Array.isArray(graphRaw.edges) ? graphRaw.edges : []
+    const executionOrderRaw = Array.isArray(orchestrationConfig.execution_order)
+      ? orchestrationConfig.execution_order.map((value) => String(value).trim()).filter(Boolean)
+      : []
+
+    const roleRows = rolesRaw
+      .map((row) => asRecord(row))
+      .filter((row) => typeof row.name === 'string' && row.name.trim().length > 0)
+
+    const roleNameSet = new Set<string>()
+    const roleRowsByName = new Map<string, Record<string, unknown>>()
+    for (const row of roleRows) {
+      const roleName = String(row.name).trim()
+      if (roleNameSet.has(roleName)) continue
+      roleNameSet.add(roleName)
+      roleRowsByName.set(roleName, row)
+    }
+    if (roleRowsByName.size === 0) return
+
+    const graphRoleOrder = graphNodesRaw
+      .map((row) => asRecord(row))
+      .map((row) => String(row.id ?? '').trim())
+      .filter((name) => roleRowsByName.has(name))
+
+    const roleOrder = (
+      executionOrderRaw.length > 0 ? executionOrderRaw : graphRoleOrder
+    ).filter((name, idx, arr) => roleRowsByName.has(name) && arr.indexOf(name) === idx)
+
+    const orderedRoles = roleOrder.length > 0
+      ? roleOrder
+      : Array.from(roleRowsByName.keys())
+
+    const nodes = orderedRoles.map((roleName, index) => {
+      const roleRow = roleRowsByName.get(roleName) || {}
+      const defaultData = createStudioNodeData(roleName, baseModel)
+      const pos = DEFAULT_STUDIO_POSITIONS[roleName] ?? { x: 120 + (index % 3) * 280, y: 140 + Math.floor(index / 3) * 220 }
+      const authHeaders = asRecord(roleRow.auth_headers)
+      const extra = asRecord(roleRow.extra)
+      const roleModel = typeof roleRow.model === 'string' && roleRow.model.trim()
+        ? roleRow.model.trim()
+        : baseModel
+      return {
+        id: `studio-${roleName}`,
+        type: 'studioRole',
+        position: pos,
+        data: {
+          ...defaultData,
+          role: roleName,
+          label: `${defaultData.label.replace(/ Node$/i, '')} Node`,
+          model: roleModel,
+          enabled: roleRow.enabled == null ? true : Boolean(roleRow.enabled),
+          runtime_provider: typeof roleRow.runtime_provider === 'string' ? roleRow.runtime_provider : defaultData.runtime_provider,
+          api_key_ref: typeof roleRow.api_key_ref === 'string' ? roleRow.api_key_ref : defaultData.api_key_ref,
+          base_url: typeof roleRow.base_url === 'string' ? roleRow.base_url : defaultData.base_url,
+          instruction_file: typeof roleRow.instruction_file === 'string' ? roleRow.instruction_file : defaultData.instruction_file,
+          instructions: typeof roleRow.instructions === 'string' ? roleRow.instructions : defaultData.instructions,
+          auth_headers: authHeaders as Record<string, string>,
+          extra,
+        },
+      }
+    })
+
+    const validRoleNames = new Set(nodes.map((node) => String(node.data.role)))
+    const edges = graphEdgesRaw
+      .map((row) => asRecord(row))
+      .map((row) => ({
+        source: String(row.source ?? '').trim(),
+        target: String(row.target ?? '').trim(),
+      }))
+      .filter((row) => row.source && row.target && row.source !== row.target)
+      .filter((row) => validRoleNames.has(row.source) && validRoleNames.has(row.target))
+      .map((row) => ({
+        id: `e-studio-${row.source}-${row.target}`,
+        source: `studio-${row.source}`,
+        target: `studio-${row.target}`,
+      }))
+
+    dispatch({ type: 'SET_STUDIO_GRAPH', nodes, edges })
   }
 
   const loadProfileIntoForm = (profile: ConfigProfileOut) => {
@@ -312,7 +437,11 @@ export function ConfigPanel() {
       setAgenticProvider(benchmarkConfig.agentic_provider)
     }
     const nextAgenticModel = typeof benchmarkConfig.agentic_model === 'string' ? benchmarkConfig.agentic_model : ''
-    setAgenticModel(nextAgenticModel)
+    setAgenticModel(nextAgenticModel || STUDIO_BASE_MODEL)
+    const orchestrationBaseModel = typeof orchestrationConfig.model === 'string' && orchestrationConfig.model.trim().length > 0
+      ? orchestrationConfig.model.trim()
+      : (nextAgenticModel || profileModel || STUDIO_BASE_MODEL)
+    hydrateStudioGraphFromOrchestration(orchestrationConfig, orchestrationBaseModel)
 
     if (typeof profile.strictness_mode === 'string' && profile.strictness_mode.trim()) {
       setStrictness(profile.strictness_mode)
@@ -448,7 +577,7 @@ export function ConfigPanel() {
       dispatch({ type: 'SET_RUN_ID', runId })
       const resumed = await api.resumeRun(runId)
       dispatch({ type: 'SET_RUN_DATA', data: resumed })
-      actions.startStreaming()
+      actions.startStreaming(runId)
       await actions.fetchRunData()
       await refreshHistory(state.sessionId, state.configProfileId)
       toast.success(`Run ${runId.slice(0, 8)} resumed.`)
@@ -748,9 +877,14 @@ export function ConfigPanel() {
       // 2. Reuse or create config profile based on launch mode.
       let profileId = state.configProfileId
       const hasSelectedProfile = profileId && profileList.some((profile) => profile.id === profileId)
-      const shouldCreateProfile = launchProfileMode === 'new' || !hasSelectedProfile
+      const forceCreateForDirtyExisting = launchProfileMode === 'existing' && profileConfigDirty
+      const shouldCreateProfile = launchProfileMode === 'new' || !hasSelectedProfile || forceCreateForDirtyExisting
 
       if (shouldCreateProfile) {
+        if (forceCreateForDirtyExisting) {
+          toast.info('Form changes detected. Saving a new profile for this run so selected scenarios are applied.')
+          setLaunchProfileMode('new')
+        }
         const profile = await api.createConfigProfile(buildPayload(sessionId))
         profileId = profile.id
         dispatch({ type: 'SET_CONFIG_PROFILE', configProfileId: profileId })
@@ -787,7 +921,7 @@ export function ConfigPanel() {
       })
 
       // Start streaming
-      actions.startStreaming()
+      actions.startStreaming(run.id)
       if (!state.eventsOpen) dispatch({ type: 'TOGGLE_EVENTS' })
       actions.fetchRunData()
       setTimeout(() => {
@@ -1001,6 +1135,11 @@ export function ConfigPanel() {
                 Save New Profile + Run
               </Button>
             </div>
+            {launchProfileMode === 'existing' && profileConfigDirty && (
+              <p className="text-[10px] text-amber-300 mt-1">
+                Current form differs from selected profile. Launch will save a new profile automatically.
+              </p>
+            )}
           </FieldGroup>
 
           <FieldGroup label={helpLabel('Run History', 'Runs are grouped under the selected profile; select one to load analytics.')}>
@@ -1326,13 +1465,18 @@ export function ConfigPanel() {
                     <Select value={agenticProvider} onValueChange={(v) => setAgenticProvider(v as 'auto' | 'afk_live')}>
                       <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="auto" className="text-xs">Auto</SelectItem>
-                        <SelectItem value="afk_live" className="text-xs">Live Runtime</SelectItem>
+                        <SelectItem value="afk_live" className="text-xs">AFK Runtime</SelectItem>
+                        <SelectItem value="auto" className="text-xs">Auto (runtime + fallback)</SelectItem>
                       </SelectContent>
                     </Select>
                   </FieldGroup>
                   <FieldGroup label={helpLabel('Attack Model (optional)', 'Optional model override for attacker orchestration roles.')}>
-                    <Input value={agenticModel} onChange={(e) => setAgenticModel(e.target.value)} placeholder="auto" className="h-7 text-xs font-mono" />
+                    <Input
+                      value={agenticModel}
+                      onChange={(e) => setAgenticModel(e.target.value)}
+                      placeholder="ollama_chat/gpt-oss:20b"
+                      className="h-7 text-xs font-mono"
+                    />
                   </FieldGroup>
                 </div>
               )}

@@ -46,6 +46,27 @@ _SENSITIVE_HEADER_NAMES = frozenset({
 })
 
 
+def _normalize_taxonomy(entries: Any) -> list[str]:
+    if not isinstance(entries, list):
+        return []
+    rows: list[str] = []
+    seen: set[str] = set()
+    for entry in entries:
+        key = str(entry or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        rows.append(key)
+    return rows
+
+
+def _missing_taxonomy_coverage(attack_cases: list[AttackCase], expected_taxonomy: list[str]) -> list[str]:
+    if not expected_taxonomy:
+        return []
+    covered = {str(case.attack_type or "").strip() for case in attack_cases if str(case.attack_type or "").strip()}
+    return [attack_type for attack_type in expected_taxonomy if attack_type not in covered]
+
+
 def _redact_target_config(target_config: dict) -> dict:
     """Return a copy of target_config with sensitive auth_headers values redacted."""
     redacted = dict(target_config)
@@ -258,6 +279,53 @@ class RunOrchestrator:
             else:
                 attack_cases = []
 
+            expected_taxonomy = _normalize_taxonomy(benchmark_cfg_base.get("taxonomy"))
+            missing_coverage = _missing_taxonomy_coverage(attack_cases, expected_taxonomy)
+            if attack_cases and missing_coverage and not processed_case_ids:
+                # Safety net for stale/partial benchmark snapshots: rebuild before first execution.
+                attack_count = self._attack_count(run.preset)
+                benchmark_cfg = self._resolve_orchestration_credentials(profile.benchmark_config, run.id)
+                benchmark_cfg["target_type"] = normalized_target_type
+                benchmark_cfg["target_under_test"] = {
+                    "agent_id": target_cfg.get("agent_id") or target_extra.get("agent_id"),
+                    "agent_name": target_cfg.get("agent_name") or target_extra.get("agent_name"),
+                    "agent_description": target_cfg.get("agent_description")
+                    or target_extra.get("agent_description"),
+                    "agent_url": target_cfg.get("agent_url")
+                    or target_cfg.get("endpoint")
+                    or target_extra.get("agent_url"),
+                    "endpoint": target_cfg.get("endpoint"),
+                }
+                benchmark_cfg["threading"] = {
+                    "strategy": thread_strategy,
+                    "run_thread_id": run.thread_id,
+                    "target_thread_ids": target_thread_ids,
+                }
+                benchmark_snapshot, attack_cases = create_benchmark(
+                    self.db,
+                    run_id=run.id,
+                    benchmark_config=benchmark_cfg,
+                    attack_count=attack_count,
+                )
+                log_event(
+                    self.db,
+                    run_id=run.id,
+                    event_type="benchmark_rebuilt_for_coverage",
+                    step=1,
+                    message="Rebuilt benchmark snapshot to restore taxonomy coverage",
+                    data={"missing_taxonomy_types": missing_coverage},
+                )
+                missing_coverage = _missing_taxonomy_coverage(attack_cases, expected_taxonomy)
+            elif attack_cases and missing_coverage:
+                log_event(
+                    self.db,
+                    run_id=run.id,
+                    event_type="benchmark_coverage_warning",
+                    step=1,
+                    message="Existing snapshot has missing taxonomy coverage and cannot be rebuilt after execution started",
+                    data={"missing_taxonomy_types": missing_coverage},
+                )
+
             if not attack_cases:
                 attack_count = self._attack_count(run.preset)
                 benchmark_cfg = self._resolve_orchestration_credentials(profile.benchmark_config, run.id)
@@ -302,7 +370,7 @@ class RunOrchestrator:
             runtime_cfg = profile.runtime_config or {}
             budget_usd = float(runtime_cfg.get("budget_usd", 0.0) or 0.0)
             abort_on_cost_breach = bool(runtime_cfg.get("abort_on_cost_breach", False))
-            batch_size = max(1, int(runtime_cfg.get("batch_size", self.settings.run_batch_size)))
+            checkpoint_interval = max(1, int(runtime_cfg.get("batch_size", self.settings.run_batch_size)))
             pricing_profile_id = target_cfg.get("extra", {}).get("pricing_profile_id")
             policy_cfg = resolve_policy_config(target_cfg.get("extra", {}))
             log_event(
@@ -346,6 +414,17 @@ class RunOrchestrator:
             for case in attack_cases:
                 if case.id in processed_case_ids:
                     continue
+                self.db.refresh(run)
+                if run.status == "interrupted":
+                    interrupted_early = True
+                    log_event(
+                        self.db,
+                        run_id=run.id,
+                        event_type="run_interrupted",
+                        step=2,
+                        message="Run interrupted by user request",
+                    )
+                    break
                 request = TargetRequest(
                     run_id=run.id,
                     attack_id=case.id,
@@ -427,6 +506,10 @@ class RunOrchestrator:
                 self.db.add(label)
                 executions.append(execution)
                 processed_case_ids.add(case.id)
+                execution_failure = bool(any(bool(value) for value in (detection.failure_flags or {}).values()))
+                severity = str(detection.severity or "low").lower()
+                if severity not in {"critical", "high", "medium", "low"}:
+                    severity = "low"
                 cost_row = compute_execution_cost(
                     self.db,
                     run_id=run.id,
@@ -471,22 +554,37 @@ class RunOrchestrator:
                             auto_commit=False,
                         )
 
-                if run.completed_attacks % batch_size == 0 or run.completed_attacks == len(attack_cases):
-                    self.db.commit()
-                    rebuild_run_cost_aggregate(self.db, run.id)
-                    log_event(
-                        self.db,
-                        run_id=run.id,
-                        event_type="progress",
-                        step=2,
-                        message=f"Processed {run.completed_attacks}/{len(attack_cases)}",
-                        data={
-                            "completed": run.completed_attacks,
-                            "total": len(attack_cases),
-                            "spent_usd": run.budget_spent_usd,
-                            "projected_final_usd": run.estimated_final_cost_usd,
+                # Commit each execution so UI can reflect progress in near real time.
+                log_event(
+                    self.db,
+                    run_id=run.id,
+                    event_type="progress",
+                    step=2,
+                    message=f"Processed {run.completed_attacks}/{len(attack_cases)}",
+                    data={
+                        "completed": run.completed_attacks,
+                        "total": len(attack_cases),
+                        "spent_usd": run.budget_spent_usd,
+                        "projected_final_usd": run.estimated_final_cost_usd,
+                        "attack_type": case.attack_type,
+                        "attack_delta": {
+                            "attack_type": case.attack_type,
+                            "total_inc": 1,
+                            "success_inc": 1 if execution_failure else 0,
+                            "failure_inc": 0 if execution_failure else 1,
+                            "confidence_sum_inc": float(detection.confidence or 0.0),
+                            "disagreement_sum_inc": float(detection.disagreement_score or 0.0),
+                            "uncertainty_sum_inc": float(detection.uncertainty or 0.0),
+                            "severity_inc": {severity: 1},
                         },
-                    )
+                        "execution_id": execution.id,
+                    },
+                    auto_commit=False,
+                )
+                self.db.commit()
+
+                if run.completed_attacks % checkpoint_interval == 0 or run.completed_attacks == len(attack_cases):
+                    rebuild_run_cost_aggregate(self.db, run.id)
                     self.db.add(
                         AFKRunState(
                             run_id=run.id,

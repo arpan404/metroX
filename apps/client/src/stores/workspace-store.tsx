@@ -35,7 +35,7 @@ import type {
 /*  Types                                                             */
 /* ------------------------------------------------------------------ */
 
-export type PanelId = 'config' | 'analytics' | 'settings' | 'attack-detail' | 'studio-inspector'
+export type PanelId = 'config' | 'analytics' | 'settings' | 'attack-detail' | 'studio-inspector' | 'queue-center'
 export type CanvasMode = 'evaluate' | 'studio'
 
 export type RunEvent = {
@@ -45,6 +45,25 @@ export type RunEvent = {
   message?: string
   data?: Record<string, unknown>
   created_at?: string
+}
+
+type ProgressAttackDelta = {
+  attack_type: string
+  total_inc: number
+  success_inc: number
+  failure_inc: number
+  confidence_sum_inc: number
+  disagreement_sum_inc: number
+  uncertainty_sum_inc: number
+  severity_inc: Record<string, number>
+}
+
+type ProgressEventDelta = {
+  completed?: number
+  total?: number
+  spent_usd?: number
+  projected_final_usd?: number
+  attack_delta?: ProgressAttackDelta
 }
 
 export type WorkspaceState = {
@@ -150,6 +169,7 @@ export type WorkspaceAction =
   | { type: 'SET_FORECASTS'; data: ForecastPayload }
   | { type: 'SET_POLICY_EVENTS'; data: PolicyEvent[] }
   | { type: 'SET_DETECTOR_VOTES'; data: DetectorVote[] }
+  | { type: 'APPLY_PROGRESS_DELTA'; delta: ProgressEventDelta }
   | { type: 'SET_QUEUE_STATS'; data: QueueStats }
   | { type: 'SET_AFK_CAPABILITIES'; data: AfkCapabilities }
   | { type: 'ADD_EVENT'; event: RunEvent }
@@ -259,7 +279,11 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
       }
       return { ...state, canvasMode: action.mode, selectedNodeId: null, selectedAttackType: null }
     case 'SELECT_NODE':
-      return { ...state, selectedNodeId: action.nodeId, selectedAttackType: action.attackType ?? null }
+      return {
+        ...state,
+        selectedNodeId: action.nodeId,
+        selectedAttackType: action.attackType === undefined ? state.selectedAttackType : action.attackType,
+      }
     case 'OPEN_PANEL':
       return { ...state, activePanel: action.panel }
     case 'CLOSE_PANEL':
@@ -275,7 +299,15 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
     case 'SET_SCORECARD':
       return { ...state, scorecard: action.data }
     case 'SET_ATTACK_SUMMARY':
-      return { ...state, attackSummary: action.data }
+      return {
+        ...state,
+        attackSummary: action.data,
+        selectedAttackType: (() => {
+          const available = new Set((action.data.attack_types ?? []).map((row) => row.attack_type))
+          if (state.selectedAttackType && available.has(state.selectedAttackType)) return state.selectedAttackType
+          return action.data.attack_types?.[0]?.attack_type ?? null
+        })(),
+      }
     case 'SET_RISK_CARDS':
       return { ...state, riskCards: action.data }
     case 'SET_COST_SUMMARY':
@@ -300,6 +332,141 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
       return { ...state, policyEvents: action.data }
     case 'SET_DETECTOR_VOTES':
       return { ...state, detectorVotes: action.data }
+    case 'APPLY_PROGRESS_DELTA': {
+      const delta = action.delta
+      const nextRunData = state.runData
+        ? {
+            ...state.runData,
+            completed_attacks:
+              typeof delta.completed === 'number'
+                ? Math.max(0, Math.trunc(delta.completed))
+                : state.runData.completed_attacks,
+            total_attacks:
+              typeof delta.total === 'number'
+                ? Math.max(0, Math.trunc(delta.total))
+                : state.runData.total_attacks,
+            budget_spent_usd:
+              typeof delta.spent_usd === 'number'
+                ? Math.max(0, Number(delta.spent_usd))
+                : state.runData.budget_spent_usd,
+            estimated_final_cost_usd:
+              typeof delta.projected_final_usd === 'number'
+                ? Math.max(0, Number(delta.projected_final_usd))
+                : state.runData.estimated_final_cost_usd,
+          }
+        : state.runData
+
+      if (!delta.attack_delta?.attack_type) {
+        return { ...state, runData: nextRunData }
+      }
+
+      const attackDelta = delta.attack_delta
+      const attackType = String(attackDelta.attack_type || '').trim()
+      if (!attackType) {
+        return { ...state, runData: nextRunData }
+      }
+
+      const summary = state.attackSummary
+        ? {
+            ...state.attackSummary,
+            attack_types: state.attackSummary.attack_types.map((row) => ({
+              ...row,
+              severity_breakdown: { ...row.severity_breakdown },
+            })),
+            detector_summary: state.attackSummary.detector_summary
+              ? { ...state.attackSummary.detector_summary }
+              : { avg_disagreement: 0, avg_uncertainty: 0, count: 0 },
+          }
+        : {
+            run_id: state.currentRunId ?? 'live',
+            attack_types: [],
+            detector_summary: { avg_disagreement: 0, avg_uncertainty: 0, count: 0 },
+          }
+
+      const existingIndex = summary.attack_types.findIndex((row) => row.attack_type === attackType)
+      const currentRow =
+        existingIndex >= 0
+          ? summary.attack_types[existingIndex]
+          : {
+              attack_type: attackType,
+              total: 0,
+              success: 0,
+              failure: 0,
+              success_rate: 0,
+              avg_confidence: 0,
+              avg_disagreement: 0,
+              avg_uncertainty: 0,
+              severity_breakdown: { critical: 0, high: 0, medium: 0, low: 0 },
+            }
+
+      const totalInc = Math.max(0, Math.trunc(Number(attackDelta.total_inc || 0)))
+      const successInc = Math.max(0, Math.trunc(Number(attackDelta.success_inc || 0)))
+      const failureInc = Math.max(0, Math.trunc(Number(attackDelta.failure_inc || 0)))
+      const confidenceInc = Math.max(0, Number(attackDelta.confidence_sum_inc || 0))
+      const disagreementInc = Math.max(0, Number(attackDelta.disagreement_sum_inc || 0))
+      const uncertaintyInc = Math.max(0, Number(attackDelta.uncertainty_sum_inc || 0))
+
+      const nextTotal = currentRow.total + totalInc
+      const nextSuccess = currentRow.success + successInc
+      const nextFailure = currentRow.failure + failureInc
+      const currentTotalForAvg = Math.max(currentRow.total, 0)
+
+      const severityNext = { ...currentRow.severity_breakdown }
+      const severityInc = attackDelta.severity_inc || {}
+      for (const [severity, value] of Object.entries(severityInc)) {
+        const key = ['critical', 'high', 'medium', 'low'].includes(severity) ? severity : 'low'
+        severityNext[key] = (severityNext[key] || 0) + Math.max(0, Math.trunc(Number(value || 0)))
+      }
+
+      const nextRow = {
+        ...currentRow,
+        total: nextTotal,
+        success: nextSuccess,
+        failure: nextFailure,
+        success_rate: nextTotal > 0 ? nextSuccess / nextTotal : 0,
+        avg_confidence:
+          nextTotal > 0
+            ? ((currentRow.avg_confidence || 0) * currentTotalForAvg + confidenceInc) / nextTotal
+            : 0,
+        avg_disagreement:
+          nextTotal > 0
+            ? ((currentRow.avg_disagreement || 0) * currentTotalForAvg + disagreementInc) / nextTotal
+            : 0,
+        avg_uncertainty:
+          nextTotal > 0
+            ? ((currentRow.avg_uncertainty || 0) * currentTotalForAvg + uncertaintyInc) / nextTotal
+            : 0,
+        severity_breakdown: severityNext,
+      }
+
+      if (existingIndex >= 0) {
+        summary.attack_types[existingIndex] = nextRow
+      } else {
+        summary.attack_types.push(nextRow)
+        summary.attack_types.sort((a, b) => a.attack_type.localeCompare(b.attack_type))
+      }
+
+      const detectorCountPrev = Math.max(0, Number(summary.detector_summary?.count || 0))
+      const detectorCountNext = detectorCountPrev + totalInc
+      summary.detector_summary = {
+        avg_disagreement:
+          detectorCountNext > 0
+            ? ((summary.detector_summary?.avg_disagreement || 0) * detectorCountPrev + disagreementInc) / detectorCountNext
+            : 0,
+        avg_uncertainty:
+          detectorCountNext > 0
+            ? ((summary.detector_summary?.avg_uncertainty || 0) * detectorCountPrev + uncertaintyInc) / detectorCountNext
+            : 0,
+        count: detectorCountNext,
+      }
+
+      return {
+        ...state,
+        runData: nextRunData,
+        attackSummary: summary,
+        selectedAttackType: state.selectedAttackType || attackType,
+      }
+    }
     case 'SET_QUEUE_STATS':
       return { ...state, queueStats: action.data }
     case 'SET_AFK_CAPABILITIES':
@@ -403,6 +570,10 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
   let fetchingRun = false
   let fetchingAnalytics = false
   let fetchedCapabilities = false
+  let streamRefreshInFlight = false
+  let streamRefreshPending = false
+  let lastStreamRefreshAt = 0
+  let lastPeriodicReconcileAt = 0
 
   const mergeEvents = (current: RunEvent[], incoming: RunEvent[]): RunEvent[] => {
     const keyFor = (event: RunEvent) =>
@@ -444,10 +615,101 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
     streamCleanupRef.current?.()
     dispatch({ type: 'SET_STREAMING', active: true })
 
+    const maybeRefreshFromStream = () => {
+      const now = Date.now()
+      if (now - lastStreamRefreshAt < 350) return
+      if (streamRefreshInFlight) {
+        streamRefreshPending = true
+        return
+      }
+      streamRefreshInFlight = true
+      lastStreamRefreshAt = now
+      fetchRunDataInternal(runId)
+        .catch(() => {})
+        .finally(() => {
+          streamRefreshInFlight = false
+          if (streamRefreshPending) {
+            streamRefreshPending = false
+            lastStreamRefreshAt = 0
+            maybeRefreshFromStream()
+          }
+        })
+    }
+
+    const parseProgressDelta = (event: RunEvent): ProgressEventDelta | null => {
+      const data = event.data
+      if (!data || typeof data !== 'object') return null
+      const payload = data as Record<string, unknown>
+      const asNumber = (value: unknown): number | undefined => {
+        const num = Number(value)
+        return Number.isFinite(num) ? num : undefined
+      }
+      const attackRaw =
+        payload.attack_delta && typeof payload.attack_delta === 'object'
+          ? (payload.attack_delta as Record<string, unknown>)
+          : null
+      const attackType = String(attackRaw?.attack_type ?? payload.attack_type ?? '').trim()
+
+      const out: ProgressEventDelta = {
+        completed: asNumber(payload.completed),
+        total: asNumber(payload.total),
+        spent_usd: asNumber(payload.spent_usd),
+        projected_final_usd: asNumber(payload.projected_final_usd),
+      }
+
+      if (attackRaw && attackType) {
+        const severityRaw =
+          attackRaw.severity_inc && typeof attackRaw.severity_inc === 'object'
+            ? (attackRaw.severity_inc as Record<string, unknown>)
+            : {}
+        const severityInc: Record<string, number> = {}
+        for (const [key, value] of Object.entries(severityRaw)) {
+          const num = asNumber(value)
+          if (num !== undefined) severityInc[key] = num
+        }
+        out.attack_delta = {
+          attack_type: attackType,
+          total_inc: asNumber(attackRaw.total_inc) ?? 0,
+          success_inc: asNumber(attackRaw.success_inc) ?? 0,
+          failure_inc: asNumber(attackRaw.failure_inc) ?? 0,
+          confidence_sum_inc: asNumber(attackRaw.confidence_sum_inc) ?? 0,
+          disagreement_sum_inc: asNumber(attackRaw.disagreement_sum_inc) ?? 0,
+          uncertainty_sum_inc: asNumber(attackRaw.uncertainty_sum_inc) ?? 0,
+          severity_inc: severityInc,
+        }
+      }
+      return out
+    }
+
     const wsCleanup = api.streamRunEventsWs(
       runId,
       (evt) => {
-        dispatch({ type: 'ADD_EVENT', event: evt as RunEvent })
+        const runEvent = evt as RunEvent
+        dispatch({ type: 'ADD_EVENT', event: runEvent })
+        const eventType = String(runEvent?.event_type || '')
+        if (eventType === 'progress') {
+          const delta = parseProgressDelta(runEvent)
+          if (delta) {
+            dispatch({ type: 'APPLY_PROGRESS_DELTA', delta })
+          }
+          // Periodic full refresh for reconciliation safety while relying on push deltas.
+          const now = Date.now()
+          if (now - lastPeriodicReconcileAt > 5000) {
+            lastPeriodicReconcileAt = now
+            maybeRefreshFromStream()
+          }
+          return
+        }
+        if (
+          eventType === 'benchmark_ready'
+          || eventType === 'benchmark_rebuilt_for_coverage'
+          || eventType === 'run_started'
+          || eventType === 'run_completed'
+          || eventType === 'run_failed'
+          || eventType === 'cost_gate_breached'
+        ) {
+          maybeRefreshFromStream()
+        }
       },
       () => {
         dispatch({ type: 'SET_STREAMING', active: false })
@@ -581,8 +843,8 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
       } catch { /* ignore */ }
     },
 
-    startStreaming() {
-      const runId = stateRef.current.currentRunId
+    startStreaming(runIdOverride?: string) {
+      const runId = (runIdOverride || stateRef.current.currentRunId || '').trim()
       if (!runId) return
       startStreamingForRun(runId)
     },
@@ -626,6 +888,42 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
           event: {
             event_type: 'error',
             message: `Resume failed: ${message}`,
+            created_at: new Date().toISOString(),
+            data: { run_id: runId },
+          },
+        })
+        return false
+      }
+    },
+
+    async stopRun(runIdOverride?: string) {
+      const runId = (runIdOverride || stateRef.current.currentRunId || '').trim()
+      if (!runId) return false
+      try {
+        const stopped = await api.stopRun(runId)
+        if (stateRef.current.currentRunId === runId) {
+          dispatch({ type: 'SET_RUN_DATA', data: stopped })
+          streamCleanupRef.current?.()
+          streamCleanupRef.current = null
+          dispatch({ type: 'SET_STREAMING', active: false })
+        }
+        dispatch({
+          type: 'ADD_EVENT',
+          event: {
+            event_type: 'run_stop_requested',
+            message: `Run ${runId.slice(0, 8)} stop requested`,
+            created_at: new Date().toISOString(),
+            data: { run_id: runId },
+          },
+        })
+        return true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to stop run'
+        dispatch({
+          type: 'ADD_EVENT',
+          event: {
+            event_type: 'error',
+            message: `Stop failed: ${message}`,
             created_at: new Date().toISOString(),
             data: { run_id: runId },
           },
@@ -680,13 +978,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Auto-poll when run is active
   useEffect(() => {
     if (!state.currentRunId || !state.runData) return
+    if (state.isStreaming) return
     const isActive = ['queued', 'running'].includes(state.runData.status)
     if (!isActive) return
     const interval = setInterval(() => {
       actions.fetchRunData()
     }, 3000)
     return () => clearInterval(interval)
-  }, [state.currentRunId, state.runData?.status, actions])
+  }, [state.currentRunId, state.runData?.status, state.isStreaming, actions])
 
   // Fetch analytics when run completes
   useEffect(() => {

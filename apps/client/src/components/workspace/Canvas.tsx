@@ -464,9 +464,12 @@ function NodeContextMenu({
   onInfo: (node: Node) => void
   onClose: () => void
 }) {
-  const { state, dispatch } = useWorkspace()
+  const { state, dispatch, actions } = useWorkspace()
   const isStudioNode = state.canvasMode === 'studio' && node.type === 'studioRole'
   const nodeData = node.data as { label?: string; role?: string; model?: string; description?: string } | undefined
+  const runStatus = state.runData?.status
+  const canResume = runStatus === 'failed' || runStatus === 'interrupted'
+  const canRerun = Boolean(state.runData)
 
   const handleDuplicate = () => {
     if (!isStudioNode || !nodeData?.label || !nodeData?.role) return
@@ -499,6 +502,43 @@ function NodeContextMenu({
     onInfo(node)
   }
 
+  const handleRunOrRerun = async () => {
+    if (canResume) {
+      const resumed = await actions.resumeRun()
+      if (resumed) toast.success('Run resumed')
+      else toast.error('Failed to resume run')
+      return
+    }
+
+    if (!state.runData) return
+    try {
+      const rerun = await api.createRun({
+        session_id: state.runData.session_id,
+        config_profile_id: state.runData.config_profile_id,
+        preset: state.runData.preset,
+        mode: state.runData.mode,
+        strictness: state.runData.strictness,
+        execute_now: true,
+      })
+      dispatch({ type: 'SET_RUN_ID', runId: rerun.id })
+      dispatch({
+        type: 'ADD_EVENT',
+        event: {
+          event_type: 'run_launched',
+          message: `Run ${rerun.id.slice(0, 8)} launched (rerun)`,
+          created_at: new Date().toISOString(),
+          data: { run_id: rerun.id },
+        },
+      })
+      actions.startStreaming()
+      if (!state.eventsOpen) dispatch({ type: 'TOGGLE_EVENTS' })
+      toast.success(`Rerun launched: ${rerun.id.slice(0, 8)}`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to launch rerun'
+      toast.error(message)
+    }
+  }
+
   const menuX = Math.min(x, window.innerWidth - 220)
   const menuY = Math.min(y, window.innerHeight - 180)
 
@@ -519,6 +559,21 @@ function NodeContextMenu({
       <div className="px-3 py-1.5 text-[11px] text-muted-foreground border-b border-border/40 mb-1">
         {nodeData?.label ?? node.id}
       </div>
+      <button
+        className={cn(
+          'flex items-center gap-2.5 w-full px-3 py-1.5 text-left text-[13px]',
+          canResume || canRerun
+            ? 'text-foreground/80 hover:text-foreground hover:bg-accent/60'
+            : 'text-muted-foreground/50 cursor-not-allowed',
+          'transition-colors duration-100',
+        )}
+        disabled={!canResume && !canRerun}
+        onClick={() => { void handleRunOrRerun(); onClose() }}
+      >
+        <Play className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="flex-1">{canResume ? 'Run' : 'Rerun'}</span>
+      </button>
+      <div className="h-px bg-border/40 my-1" />
       <button
         className={cn(
           'flex items-center gap-2.5 w-full px-3 py-1.5 text-left text-[13px]',

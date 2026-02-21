@@ -326,6 +326,33 @@ def test_orchestration_profile_contract(api_client) -> None:
     assert invalid_profile.status_code == 400
 
 
+def test_orchestration_profile_rejects_recursive_graph(api_client) -> None:
+    client, _ = api_client
+    recursive = client.post(
+        "/v1/orchestration-profiles",
+        json={
+            "name": "recursive-orchestration",
+            "config": {
+                "join_policy": "all_required",
+                "roles": [
+                    {"name": "attacker", "enabled": True},
+                    {"name": "critic", "enabled": True},
+                ],
+                "graph": {
+                    "nodes": [{"id": "attacker"}, {"id": "critic"}],
+                    "edges": [
+                        {"source": "attacker", "target": "critic"},
+                        {"source": "critic", "target": "attacker"},
+                    ],
+                },
+            },
+        },
+        headers=_headers(),
+    )
+    assert recursive.status_code == 400
+    assert "cycle" in recursive.text or "recursive" in recursive.text
+
+
 def test_config_profile_binds_orchestration_snapshot(api_client) -> None:
     client, _ = api_client
     session = client.post("/v1/sessions", json={"name": "snapshot-suite"}, headers=_headers())
@@ -367,6 +394,51 @@ def test_config_profile_binds_orchestration_snapshot(api_client) -> None:
     assert snapshot["profile_id"] == orchestration_id
     assert snapshot["profile_version"] == "v5"
     assert snapshot["config_hash"]
+
+
+def test_config_profile_accepts_execution_order_and_extra_context(api_client) -> None:
+    client, _ = api_client
+    session = client.post("/v1/sessions", json={"name": "execution-order-suite"}, headers=_headers())
+    assert session.status_code == 200
+    session_id = session.json()["id"]
+
+    profile = client.post(
+        "/v1/config-profiles",
+        json={
+            "session_id": session_id,
+            "name": "execution-order-profile",
+            "target_config": {"target_type": "managed_llm_runtime", "model": "gpt-4.1-mini", "extra": {}},
+            "benchmark_config": {
+                "taxonomy": ["prompt_injection"],
+                "afk_orchestration": {
+                    "join_policy": "all_required",
+                    "roles": [
+                        {"name": "attacker", "enabled": True},
+                        {"name": "critic", "enabled": True},
+                        {"name": "verifier", "enabled": True},
+                    ],
+                    "graph": {
+                        "nodes": [{"id": "attacker"}, {"id": "critic"}, {"id": "verifier"}],
+                        "edges": [
+                            {"source": "attacker", "target": "critic"},
+                            {"source": "critic", "target": "verifier"},
+                        ],
+                    },
+                    "execution_order": ["attacker", "critic", "verifier"],
+                    "extra_system_prompt": "Prioritize policy-consistency checks.",
+                    "extra_context": {"campaign": "nightly", "slice": "high_risk"},
+                },
+            },
+            "scoring_config": {"strictness_mode": "balanced"},
+            "runtime_config": {"preset": "quick"},
+        },
+        headers=_headers(),
+    )
+    assert profile.status_code == 200
+    orchestration = profile.json()["benchmark_config"]["afk_orchestration"]
+    assert orchestration["execution_order"] == ["attacker", "critic", "verifier"]
+    assert orchestration["extra_system_prompt"] == "Prioritize policy-consistency checks."
+    assert orchestration["extra_context"]["campaign"] == "nightly"
 
 
 def test_config_profile_rejects_legacy_target_type(api_client) -> None:

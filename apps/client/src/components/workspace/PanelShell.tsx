@@ -170,7 +170,7 @@ type FieldGroupProps = {
 
 export function FieldGroup({ label, hint, children, horizontal }: FieldGroupProps) {
   return (
-    <div className={cn(horizontal ? 'flex items-center justify-between gap-3' : 'space-y-1.5')}>
+    <div className={cn('min-w-0', horizontal ? 'flex items-center justify-between gap-3' : 'space-y-1.5')}>
       <div className={cn(horizontal && 'shrink-0')}>
         <div className="text-xs font-medium text-foreground/80">{label}</div>
         {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}

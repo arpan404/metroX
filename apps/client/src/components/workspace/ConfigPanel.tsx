@@ -1384,7 +1384,7 @@ export function ConfigPanel() {
               <FieldGroup label={helpLabel('Profile Name', 'Saved config profile name for reuse.')}>
                 <Input value={profileName} onChange={(e) => setProfileName(e.target.value)} className="h-7 text-xs" />
               </FieldGroup>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <FieldGroup label={helpLabel('Run Mode', 'Single Run is deterministic. Nightly is for recurring monitoring.')}>
                   <Select value={mode} onValueChange={setMode}>
                     <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>

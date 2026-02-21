@@ -289,11 +289,11 @@ export function StudioInspectorPanel() {
       width="w-[430px] lg:w-[500px]"
       footer={
         selectedNode && draft ? (
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-[10px] text-muted-foreground">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 text-[10px] text-muted-foreground">
               Saved values are written into <code>benchmark_config.afk_orchestration.roles</code>.
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center justify-end gap-1.5 sm:flex-nowrap">
               <Button
                 type="button"
                 variant="outline"
@@ -359,7 +359,7 @@ export function StudioInspectorPanel() {
               </div>
             }
           >
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
               {studioNodes.map((node) => {
                 const active = node.id === selectedNode.id
                 const accent = roleBadgeClass(node.data.role)
@@ -369,7 +369,7 @@ export function StudioInspectorPanel() {
                     type="button"
                     onClick={() => selectNode(node.id)}
                     className={cn(
-                      'rounded-lg border px-2 py-1.5 text-left transition-colors',
+                      'min-w-0 rounded-lg border px-2 py-1.5 text-left transition-colors',
                       active
                         ? cn('bg-primary/15 border-primary/55', accent)
                         : cn('bg-background/55 border-border/45 hover:border-primary/35', accent),
@@ -384,7 +384,7 @@ export function StudioInspectorPanel() {
           </PanelSection>
 
           <PanelSection title="Runtime Connection" description="Exact LLM runtime controls for this node">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <FieldGroup label="Enabled" horizontal>
                 <Switch checked={draft.enabled} onCheckedChange={(value) => updateDraft({ enabled: value })} />
               </FieldGroup>
@@ -410,7 +410,7 @@ export function StudioInspectorPanel() {
               />
             </FieldGroup>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <FieldGroup label="Model" hint="Runtime model for this node">
                 <Input
                   value={draft.model}

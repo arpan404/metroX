@@ -55,7 +55,7 @@ export function CommandBar() {
       transition={{ type: 'spring', stiffness: 400, damping: 30, delay: 0.05 }}
       className={cn(
         'absolute bottom-3 left-1/2 -translate-x-1/2 z-40',
-        'flex items-center gap-1 px-2 h-10',
+        'flex items-center gap-1 px-1.5 h-9',
         'rounded-xl border border-border/70 bg-background/95 dark:border-border/50 dark:bg-background/75 backdrop-blur-2xl backdrop-saturate-150',
         'shadow-[0_4px_24px_-8px_rgba(0,0,0,0.35)]',
       )}
@@ -69,7 +69,7 @@ export function CommandBar() {
               variant="ghost"
               size="sm"
               className={cn(
-                'h-7 px-2.5 text-[11px] rounded-lg',
+                'h-[26px] px-2 text-[10px] rounded-lg',
                 state.canvasMode === 'evaluate' && 'bg-primary/15 text-primary',
               )}
               onClick={() => dispatch({ type: 'SET_CANVAS_MODE', mode: 'evaluate' as CanvasMode })}
@@ -86,7 +86,7 @@ export function CommandBar() {
               variant="ghost"
               size="sm"
               className={cn(
-                'h-7 px-2.5 text-[11px] rounded-lg',
+                'h-[26px] px-2 text-[10px] rounded-lg',
                 state.canvasMode === 'studio' && 'bg-primary/15 text-primary',
               )}
               onClick={() => dispatch({ type: 'SET_CANVAS_MODE', mode: 'studio' as CanvasMode })}
@@ -103,7 +103,7 @@ export function CommandBar() {
               variant="ghost"
               size="sm"
               className={cn(
-                'h-7 px-2.5 text-[11px] rounded-lg',
+                'h-[26px] px-2 text-[10px] rounded-lg',
                 isActive('config') && 'bg-primary/15 text-primary',
               )}
               onClick={() => togglePanel('config')}
@@ -127,11 +127,11 @@ export function CommandBar() {
           <Button
             variant="ghost"
             size="icon"
-            className={cn('h-7 w-7', isActive('analytics') && 'bg-primary/15 text-primary')}
+            className={cn('h-[26px] w-[26px] rounded-lg', isActive('analytics') && 'bg-primary/15 text-primary')}
             onClick={() => togglePanel('analytics')}
             data-onboarding="analytics-trigger"
           >
-            <BarChart3 className="h-3.5 w-3.5" />
+            <BarChart3 className="h-3 w-3" />
           </Button>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
@@ -144,10 +144,10 @@ export function CommandBar() {
           <Button
             variant="ghost"
             size="icon"
-            className={cn('h-7 w-7', isActive('settings') && 'bg-primary/15 text-primary')}
+            className={cn('h-[26px] w-[26px] rounded-lg', isActive('settings') && 'bg-primary/15 text-primary')}
             onClick={() => togglePanel('settings')}
           >
-            <Settings2 className="h-3.5 w-3.5" />
+            <Settings2 className="h-3 w-3" />
           </Button>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
@@ -160,10 +160,10 @@ export function CommandBar() {
           <Button
             variant="ghost"
             size="icon"
-            className={cn('h-7 w-7', isActive('studio-inspector') && 'bg-primary/15 text-primary')}
+            className={cn('h-[26px] w-[26px] rounded-lg', isActive('studio-inspector') && 'bg-primary/15 text-primary')}
             onClick={() => togglePanel('studio-inspector')}
           >
-            <Boxes className="h-3.5 w-3.5" />
+            <Boxes className="h-3 w-3" />
           </Button>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
@@ -176,10 +176,10 @@ export function CommandBar() {
           <Button
             variant="ghost"
             size="icon"
-            className={cn('h-7 w-7', isActive('queue-center') && 'bg-primary/15 text-primary')}
+            className={cn('h-[26px] w-[26px] rounded-lg', isActive('queue-center') && 'bg-primary/15 text-primary')}
             onClick={() => togglePanel('queue-center')}
           >
-            <ListTodo className="h-3.5 w-3.5" />
+            <ListTodo className="h-3 w-3" />
           </Button>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
@@ -212,10 +212,10 @@ export function CommandBar() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className={cn('h-7 w-7', color)}
+                    className={cn('h-[26px] w-[26px] rounded-lg', color)}
                     onClick={() => studioAddNode(role)}
                   >
-                    <Icon className="h-3.5 w-3.5" />
+                    <Icon className="h-3 w-3" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="text-xs capitalize">Add {role}</TooltipContent>
@@ -232,7 +232,7 @@ export function CommandBar() {
             variant="ghost"
             size="sm"
             className={cn(
-              'h-7 px-2.5 text-[11px] rounded-lg font-mono',
+              'h-[26px] px-2 text-[10px] rounded-lg font-mono',
               state.eventsOpen && 'bg-primary/15 text-primary',
             )}
             onClick={toggleEvents}

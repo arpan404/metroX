@@ -289,16 +289,16 @@ export function StudioInspectorPanel() {
       width="w-[430px] lg:w-[500px]"
       footer={
         selectedNode && draft ? (
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0 text-[10px] text-muted-foreground">
+          <div className="flex flex-col gap-2">
+            <div className="min-w-0 text-[10px] leading-snug text-muted-foreground">
               Saved values are written into <code>benchmark_config.afk_orchestration.roles</code>.
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-1.5 sm:flex-nowrap">
+            <div className="flex flex-wrap items-center justify-start gap-1.5">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-7 text-[10px]"
+                className="h-7 shrink-0 text-[10px]"
                 onClick={resetDraft}
                 disabled={!hasUnsavedChanges}
               >
@@ -309,7 +309,7 @@ export function StudioInspectorPanel() {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-7 text-[10px]"
+                className="h-7 shrink-0 text-[10px]"
                 onClick={() => persistDraft({ openRunSetup: true })}
                 disabled={!hasUnsavedChanges}
               >
@@ -319,7 +319,7 @@ export function StudioInspectorPanel() {
               <Button
                 type="button"
                 size="sm"
-                className="h-7 text-[10px]"
+                className="h-7 shrink-0 text-[10px]"
                 onClick={() => persistDraft()}
                 disabled={!hasUnsavedChanges}
               >

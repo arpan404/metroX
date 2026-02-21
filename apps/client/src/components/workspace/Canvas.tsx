@@ -11,6 +11,7 @@ import ReactFlow, {
   type Edge,
   BackgroundVariant,
   Panel,
+  MarkerType,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import { useWorkspace } from '@/stores/workspace-store'
@@ -141,7 +142,16 @@ export function Canvas() {
         ...n,
         type: 'studioRole',
       })),
-      edges: state.studioEdges,
+      edges: state.studioEdges.map((edge) => ({
+        ...edge,
+        animated: true,
+        className: 'flow-edge',
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 18,
+          height: 18,
+        },
+      })),
     }
   }, [state.canvasMode, state.runData, state.attackSummary, state.scorecard, state.riskCards, state.studioNodes, state.studioEdges])
 
@@ -216,6 +226,7 @@ export function Canvas() {
         minZoom={0.15}
         maxZoom={2.5}
         className="workspace-canvas"
+        data-canvas-mode={state.canvasMode}
       >
         <Background
           variant={BackgroundVariant.Dots}

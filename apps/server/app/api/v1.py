@@ -6,6 +6,7 @@ import asyncio
 from pathlib import Path
 from datetime import datetime, timezone
 from datetime import timedelta
+from typing import Any
 from uuid import uuid4
 
 import httpx
@@ -21,6 +22,7 @@ from app.models import (
     AFKRunState,
     Adjudication,
     AttackCase,
+    BenchmarkSnapshot,
     ConfigProfile,
     ConfigSnapshot,
     Detection,
@@ -106,6 +108,13 @@ _SENSITIVE_HEADER_NAMES = frozenset({
     "authorization", "x-api-key", "api-key", "x-auth-token",
     "proxy-authorization", "cookie", "set-cookie",
 })
+_DETECTOR_FAILURE_KEYS = (
+    "hallucination",
+    "jailbreak_success",
+    "prompt_injection_success",
+    "tool_misuse",
+    "toxicity",
+)
 
 
 def _redact_target_config(target_config: dict) -> dict:
@@ -1337,8 +1346,21 @@ def get_features(run_id: str, db: Session = Depends(get_db)) -> FeatureOut:
 
 
 @router.get("/runs/{run_id}/detector-votes")
-def get_detector_votes(run_id: str, db: Session = Depends(get_db)) -> dict:
-    execution_ids = [row[0] for row in db.query(Execution.id).filter(Execution.run_id == run_id).all()]
+def get_detector_votes(
+    run_id: str,
+    attack_type: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
+    execution_query = (
+        db.query(Execution.id, AttackCase.attack_type)
+        .join(AttackCase, AttackCase.id == Execution.attack_case_id)
+        .filter(Execution.run_id == run_id)
+    )
+    if attack_type:
+        execution_query = execution_query.filter(AttackCase.attack_type == attack_type)
+    execution_rows = execution_query.all()
+    execution_ids = [row[0] for row in execution_rows]
+    attack_type_by_execution = {execution_id: str(kind or "unknown") for execution_id, kind in execution_rows}
     if not execution_ids:
         return {"run_id": run_id, "votes": []}
     rows = (
@@ -1353,6 +1375,7 @@ def get_detector_votes(run_id: str, db: Session = Depends(get_db)) -> dict:
             {
                 "id": row.id,
                 "execution_id": row.execution_id,
+                "attack_type": attack_type_by_execution.get(row.execution_id, "unknown"),
                 "detector_name": row.detector_name,
                 "failure_flags": row.failure_flags,
                 "confidence": row.confidence,
@@ -1362,6 +1385,174 @@ def get_detector_votes(run_id: str, db: Session = Depends(get_db)) -> dict:
             }
             for row in rows
         ],
+    }
+
+
+@router.get("/runs/{run_id}/detector-votes-summary")
+def get_detector_votes_summary(
+    run_id: str,
+    attack_type: str | None = Query(default=None),
+    limit_raw: int = Query(default=100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+) -> dict:
+    run = db.query(Run).filter(Run.id == run_id).one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    execution_query = (
+        db.query(Execution.id, AttackCase.attack_type)
+        .join(AttackCase, AttackCase.id == Execution.attack_case_id)
+        .filter(Execution.run_id == run_id)
+    )
+    if attack_type:
+        execution_query = execution_query.filter(AttackCase.attack_type == attack_type)
+    execution_rows = execution_query.all()
+    execution_ids = [row[0] for row in execution_rows]
+    attack_type_by_execution = {execution_id: str(kind or "unknown") for execution_id, kind in execution_rows}
+
+    if not execution_ids:
+        return {
+            "run_id": run_id,
+            "attack_type": attack_type,
+            "totals": {
+                "votes": 0,
+                "executions": 0,
+                "detectors": 0,
+                "fail_votes": 0,
+                "pass_votes": 0,
+                "avg_confidence": 0.0,
+                "avg_latency_ms": 0.0,
+            },
+            "detectors": [],
+            "consensus": {
+                "avg_disagreement": 0.0,
+                "avg_uncertainty": 0.0,
+            },
+            "raw_sample": [],
+        }
+
+    vote_rows = (
+        db.query(DetectionVote)
+        .filter(DetectionVote.execution_id.in_(execution_ids))
+        .order_by(DetectionVote.created_at.desc())
+        .all()
+    )
+    detection_rows = (
+        db.query(Detection)
+        .filter(Detection.execution_id.in_(execution_ids))
+        .all()
+    )
+
+    detector_buckets: dict[str, dict[str, Any]] = {}
+    total_fail_votes = 0
+    confidence_sum = 0.0
+    latency_sum = 0.0
+
+    for row in vote_rows:
+        has_fail = any(bool(v) for v in (row.failure_flags or {}).values())
+        if has_fail:
+            total_fail_votes += 1
+        confidence_sum += float(row.confidence or 0.0)
+        latency_sum += float(row.latency_ms or 0.0)
+
+        bucket = detector_buckets.setdefault(
+            row.detector_name,
+            {
+                "detector_name": row.detector_name,
+                "votes": 0,
+                "fail_votes": 0,
+                "pass_votes": 0,
+                "confidence_sum": 0.0,
+                "latency_sum": 0.0,
+                "failure_key_hits": {key: 0 for key in _DETECTOR_FAILURE_KEYS},
+            },
+        )
+        bucket["votes"] += 1
+        bucket["confidence_sum"] += float(row.confidence or 0.0)
+        bucket["latency_sum"] += float(row.latency_ms or 0.0)
+        if has_fail:
+            bucket["fail_votes"] += 1
+        else:
+            bucket["pass_votes"] += 1
+        flags = row.failure_flags or {}
+        for key in _DETECTOR_FAILURE_KEYS:
+            if bool(flags.get(key)):
+                bucket["failure_key_hits"][key] += 1
+
+    total_votes = len(vote_rows)
+    total_pass_votes = total_votes - total_fail_votes
+    detectors_payload = []
+    detector_votes_total = 0
+    for detector_name in sorted(detector_buckets.keys()):
+        bucket = detector_buckets[detector_name]
+        votes_count = int(bucket["votes"])
+        detector_votes_total += votes_count
+        fail_votes = int(bucket["fail_votes"])
+        pass_votes = int(bucket["pass_votes"])
+        if fail_votes + pass_votes != votes_count:
+            raise HTTPException(status_code=500, detail="Detector vote totals invariant failed")
+
+        detectors_payload.append(
+            {
+                "detector_name": detector_name,
+                "votes": votes_count,
+                "fail_votes": fail_votes,
+                "pass_votes": pass_votes,
+                "fail_rate": float(fail_votes) / max(votes_count, 1),
+                "avg_confidence": float(bucket["confidence_sum"]) / max(votes_count, 1),
+                "avg_latency_ms": float(bucket["latency_sum"]) / max(votes_count, 1),
+                "failure_key_rates": {
+                    key: float(bucket["failure_key_hits"][key]) / max(votes_count, 1)
+                    for key in _DETECTOR_FAILURE_KEYS
+                },
+            }
+        )
+
+    if detector_votes_total != total_votes:
+        raise HTTPException(status_code=500, detail="Detector totals do not reconcile with vote count")
+
+    detectors_payload.sort(key=lambda row: (-float(row["fail_rate"]), -int(row["votes"]), str(row["detector_name"])))
+
+    consensus = {
+        "avg_disagreement": float(
+            sum(float(item.disagreement_score or 0.0) for item in detection_rows) / max(len(detection_rows), 1)
+        ),
+        "avg_uncertainty": float(
+            sum(float(item.uncertainty or 0.0) for item in detection_rows) / max(len(detection_rows), 1)
+        ),
+    }
+
+    raw_sample = []
+    for row in vote_rows[:limit_raw]:
+        raw_sample.append(
+            {
+                "id": row.id,
+                "execution_id": row.execution_id,
+                "attack_type": attack_type_by_execution.get(row.execution_id, "unknown"),
+                "detector_name": row.detector_name,
+                "failure_flags": row.failure_flags,
+                "confidence": float(row.confidence or 0.0),
+                "evidence": row.evidence,
+                "latency_ms": float(row.latency_ms or 0.0),
+                "created_at": row.created_at.isoformat(),
+            }
+        )
+
+    return {
+        "run_id": run_id,
+        "attack_type": attack_type,
+        "totals": {
+            "votes": total_votes,
+            "executions": len(execution_ids),
+            "detectors": len(detectors_payload),
+            "fail_votes": total_fail_votes,
+            "pass_votes": total_pass_votes,
+            "avg_confidence": confidence_sum / max(total_votes, 1),
+            "avg_latency_ms": latency_sum / max(total_votes, 1),
+        },
+        "detectors": detectors_payload,
+        "consensus": consensus,
+        "raw_sample": raw_sample,
     }
 
 
@@ -1376,6 +1567,44 @@ def get_attack_summary(run_id: str, db: Session = Depends(get_db)) -> dict:
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
+    def _empty_attack_row(kind: str) -> dict[str, Any]:
+        return {
+            "attack_type": kind,
+            "total": 0,
+            "success": 0,
+            "failure": 0,
+            "success_rate": 0.0,
+            "avg_confidence": 0.0,
+            "avg_disagreement": 0.0,
+            "avg_uncertainty": 0.0,
+            "severity_breakdown": {"critical": 0, "high": 0, "medium": 0, "low": 0},
+        }
+
+    taxonomy: list[str] = []
+    # Defensive local import avoids hot-reload edge cases where module-level symbol binding lags.
+    try:
+        from app.models import BenchmarkSnapshot as _BenchmarkSnapshot
+    except Exception:
+        _BenchmarkSnapshot = None
+    if _BenchmarkSnapshot is not None:
+        benchmark_snapshot = (
+            db.query(_BenchmarkSnapshot)
+            .filter(_BenchmarkSnapshot.run_id == run_id)
+            .order_by(_BenchmarkSnapshot.created_at.desc())
+            .first()
+        )
+        if benchmark_snapshot and isinstance(benchmark_snapshot.meta, dict):
+            meta_taxonomy = benchmark_snapshot.meta.get("taxonomy")
+            if isinstance(meta_taxonomy, list):
+                taxonomy = [str(item).strip() for item in meta_taxonomy if str(item).strip()]
+
+    if not taxonomy:
+        profile = db.query(ConfigProfile).filter(ConfigProfile.id == run.config_profile_id).one_or_none()
+        benchmark_cfg = profile.benchmark_config if profile and isinstance(profile.benchmark_config, dict) else {}
+        cfg_taxonomy = benchmark_cfg.get("taxonomy")
+        if isinstance(cfg_taxonomy, list):
+            taxonomy = [str(item).strip() for item in cfg_taxonomy if str(item).strip()]
+
     execution_rows = (
         db.query(Execution.id, AttackCase.attack_type)
         .join(AttackCase, AttackCase.id == Execution.attack_case_id)
@@ -1383,7 +1612,12 @@ def get_attack_summary(run_id: str, db: Session = Depends(get_db)) -> dict:
         .all()
     )
     if not execution_rows:
-        return {"run_id": run_id, "attack_types": [], "detector_summary": {"avg_disagreement": 0.0, "avg_uncertainty": 0.0}}
+        attack_types = [_empty_attack_row(kind) for kind in sorted(set(taxonomy))]
+        return {
+            "run_id": run_id,
+            "attack_types": attack_types,
+            "detector_summary": {"avg_disagreement": 0.0, "avg_uncertainty": 0.0, "count": 0},
+        }
 
     attack_type_by_execution = {execution_id: attack_type for execution_id, attack_type in execution_rows}
     detections = (
@@ -1392,21 +1626,10 @@ def get_attack_summary(run_id: str, db: Session = Depends(get_db)) -> dict:
         .all()
     )
 
-    summary: dict[str, dict] = {}
+    summary: dict[str, dict] = {kind: _empty_attack_row(kind) for kind in sorted(set(taxonomy))}
     for detection in detections:
         attack_type = attack_type_by_execution.get(detection.execution_id, "unknown")
-        row = summary.setdefault(
-            attack_type,
-            {
-                "attack_type": attack_type,
-                "total": 0,
-                "success": 0,
-                "failure": 0,
-                "success_rate": 0.0,
-                "avg_confidence": 0.0,
-                "severity_breakdown": {"critical": 0, "high": 0, "medium": 0, "low": 0},
-            },
-        )
+        row = summary.setdefault(attack_type, _empty_attack_row(attack_type))
         row["total"] += 1
         was_success = any(detection.failure_flags.values())
         if was_success:
@@ -1414,6 +1637,8 @@ def get_attack_summary(run_id: str, db: Session = Depends(get_db)) -> dict:
         else:
             row["failure"] += 1
         row["avg_confidence"] += float(detection.confidence)
+        row["avg_disagreement"] += float(detection.disagreement_score or 0.0)
+        row["avg_uncertainty"] += float(detection.uncertainty or 0.0)
         sev = str(detection.severity or "low").lower()
         if sev not in row["severity_breakdown"]:
             sev = "low"
@@ -1424,6 +1649,8 @@ def get_attack_summary(run_id: str, db: Session = Depends(get_db)) -> dict:
         total = max(int(row["total"]), 1)
         row["success_rate"] = float(row["success"]) / total
         row["avg_confidence"] = float(row["avg_confidence"]) / total
+        row["avg_disagreement"] = float(row["avg_disagreement"]) / total
+        row["avg_uncertainty"] = float(row["avg_uncertainty"]) / total
         ordered.append(row)
 
     avg_disagreement = float(sum(float(item.disagreement_score or 0.0) for item in detections) / max(len(detections), 1))
@@ -1465,13 +1692,17 @@ def get_node_telemetry(run_id: str, db: Session = Depends(get_db)) -> dict:
                 "failure": 0,
                 "avg_latency_ms": 0.0,
                 "cost_usd": 0.0,
+                "effective_cost_usd": 0.0,
                 "policy_decisions": 0,
+                "policy_events": 0,
                 "tool_events": 0,
             },
         )
         row["total"] += 1
         row["avg_latency_ms"] += float(execution.latency_ms or 0.0)
-        row["cost_usd"] += float(cost.effective_cost_usd if cost else 0.0)
+        effective_cost_usd = float(cost.effective_cost_usd if cost else 0.0)
+        row["cost_usd"] += effective_cost_usd
+        row["effective_cost_usd"] += effective_cost_usd
         flags = detection.failure_flags if detection else {}
         is_success = any(flags.values()) if isinstance(flags, dict) else False
         if is_success:
@@ -1482,6 +1713,7 @@ def get_node_telemetry(run_id: str, db: Session = Depends(get_db)) -> dict:
             row["tool_events"] += 1
             if str(event.get("event_type", "")).strip() == "policy_decision":
                 row["policy_decisions"] += 1
+                row["policy_events"] += 1
 
     payload = []
     for attack, row in sorted(by_attack.items(), key=lambda item: item[0]):

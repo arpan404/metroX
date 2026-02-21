@@ -259,7 +259,11 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
       }
       return { ...state, canvasMode: action.mode, selectedNodeId: null, selectedAttackType: null }
     case 'SELECT_NODE':
-      return { ...state, selectedNodeId: action.nodeId, selectedAttackType: action.attackType ?? null }
+      return {
+        ...state,
+        selectedNodeId: action.nodeId,
+        selectedAttackType: action.attackType === undefined ? state.selectedAttackType : action.attackType,
+      }
     case 'OPEN_PANEL':
       return { ...state, activePanel: action.panel }
     case 'CLOSE_PANEL':
@@ -275,7 +279,15 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
     case 'SET_SCORECARD':
       return { ...state, scorecard: action.data }
     case 'SET_ATTACK_SUMMARY':
-      return { ...state, attackSummary: action.data }
+      return {
+        ...state,
+        attackSummary: action.data,
+        selectedAttackType: (() => {
+          const available = new Set((action.data.attack_types ?? []).map((row) => row.attack_type))
+          if (state.selectedAttackType && available.has(state.selectedAttackType)) return state.selectedAttackType
+          return action.data.attack_types?.[0]?.attack_type ?? null
+        })(),
+      }
     case 'SET_RISK_CARDS':
       return { ...state, riskCards: action.data }
     case 'SET_COST_SUMMARY':
@@ -403,6 +415,9 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
   let fetchingRun = false
   let fetchingAnalytics = false
   let fetchedCapabilities = false
+  let streamRefreshInFlight = false
+  let streamRefreshPending = false
+  let lastStreamRefreshAt = 0
 
   const mergeEvents = (current: RunEvent[], incoming: RunEvent[]): RunEvent[] => {
     const keyFor = (event: RunEvent) =>
@@ -444,10 +459,42 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
     streamCleanupRef.current?.()
     dispatch({ type: 'SET_STREAMING', active: true })
 
+    const maybeRefreshFromStream = () => {
+      const now = Date.now()
+      if (now - lastStreamRefreshAt < 350) return
+      if (streamRefreshInFlight) {
+        streamRefreshPending = true
+        return
+      }
+      streamRefreshInFlight = true
+      lastStreamRefreshAt = now
+      fetchRunDataInternal(runId)
+        .catch(() => {})
+        .finally(() => {
+          streamRefreshInFlight = false
+          if (streamRefreshPending) {
+            streamRefreshPending = false
+            lastStreamRefreshAt = 0
+            maybeRefreshFromStream()
+          }
+        })
+    }
+
     const wsCleanup = api.streamRunEventsWs(
       runId,
       (evt) => {
         dispatch({ type: 'ADD_EVENT', event: evt as RunEvent })
+        const eventType = String((evt as RunEvent)?.event_type || '')
+        if (
+          eventType === 'progress'
+          || eventType === 'benchmark_ready'
+          || eventType === 'run_started'
+          || eventType === 'run_completed'
+          || eventType === 'run_failed'
+          || eventType === 'cost_gate_breached'
+        ) {
+          maybeRefreshFromStream()
+        }
       },
       () => {
         dispatch({ type: 'SET_STREAMING', active: false })

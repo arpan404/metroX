@@ -24,10 +24,10 @@ const { apiMock, dispatchMock, actionsMock, workspaceStateMock } = vi.hoisted(()
     configProfileId: null,
     currentRunId: null,
     baselineRunId: null,
-    studioNodes: [],
-    studioEdges: [],
+    studioNodes: [] as any[],
+    studioEdges: [] as any[],
     eventsOpen: false,
-  },
+  } as any,
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -225,5 +225,48 @@ describe('ConfigPanel', () => {
     expect(attackerNode.data.runtime_provider).toBe('openai')
     expect(attackerNode.data.api_key_ref).toBe('cred-openai')
     expect(attackerNode.data.base_url).toBe('https://api.openai.com/v1')
+  })
+
+  it('auto-saves a new profile when existing profile mode is dirty', async () => {
+    const user = userEvent.setup()
+    workspaceStateMock.sessionId = 'session-existing'
+    workspaceStateMock.configProfileId = 'profile-existing'
+    apiMock.listConfigProfiles.mockResolvedValue({
+      profiles: [
+        {
+          id: 'profile-existing',
+          session_id: 'session-existing',
+          name: 'saved-profile',
+          strictness_mode: 'balanced',
+          target_config: {
+            target_type: 'agent_http',
+            model: 'ollama_chat/gpt-oss:20b',
+            agent_id: 'refund',
+            agent_name: 'financial-agent',
+            agent_description: 'Financial assistant agent under fraud-resilience testing.',
+          },
+          benchmark_config: {
+            taxonomy: ['prompt_injection', 'jailbreak', 'hallucination'],
+            curated_ratio: 0.6,
+            seed: 42,
+            agentic_attacking: true,
+            afk_orchestration: {},
+          },
+          scoring_config: { strictness_mode: 'balanced' },
+          runtime_config: { preset: 'quick', max_concurrency: 8, budget_usd: 5, live_mode: false },
+          created_at: new Date().toISOString(),
+        },
+      ],
+      total: 1,
+    })
+
+    renderConfigPanel()
+    await waitFor(() => expect(apiMock.listConfigProfiles).toHaveBeenCalled())
+
+    // Change scenario taxonomy => dirty profile while existing mode remains selected
+    await user.click(screen.getByText('Data Exfiltration'))
+    await user.click(screen.getByRole('button', { name: /launch run/i }))
+
+    await waitFor(() => expect(apiMock.createConfigProfile).toHaveBeenCalledTimes(1))
   })
 })

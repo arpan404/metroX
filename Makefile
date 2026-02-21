@@ -106,6 +106,10 @@ dev-test-agents:
 	cd apps/test-agents && uv run uvicorn main:app --reload --host 127.0.0.1 --port $(TEST_AGENTS_PORT)
 
 dev-worker:
+	@if command -v pkill >/dev/null 2>&1; then \
+		pkill -f "python -m app.worker" >/dev/null 2>&1 || true; \
+		pkill -f "uv run python -m app.worker" >/dev/null 2>&1 || true; \
+	fi
 	cd apps/server && uv run python -m app.worker
 
 # Goal shims so selector invocations work without "No rule to make target".

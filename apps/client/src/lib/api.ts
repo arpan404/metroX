@@ -9,6 +9,7 @@ import type {
   CostSummaryPayload,
   CostTimeseriesPayload,
   DetectorVote,
+  DetectorVoteSummaryPayload,
   DriftPayload,
   ExecutionSlicesPayload,
   FeaturePayload,
@@ -396,6 +397,14 @@ export const api = {
 
   getDetectorVotes(runId: string) {
     return request<{ run_id: string; votes: DetectorVote[] }>(`/v1/runs/${runId}/detector-votes`)
+  },
+
+  getDetectorVotesSummary(runId: string, attackType?: string, limitRaw = 100) {
+    const params = new URLSearchParams()
+    if (attackType) params.set('attack_type', attackType)
+    params.set('limit_raw', String(limitRaw))
+    const suffix = params.toString() ? `?${params.toString()}` : ''
+    return request<DetectorVoteSummaryPayload>(`/v1/runs/${runId}/detector-votes-summary${suffix}`)
   },
 
   getFeatures(runId: string) {

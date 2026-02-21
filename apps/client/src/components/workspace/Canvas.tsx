@@ -165,6 +165,15 @@ export function Canvas() {
     setEdges(graphData.edges)
   }, [graphData, setNodes, setEdges])
 
+  // Keep evaluate-mode detail panel useful by preselecting the first attack node when available.
+  useEffect(() => {
+    if (state.canvasMode !== 'evaluate') return
+    if (state.selectedAttackType) return
+    const firstAttackType = state.attackSummary?.attack_types?.[0]?.attack_type
+    if (!firstAttackType) return
+    dispatch({ type: 'SELECT_NODE', nodeId: `attack-${firstAttackType}`, attackType: firstAttackType })
+  }, [dispatch, state.attackSummary, state.canvasMode, state.selectedAttackType])
+
   const onConnect = useCallback(
     (connection: Connection) => {
       setEdges((eds) => addEdge(connection, eds))
@@ -191,6 +200,8 @@ export function Canvas() {
       // Auto-open attack detail for attack nodes
       if (attackType) {
         dispatch({ type: 'OPEN_PANEL', panel: 'attack-detail' })
+      } else if (node.id === 'metrics-summary') {
+        dispatch({ type: 'OPEN_PANEL', panel: 'analytics' })
       } else if (state.canvasMode === 'studio' && node.type === 'studioRole') {
         dispatch({ type: 'OPEN_PANEL', panel: 'studio-inspector' })
       }

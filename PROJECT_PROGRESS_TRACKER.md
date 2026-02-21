@@ -6,6 +6,19 @@
 | M10 | V1.11 AFK-only runtime + detector/key/provider hardening + shadcn revamp | DONE |
 | M11 | Finance demo revamp: test-agent dropdown + multi-turn target thread persistence | DONE |
 | M12 | Session/profile/run history control + profile-scoped run reuse | DONE |
+| M13 | Stats reliability + DS analytics revamp (scoped votes + detailed summaries) | DONE |
+
+## M13 Feature Status
+| Area | Feature | Status | Notes |
+|---|---|---|---|
+| API | `GET /v1/runs/{id}/detector-votes-summary` | DONE | Attack-type scoped aggregates + consensus + raw sample |
+| API | `GET /v1/runs/{id}/detector-votes` additive `attack_type` | DONE | Backward compatible raw vote enrichment |
+| API | `GET /v1/runs/{id}/attack-summary` per-attack disagreement/uncertainty | DONE | Added `avg_disagreement`, `avg_uncertainty` to attack rows |
+| API | `GET /v1/runs/{id}/node-telemetry` alias key compatibility | DONE | Emits `cost_usd/effective_cost_usd` and `policy_decisions/policy_events` |
+| Frontend | Attack Detail scoped analytics tabs | DONE | Overview + Detectors + Raw Votes + Telemetry |
+| Frontend | Attack selection resilience | DONE | First attack auto-selected from summary; pane click keeps selected attack context |
+| Frontend | Data Science analytics tab | DONE | Distribution, detector fail-rate, disagreement/uncertainty, latency-cost frontier |
+| Tests | API contract + integration coverage updates | DONE | Added detector summary + telemetry alias assertions |
 
 ## M12 Feature Status
 | Area | Feature | Status | Notes |

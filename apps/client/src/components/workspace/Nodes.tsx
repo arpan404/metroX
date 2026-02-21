@@ -324,6 +324,7 @@ type StudioRoleNodeData = {
   enabled?: boolean
   runtime_provider?: string
   api_key_ref?: string
+  base_url?: string
   instruction_file?: string
   instructions?: string
 }
@@ -364,6 +365,9 @@ export const StudioRoleNode = memo(function StudioRoleNode({ data, selected }: N
       )}
       {data.runtime_provider && (
         <p className="text-[10px] text-muted-foreground/80 truncate">provider: <span className="font-mono">{data.runtime_provider}</span></p>
+      )}
+      {data.base_url && (
+        <p className="text-[10px] text-muted-foreground/75 truncate">endpoint: <span className="font-mono">{data.base_url}</span></p>
       )}
       {data.description && (
         <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{data.description}</p>

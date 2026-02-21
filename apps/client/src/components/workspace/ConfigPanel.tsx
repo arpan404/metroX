@@ -166,7 +166,7 @@ export function ConfigPanel() {
   const [lastLoadedProfileId, setLastLoadedProfileId] = useState<string | null>(null)
 
   // ─── Target ───
-  const [model, setModel] = useState('gpt-4.1-mini')
+  const [model, setModel] = useState('ollama_chat/gpt-oss:20b')
   const [agentId, setAgentId] = useState('refund')
   const [agentName, setAgentName] = useState('financial-agent')
   const [agentDescription, setAgentDescription] = useState('Financial assistant agent under fraud-resilience testing.')
@@ -178,8 +178,8 @@ export function ConfigPanel() {
   const [seed, setSeed] = useState(42)
   const [curatedRatio, setCuratedRatio] = useState(0.6)
   const [agenticAttacking, setAgenticAttacking] = useState(true)
-  const [agenticProvider, setAgenticProvider] = useState<'auto' | 'afk_live'>('auto')
-  const [agenticModel, setAgenticModel] = useState('')
+  const [agenticProvider, setAgenticProvider] = useState<'auto' | 'afk_live'>('afk_live')
+  const [agenticModel, setAgenticModel] = useState('ollama_chat/gpt-oss:20b')
 
   // ─── Scoring ───
   const [strictness, setStrictness] = useState('balanced')
@@ -222,6 +222,34 @@ export function ConfigPanel() {
         : [],
     [sessionRunHistory, state.configProfileId],
   )
+  const profileConfigDirty = useMemo(() => {
+    if (!selectedProfile) return false
+    const selectedTarget = (selectedProfile.target_config ?? {}) as Record<string, unknown>
+    const selectedBenchmark = (selectedProfile.benchmark_config ?? {}) as Record<string, unknown>
+    const profileTaxonomy = Array.isArray(selectedBenchmark.taxonomy)
+      ? selectedBenchmark.taxonomy.map((entry) => String(entry).trim()).filter(Boolean)
+      : []
+    const sameTaxonomy =
+      taxonomy.length === profileTaxonomy.length
+      && taxonomy.every((entry) => profileTaxonomy.includes(entry))
+    const profileCuratedRatio = typeof selectedBenchmark.curated_ratio === 'number'
+      ? selectedBenchmark.curated_ratio
+      : Number(selectedBenchmark.curated_ratio ?? 0.6)
+    const profileSeed = typeof selectedBenchmark.seed === 'number'
+      ? selectedBenchmark.seed
+      : Number(selectedBenchmark.seed ?? 42)
+    const profileAgenticAttacking = Boolean(selectedBenchmark.agentic_attacking ?? true)
+
+    return !(
+      String(selectedTarget.agent_id ?? '') === agentId
+      && String(selectedTarget.agent_name ?? '') === agentName
+      && String(selectedTarget.agent_description ?? '') === agentDescription
+      && sameTaxonomy
+      && Math.abs(Number(profileCuratedRatio) - curatedRatio) < 0.001
+      && Number(profileSeed) === seed
+      && profileAgenticAttacking === agenticAttacking
+    )
+  }, [selectedProfile, taxonomy, agentId, agentName, agentDescription, curatedRatio, seed, agenticAttacking])
 
   const studioOrchestration = useMemo(() => {
     const baseModel = (agenticModel || model || STUDIO_BASE_MODEL).trim() || STUDIO_BASE_MODEL
@@ -409,7 +437,7 @@ export function ConfigPanel() {
       setAgenticProvider(benchmarkConfig.agentic_provider)
     }
     const nextAgenticModel = typeof benchmarkConfig.agentic_model === 'string' ? benchmarkConfig.agentic_model : ''
-    setAgenticModel(nextAgenticModel)
+    setAgenticModel(nextAgenticModel || STUDIO_BASE_MODEL)
     const orchestrationBaseModel = typeof orchestrationConfig.model === 'string' && orchestrationConfig.model.trim().length > 0
       ? orchestrationConfig.model.trim()
       : (nextAgenticModel || profileModel || STUDIO_BASE_MODEL)
@@ -849,9 +877,14 @@ export function ConfigPanel() {
       // 2. Reuse or create config profile based on launch mode.
       let profileId = state.configProfileId
       const hasSelectedProfile = profileId && profileList.some((profile) => profile.id === profileId)
-      const shouldCreateProfile = launchProfileMode === 'new' || !hasSelectedProfile
+      const forceCreateForDirtyExisting = launchProfileMode === 'existing' && profileConfigDirty
+      const shouldCreateProfile = launchProfileMode === 'new' || !hasSelectedProfile || forceCreateForDirtyExisting
 
       if (shouldCreateProfile) {
+        if (forceCreateForDirtyExisting) {
+          toast.info('Form changes detected. Saving a new profile for this run so selected scenarios are applied.')
+          setLaunchProfileMode('new')
+        }
         const profile = await api.createConfigProfile(buildPayload(sessionId))
         profileId = profile.id
         dispatch({ type: 'SET_CONFIG_PROFILE', configProfileId: profileId })
@@ -1102,6 +1135,11 @@ export function ConfigPanel() {
                 Save New Profile + Run
               </Button>
             </div>
+            {launchProfileMode === 'existing' && profileConfigDirty && (
+              <p className="text-[10px] text-amber-300 mt-1">
+                Current form differs from selected profile. Launch will save a new profile automatically.
+              </p>
+            )}
           </FieldGroup>
 
           <FieldGroup label={helpLabel('Run History', 'Runs are grouped under the selected profile; select one to load analytics.')}>
@@ -1427,13 +1465,18 @@ export function ConfigPanel() {
                     <Select value={agenticProvider} onValueChange={(v) => setAgenticProvider(v as 'auto' | 'afk_live')}>
                       <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="auto" className="text-xs">Auto</SelectItem>
-                        <SelectItem value="afk_live" className="text-xs">Live Runtime</SelectItem>
+                        <SelectItem value="afk_live" className="text-xs">AFK Runtime</SelectItem>
+                        <SelectItem value="auto" className="text-xs">Auto (runtime + fallback)</SelectItem>
                       </SelectContent>
                     </Select>
                   </FieldGroup>
                   <FieldGroup label={helpLabel('Attack Model (optional)', 'Optional model override for attacker orchestration roles.')}>
-                    <Input value={agenticModel} onChange={(e) => setAgenticModel(e.target.value)} placeholder="auto" className="h-7 text-xs font-mono" />
+                    <Input
+                      value={agenticModel}
+                      onChange={(e) => setAgenticModel(e.target.value)}
+                      placeholder="ollama_chat/gpt-oss:20b"
+                      className="h-7 text-xs font-mono"
+                    />
                   </FieldGroup>
                 </div>
               )}

@@ -61,9 +61,14 @@
 | Governance | AGENTS + project docs | DONE | Root docs created |
 | Observability | Trace ids + structured request logs + SLO endpoint | DONE | `X-Trace-Id` + `/slo` |
 | Runtime Scale | Queue worker execution + queue stats API | DONE | `run_queue` + `/v1/queue/stats` |
+| Runtime Scale | Redis queue backend + worker entrypoint | DONE | `AUTOREDTEAM_RUN_QUEUE_BACKEND=redis` + `python -m app.worker` |
 | CI | >10k deep-run load benchmark job | DONE | `pytest -m load` in deterministic CI |
+| CI | Postgres 10k+ API scale workflow | DONE | `pytest -m scale_pg` in `postgres-scale.yml` |
 | Security | Credential rotation policy enforcement | DONE | max-age/min-length/version bump checks |
 | Security | KMS strict backend mode | DONE | `AUTOREDTEAM_SECRET_BACKEND_STRICT` |
+| Data Model | Hot-path composite DB indexes + migration | DONE | `run_events(run_id,id)` + `execution_costs(run_id,created_at)` |
+| Orchestration | Graph config validation + immutable lineage snapshots | DONE | profile validation + config hash/version binding |
+| Analytics | Reliability diagram + effect-size matrix + cooccurrence explorer | DONE | interactive DS panels in analytics page |
 
 ## Test Matrix
 | Category | Status | Scope |
@@ -73,11 +78,12 @@
 | Integration Tests | DONE | full run lifecycle with synthetic target + cost/advanced endpoints |
 | Frontend Tests | DONE | wizard and analytics rendering |
 | Load Tests | DONE | 10k cost hot-path test + CI job (`AUTOREDTEAM_ENABLE_LOAD=1`) |
+| Postgres Scale | DONE | 10k API query path suite with EXPLAIN index assertions and latency bounds |
 
 ## Risks and Blockers
 | ID | Risk | Severity | Status | Mitigation |
 |---|---|---|---|---|
-| R-01 | Large deep runs may stress single worker path | High | MITIGATED | Queue worker path and orchestrator batching added |
+| R-01 | Large deep runs may stress single worker path | High | MITIGATED | Queue worker path + redis backend + batching added |
 | R-02 | Detector heuristics may have false positives | Medium | OPEN | Expand adjudication and calibration loops |
 | R-03 | Stream transport instability on some environments | Medium | MITIGATED | Added websocket primary transport with SSE fallback |
 | R-04 | Multi-tenant auth not in V1 scope | Medium | ACCEPTED | Plan RBAC in V2 |
@@ -101,3 +107,4 @@
 - 2026-02-21: Added provider credential lifecycle + rotation APIs, AFK-native resume path, policy profile runtime enforcement, execution-slice analytics endpoint/UI filters, load-test scaffolding, and `/slo` observability endpoint with trace-id logging.
 - 2026-02-21: Added orchestration profile APIs and wizard React Flow orchestration studio, live run telemetry endpoint + monitor counters, calibration ECE/MCE diagnostics, and credential access audit trail with provider settings UI audit panel.
 - 2026-02-21: Added websocket run-event streaming + SSE fallback client, node telemetry endpoint/UI, queue worker runtime path + queue stats endpoint, batch run-loop commit optimization, strict credential rotation controls, KMS strict-mode support, and deterministic CI load benchmark job.
+- 2026-02-21: Added DB hot-path index migration + contract tests, redis queue backend with external worker entrypoint, orchestration graph validation and immutable profile hash binding, advanced analytics visuals (reliability/effect-size/cooccurrence explorer), and Postgres 10k+ scale workflow with query-plan and latency assertions.

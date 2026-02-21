@@ -62,6 +62,8 @@ The product must function as **unit tests for AI behavior**, not as a prompt dem
 - Policy-sensitive operations must emit auditable run events (`policy_decision`, `run_paused`, `run_resumed` when present).
 - Resume behavior must prefer AFK-native checkpoint continuation (`runner.resume`) when run/thread lineage is available.
 - Orchestration must be profile-driven: reusable orchestration profiles should be first-class API entities and selectable from frontend configuration.
+- Orchestration profile configs must pass graph-schema validation before persistence (role uniqueness, edge integrity, supported join/router values).
+- Config/run snapshotting must include immutable orchestration lineage metadata (profile version + config hash).
 
 ## Provider and Cost Intelligence Requirements
 - Support `litellm` and `openai_compatible` provider configuration from frontend.
@@ -82,6 +84,7 @@ The product must function as **unit tests for AI behavior**, not as a prompt dem
 - Real-time monitoring must support both SSE and WebSocket transports.
 - Node-level telemetry must expose per-attack success/failure/latency/cost to match monitor aggregates.
 - Run scheduling must support queued worker mode for deep runs; queue stats should be exposed for ops debugging.
+- Queue runtime must support both `inprocess` and `redis` backends without changing API contracts.
 
 ## Frontend and DX Rules
 - Full run configuration must be possible from UI (no mandatory CLI edits).
@@ -92,6 +95,7 @@ The product must function as **unit tests for AI behavior**, not as a prompt dem
 ## Testing and CI Rules
 - Deterministic PR CI with fixed seeds/fixtures.
 - Nightly live evaluations for drift and real-model behavior.
+- Maintain Postgres 10k+ scale suite with query-plan assertions and endpoint latency thresholds.
 - CI must fail on:
   - hard safety cap breach
   - composite score threshold breach

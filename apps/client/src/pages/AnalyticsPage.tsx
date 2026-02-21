@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+
 import { api } from '../lib/api'
 import { loadState } from '../lib/state'
 import type {
@@ -11,40 +12,7 @@ import type {
   Scorecard,
 } from '../lib/types'
 
-function InteractiveBars({
-  items,
-  color,
-  active,
-  onHover,
-}: {
-  items: Array<{ label: string; value: number }>
-  color: string
-  active: string | null
-  onHover: (label: string | null) => void
-}) {
-  const max = Math.max(1, ...items.map((item) => item.value))
-  return (
-    <div className="stack-sm">
-      {items.map((item) => (
-        <div
-          key={item.label}
-          className="bar-row"
-          onMouseEnter={() => onHover(item.label)}
-          onMouseLeave={() => onHover(null)}
-        >
-          <span className="bar-label">{item.label}</span>
-          <div className="bar-track">
-            <div className="bar-fill" style={{ width: `${(item.value / max) * 100}%`, background: color }} />
-          </div>
-          <span className="bar-value">{item.value.toFixed(3)}</span>
-          {active === item.label ? <span className="pill">hover</span> : null}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function AxisLine({ points }: { points: number[] }) {
+function AxisLine({ points, color = '#17a2b8' }: { points: number[]; color?: string }) {
   if (!points.length) return <p className="caption">No chart data.</p>
   const width = 420
   const height = 140
@@ -62,10 +30,163 @@ function AxisLine({ points }: { points: number[] }) {
     <svg width={width} height={height + 24} className="chart-svg" role="img" aria-label="line chart with axis">
       <line x1="0" y1={height} x2={width} y2={height} stroke="#2f3d52" />
       <line x1="0" y1="0" x2="0" y2={height} stroke="#2f3d52" />
-      <polyline fill="none" stroke="#17a2b8" strokeWidth="2" points={line} />
+      <polyline fill="none" stroke={color} strokeWidth="2" points={line} />
       <text x="0" y={height + 16} fill="#8fa0b3" fontSize="10">step 1</text>
       <text x={width - 48} y={height + 16} fill="#8fa0b3" fontSize="10">latest</text>
     </svg>
+  )
+}
+
+function ReliabilityDiagram({ bins }: { bins: Array<Record<string, unknown>> }) {
+  const width = 360
+  const height = 220
+  const points = bins
+    .map((row) => ({
+      x: Number(row.avg_confidence ?? 0),
+      y: Number(row.avg_accuracy ?? 0),
+      n: Number(row.count ?? 0),
+      failure: String(row.failure_type ?? 'unknown'),
+    }))
+    .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
+  if (!points.length) return <p className="caption">No reliability bins.</p>
+
+  return (
+    <svg width={width} height={height} className="chart-svg" role="img" aria-label="reliability diagram">
+      <rect x="0" y="0" width={width} height={height} fill="rgba(6,10,16,0.45)" />
+      <line x1="26" y1={height - 20} x2={width - 12} y2="12" stroke="#6b7f99" strokeDasharray="4 4" />
+      <line x1="26" y1={height - 20} x2={width - 12} y2={height - 20} stroke="#3c4d63" />
+      <line x1="26" y1={height - 20} x2="26" y2="12" stroke="#3c4d63" />
+      {points.map((point, idx) => {
+        const cx = 26 + point.x * (width - 38)
+        const cy = (height - 20) - point.y * (height - 32)
+        const radius = Math.max(4, Math.min(12, Math.sqrt(point.n)))
+        return (
+          <circle
+            key={`${point.failure}-${idx}`}
+            cx={cx}
+            cy={cy}
+            r={radius}
+            fill="rgba(0,179,164,0.65)"
+            stroke="rgba(248,203,82,0.7)"
+            strokeWidth="1"
+          />
+        )
+      })}
+      <text x="30" y="18" fill="#8fa0b3" fontSize="10">accuracy</text>
+      <text x={width - 78} y={height - 6} fill="#8fa0b3" fontSize="10">confidence</text>
+    </svg>
+  )
+}
+
+function EffectSizeMatrix({ tests }: { tests: Array<Record<string, unknown>> }) {
+  if (!tests.length) return <p className="caption">No inference tests.</p>
+
+  return (
+    <div className="matrix-grid">
+      {tests.slice(0, 24).map((row, idx) => {
+        const effect = Number(row.effect_size ?? 0)
+        const adjustedP = Number(row.adjusted_p_value ?? 1)
+        const intensity = Math.min(1, Math.abs(effect) * 4)
+        const bg = effect >= 0
+          ? `rgba(48,200,143,${0.15 + intensity * 0.45})`
+          : `rgba(255,123,109,${0.15 + intensity * 0.45})`
+        const border = adjustedP <= 0.1 ? '1px solid rgba(248,203,82,0.7)' : '1px solid rgba(255,255,255,0.14)'
+
+        return (
+          <article key={`${String(row.metric_name)}-${idx}`} className="matrix-cell" style={{ background: bg, border }}>
+            <strong>{String(row.metric_name ?? 'metric')}</strong>
+            <small>effect {effect.toFixed(3)}</small>
+            <small>adj p {adjustedP.toFixed(3)}</small>
+            <small>power {Number(row.power ?? 0).toFixed(2)}</small>
+          </article>
+        )
+      })}
+    </div>
+  )
+}
+
+function CooccurrenceExplorer({
+  nodes,
+  edges,
+}: {
+  nodes: Array<Record<string, unknown>>
+  edges: Array<Record<string, unknown>>
+}) {
+  const [minWeight, setMinWeight] = useState(0)
+  const [activeNode, setActiveNode] = useState<string | null>(null)
+
+  const filteredEdges = useMemo(
+    () => edges.filter((edge) => Number(edge.weight ?? 0) >= minWeight),
+    [edges, minWeight],
+  )
+
+  const connectedNodes = useMemo(() => {
+    const ids = new Set<string>()
+    filteredEdges.forEach((edge) => {
+      ids.add(String(edge.source ?? ''))
+      ids.add(String(edge.target ?? ''))
+    })
+    return ids
+  }, [filteredEdges])
+
+  const displayNodes = useMemo(
+    () => nodes.filter((node) => connectedNodes.has(String(node.id ?? node.label ?? ''))),
+    [connectedNodes, nodes],
+  )
+
+  return (
+    <div className="stack-md">
+      <label>
+        Edge Weight Threshold
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={minWeight}
+          onChange={(event) => setMinWeight(Number(event.target.value))}
+        />
+      </label>
+      <p className="caption">min weight: {minWeight.toFixed(2)} | nodes: {displayNodes.length} | edges: {filteredEdges.length}</p>
+      <div className="chips">
+        {displayNodes.slice(0, 32).map((node, idx) => {
+          const id = String(node.id ?? node.label ?? `node-${idx}`)
+          const selected = activeNode === id
+          return (
+            <button key={id} type="button" className={selected ? 'chip active' : 'chip'} onClick={() => setActiveNode(id)}>
+              {id}
+            </button>
+          )
+        })}
+      </div>
+      {activeNode && (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Target</th>
+                <th>Weight</th>
+                <th>Relation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredEdges
+                .filter((edge) => String(edge.source ?? '') === activeNode || String(edge.target ?? '') === activeNode)
+                .slice(0, 24)
+                .map((edge, idx) => (
+                  <tr key={`${activeNode}-${idx}`}>
+                    <td>{String(edge.source ?? '')}</td>
+                    <td>{String(edge.target ?? '')}</td>
+                    <td>{Number(edge.weight ?? 0).toFixed(3)}</td>
+                    <td>{String(edge.relation ?? '')}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -84,12 +205,12 @@ export default function AnalyticsPage() {
   const [executionSlices, setExecutionSlices] = useState<ExecutionSlicesPayload | null>(null)
   const [inference, setInference] = useState<{ tests?: Array<Record<string, unknown>> } | null>(null)
   const [calibration, setCalibration] = useState<{ bins?: Array<Record<string, unknown>>; summaries?: Array<Record<string, unknown>> } | null>(null)
+  const [cooccurrence, setCooccurrence] = useState<{ nodes?: Array<Record<string, unknown>>; edges?: Array<Record<string, unknown>> } | null>(null)
   const [comparison, setComparison] = useState<Record<string, unknown> | null>(null)
   const [reportPath, setReportPath] = useState<string>('')
   const [filterAttack, setFilterAttack] = useState<string>('all')
   const [filterProvider, setFilterProvider] = useState<string>('all')
   const [filterModel, setFilterModel] = useState<string>('all')
-  const [hoveredBar, setHoveredBar] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const sliceOptions = useMemo(() => {
@@ -113,7 +234,7 @@ export default function AnalyticsPage() {
     if (!runId) return
     setError(null)
     try {
-      const [sc, risks, cl, dr, cost, series, slices, inf, cal] = await Promise.all([
+      const [sc, risks, cl, dr, cost, series, slices, inf, cal, co] = await Promise.all([
         api.getScorecard(runId),
         api.getRiskCards(runId),
         api.getClusters(runId),
@@ -123,6 +244,7 @@ export default function AnalyticsPage() {
         api.getExecutionSlices(runId),
         api.getInference(runId).catch(() => ({ tests: [] })),
         api.getCalibration(runId).catch(() => ({ bins: [], summaries: [] })),
+        api.getCooccurrence(runId).catch(() => ({ nodes: [], edges: [] })),
       ])
       setScorecard(sc)
       setRiskCards(risks)
@@ -133,6 +255,7 @@ export default function AnalyticsPage() {
       setExecutionSlices(slices)
       setInference(inf)
       setCalibration(cal)
+      setCooccurrence(co)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load analytics')
     }
@@ -216,19 +339,28 @@ export default function AnalyticsPage() {
             </label>
           </div>
           {filteredSlices.length ? (
-            <InteractiveBars
-              items={filteredSlices.map((row) => ({
-                label: `${row.attack_type}:${row.provider_name}`,
-                value: row.count,
-              }))}
-              color="#fb8500"
-              active={hoveredBar}
-              onHover={setHoveredBar}
-            />
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Attack</th><th>Provider</th><th>Model</th><th>Count</th><th>Avg ms</th><th>Cost</th></tr>
+                </thead>
+                <tbody>
+                  {filteredSlices.slice(0, 32).map((row, idx) => (
+                    <tr key={`${row.attack_type}-${row.provider_name}-${row.model}-${idx}`}>
+                      <td>{row.attack_type}</td>
+                      <td>{row.provider_name}</td>
+                      <td>{row.model}</td>
+                      <td>{row.count}</td>
+                      <td>{row.avg_latency_ms.toFixed(1)}</td>
+                      <td>${row.effective_cost_usd.toFixed(4)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : (
             <p className="caption">No slices for selected filters.</p>
           )}
-          {hoveredBar && <p className="caption">Tooltip: {hoveredBar}</p>}
         </div>
 
         <div className="panel stack-md">
@@ -298,42 +430,17 @@ export default function AnalyticsPage() {
 
       <div className="grid two">
         <div className="panel stack-md">
-          <h2>Inference Matrix</h2>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Metric</th>
-                  <th>Effect</th>
-                  <th>Adj p</th>
-                  <th>Power</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(inference?.tests ?? []).slice(0, 20).map((row, idx) => (
-                  <tr key={`${String(row.metric_name)}-${idx}`}>
-                    <td>{String(row.metric_name ?? 'metric')}</td>
-                    <td>{Number(row.effect_size ?? 0).toFixed(4)}</td>
-                    <td>{Number(row.adjusted_p_value ?? 1).toFixed(4)}</td>
-                    <td>{Number(row.power ?? 0).toFixed(3)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <h2>Effect Size Matrix</h2>
+          <EffectSizeMatrix tests={inference?.tests ?? []} />
         </div>
 
         <div className="panel stack-md">
-          <h2>Calibration Diagnostics</h2>
-          <AxisLine points={(calibration?.bins ?? []).map((row) => Number(row.avg_accuracy ?? 0))} />
+          <h2>Reliability Diagram</h2>
+          <ReliabilityDiagram bins={calibration?.bins ?? []} />
           <div className="table-wrap">
             <table>
               <thead>
-                <tr>
-                  <th>Failure</th>
-                  <th>ECE</th>
-                  <th>MCE</th>
-                </tr>
+                <tr><th>Failure</th><th>ECE</th><th>MCE</th></tr>
               </thead>
               <tbody>
                 {(calibration?.summaries ?? []).map((row, idx) => (
@@ -347,6 +454,11 @@ export default function AnalyticsPage() {
             </table>
           </div>
         </div>
+      </div>
+
+      <div className="panel stack-md">
+        <h2>Co-occurrence Graph</h2>
+        <CooccurrenceExplorer nodes={cooccurrence?.nodes ?? []} edges={cooccurrence?.edges ?? []} />
       </div>
 
       <div className="panel stack-md">

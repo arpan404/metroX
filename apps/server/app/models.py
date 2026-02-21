@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -169,6 +170,9 @@ class Execution(Base):
 
 class RunEvent(Base):
     __tablename__ = "run_events"
+    __table_args__ = (
+        Index("ix_run_events_run_id_id", "run_id", "id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[str] = mapped_column(
@@ -479,6 +483,9 @@ class ModelPricing(Base):
 
 class ExecutionCost(Base):
     __tablename__ = "execution_costs"
+    __table_args__ = (
+        Index("ix_execution_costs_run_id_created_at", "run_id", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     run_id: Mapped[str] = mapped_column(String(36), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)

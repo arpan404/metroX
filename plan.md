@@ -256,3 +256,42 @@ This remains frontend-first: users fully configure targets, scoring, and session
   - key-version advancement on rotation.
 - Added `last_rotated_at` tracking on provider credentials.
 - Added strict KMS fallback behavior (`AUTOREDTEAM_SECRET_BACKEND_STRICT`).
+
+## V1.8 Delta (Current)
+
+### DB + query-plan hardening
+- Added composite hot-path indexes:
+  - `run_events(run_id, id)`
+  - `execution_costs(run_id, created_at)`
+- Added migration `20260221_0002_hot_path_indexes.py`.
+- Added index contract tests and Postgres `EXPLAIN` assertions in scale suite.
+
+### Queue architecture uplift
+- Added selectable queue backend:
+  - `inprocess` (thread workers)
+  - `redis` (external queue + dedicated worker process)
+- Added worker entrypoint: `python -m app.worker` (`make server-worker`).
+- Resume API now follows queue backend policy (not direct background bypass).
+
+### Orchestration profile immutability + validation
+- Added orchestration graph/config validation:
+  - join policy + router strategy validation
+  - role uniqueness checks
+  - graph edge/source/target integrity checks
+- Config profiles now store immutable orchestration binding metadata:
+  - `profile_id`, `profile_version`, `config_hash`, `graph_schema_version`, `bound_at`.
+- Run creation now snapshots config immediately to prevent post-queue config drift.
+
+### DS UX upgrades
+- Analytics now includes:
+  - effect-size matrix (adjusted p + power in-cell)
+  - reliability diagram (confidence vs accuracy)
+  - interactive co-occurrence explorer with weight threshold and node drill-in.
+
+### Scale CI
+- Added Postgres 10k+ scale workflow:
+  - `.github/workflows/postgres-scale.yml`
+  - API latency thresholds:
+    - `node-telemetry < 3.0s`
+    - `telemetry < 1.5s`
+    - `cost-summary < 1.5s`

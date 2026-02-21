@@ -47,6 +47,7 @@ vi.mock('../lib/api', () => ({
     })),
     getInference: vi.fn(async () => ({ run_id: 'r-1', tests: [] })),
     getCalibration: vi.fn(async () => ({ run_id: 'r-1', bins: [], summaries: [] })),
+    getCooccurrence: vi.fn(async () => ({ run_id: 'r-1', nodes: [], edges: [] })),
     compareRuns: vi.fn(async () => ({ baseline_run_id: 'b', candidate_run_id: 'c', summary: {}, tests: {} })),
     generateReport: vi.fn(async () => ({ run_id: 'r-1', markdown: '# report', path: 'reports/r-1.md' })),
   },

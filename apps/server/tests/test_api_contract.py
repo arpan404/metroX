@@ -242,7 +242,11 @@ def test_orchestration_profile_contract(api_client) -> None:
             "description": "contract profile",
             "version": "v1",
             "status": "active",
-            "config": {"join_policy": "all_required", "roles": [{"name": "attacker", "enabled": True}]},
+            "config": {
+                "join_policy": "all_required",
+                "roles": [{"name": "attacker", "enabled": True}],
+                "graph": {"nodes": [{"id": "attacker"}], "edges": []},
+            },
         },
         headers=_headers(),
     )
@@ -260,3 +264,71 @@ def test_orchestration_profile_contract(api_client) -> None:
     )
     assert patched.status_code == 200
     assert patched.json()["version"] == "v2"
+    assert patched.json()["config"]["graph_schema_version"] == "afk.flow.v1"
+
+    same_version = client.patch(
+        f"/v1/orchestration-profiles/{profile_id}",
+        json={"version": "v2", "config": {"join_policy": "first_success"}},
+        headers=_headers(),
+    )
+    assert same_version.status_code == 400
+
+    invalid_profile = client.post(
+        "/v1/orchestration-profiles",
+        json={
+            "name": "bad-orchestration",
+            "config": {
+                "join_policy": "all_required",
+                "roles": [{"name": "attacker"}],
+                "graph": {
+                    "nodes": [{"id": "attacker"}],
+                    "edges": [{"source": "missing", "target": "attacker"}],
+                },
+            },
+        },
+        headers=_headers(),
+    )
+    assert invalid_profile.status_code == 400
+
+
+def test_config_profile_binds_orchestration_snapshot(api_client) -> None:
+    client, _ = api_client
+    session = client.post("/v1/sessions", json={"name": "snapshot-suite"}, headers=_headers())
+    assert session.status_code == 200
+    session_id = session.json()["id"]
+
+    orchestration = client.post(
+        "/v1/orchestration-profiles",
+        json={
+            "name": "snapshot-orchestration",
+            "version": "v5",
+            "config": {
+                "join_policy": "all_required",
+                "roles": [{"name": "attacker", "enabled": True}],
+                "graph": {"nodes": [{"id": "attacker"}], "edges": []},
+            },
+        },
+        headers=_headers(),
+    )
+    assert orchestration.status_code == 200
+    orchestration_id = orchestration.json()["id"]
+
+    profile = client.post(
+        "/v1/config-profiles",
+        json={
+            "session_id": session_id,
+            "name": "snapshot-profile",
+            "orchestration_profile_id": orchestration_id,
+            "target_config": {"target_type": "synthetic", "model": "gpt-4.1-mini", "extra": {}},
+            "benchmark_config": {"taxonomy": ["prompt_injection"], "afk_orchestration": {"graph": {"nodes": [{"id": "attacker"}], "edges": []}}},
+            "scoring_config": {"strictness_mode": "balanced"},
+            "runtime_config": {"preset": "quick"},
+        },
+        headers=_headers(),
+    )
+    assert profile.status_code == 200
+    benchmark_config = profile.json()["benchmark_config"]
+    snapshot = benchmark_config["orchestration_profile_snapshot"]
+    assert snapshot["profile_id"] == orchestration_id
+    assert snapshot["profile_version"] == "v5"
+    assert snapshot["config_hash"]

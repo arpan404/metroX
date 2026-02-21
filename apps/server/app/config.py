@@ -32,7 +32,10 @@ class Settings(BaseSettings):
     credential_rotation_enforced: bool = Field(default=True)
 
     run_queue_enabled: bool = Field(default=True)
+    run_queue_backend: str = Field(default="inprocess")
     run_worker_threads: int = Field(default=1)
+    run_queue_redis_key: str = Field(default="autoredteam:runs:queue")
+    run_queue_redis_block_s: int = Field(default=5)
     run_batch_size: int = Field(default=100)
     use_migrations: bool = Field(default=False)
 

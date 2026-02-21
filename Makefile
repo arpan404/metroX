@@ -1,4 +1,4 @@
-.PHONY: server-install server-test server-run client-install client-test client-build dev dev-server dev-client server client
+.PHONY: server-install server-test server-run server-worker client-install client-test client-build dev dev-server dev-client server client
 
 server-install:
 	cd apps/server && uv sync --dev
@@ -8,6 +8,9 @@ server-test:
 
 server-run:
 	cd apps/server && uv run uvicorn app.main:app --reload
+
+server-worker:
+	cd apps/server && uv run python -m app.worker
 
 client-install:
 	cd apps/client && npm install

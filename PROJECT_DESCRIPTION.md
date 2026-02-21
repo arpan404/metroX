@@ -89,6 +89,9 @@ It evaluates not only final answers, but full agent contracts:
 - Orchestration: adapter-driven runtime with AFK-aligned evented execution model
 - Persistence: run-centric relational artifacts with immutable snapshots
 - Python tooling: `uv` for dependency management and execution
+- Queue runtime:
+  - `inprocess` worker threads for local/dev
+  - `redis` external queue + dedicated worker process for production
 
 ## 7. API Surface (V1)
 - Sessions and config profiles
@@ -98,6 +101,7 @@ It evaluates not only final answers, but full agent contracts:
 - Provider credential lifecycle APIs (`create/list/get/rotate`) with encrypted secret persistence
 - Provider credential audit API (`GET /v1/providers/credentials/{id}/audits`)
 - Orchestration profile APIs (`create/list/get/update`)
+- Orchestration profile validation and immutable lineage binding in config/run snapshots
 - Scorecards, risk cards, features, clusters, drift
 - Cost APIs (`/v1/runs/{id}/cost-summary`, `/v1/runs/{id}/cost-timeseries`)
 - Slice analytics API (`/v1/runs/{id}/execution-slices`) for attack/provider/model diagnostics
@@ -123,6 +127,8 @@ It evaluates not only final answers, but full agent contracts:
 - Queue-worker runtime path with `GET /v1/queue/stats` for deep-run operations visibility
 - Credential rotation policy enforcement (`max-age`, `min-length`, versioned rotation)
 - Optional KMS secret backend with strict mode fail-fast behavior
+- Hot-path DB indexing and migration coverage for deep-run query routes
+- Postgres 10k+ scale suite with endpoint latency SLO assertions and query-plan checks
 ## 10. Current Scope Boundary
 - Single-tenant API key auth (V1)
 - Raw + redacted data model

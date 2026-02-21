@@ -1,0 +1,44 @@
+name: Postgres Scale
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * *'
+
+jobs:
+  postgres-scale:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: autoredteam
+          POSTGRES_PASSWORD: autoredteam
+          POSTGRES_DB: autoredteam_scale
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U autoredteam -d autoredteam_scale"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: '0.8.0'
+      - name: Setup Python
+        run: uv python install 3.13
+      - name: Install backend dependencies
+        run: |
+          cd apps/server
+          uv sync --dev --frozen
+      - name: Run Postgres 10k+ scale tests
+        env:
+          AUTOREDTEAM_API_KEY: local-dev-key
+          AUTOREDTEAM_ENABLE_PG_SCALE: "1"
+          AUTOREDTEAM_POSTGRES_SCALE_URL: postgresql+psycopg://autoredteam:autoredteam@localhost:5432/autoredteam_scale
+        run: |
+          cd apps/server
+          uv run pytest -q -m scale_pg

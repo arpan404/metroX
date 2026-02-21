@@ -26,3 +26,15 @@ Optional startup migration mode:
 ```bash
 AUTOREDTEAM_USE_MIGRATIONS=true uv run uvicorn app.main:app --reload
 ```
+
+## Queue Backends
+
+`AUTOREDTEAM_RUN_QUEUE_BACKEND` supports:
+- `inprocess` (default): web process worker threads
+- `redis`: external queue + dedicated worker process
+
+Run redis worker:
+
+```bash
+make server-worker
+```

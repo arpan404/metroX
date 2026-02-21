@@ -19,6 +19,7 @@ from app.models import (
     Adjudication,
     AttackCase,
     ConfigProfile,
+    ConfigSnapshot,
     Detection,
     EvaluationSession,
     Execution,
@@ -64,6 +65,10 @@ from app.services.costing import cost_timeseries, pricing_profile_payload, rebui
 from app.services.drift import drift_payload
 from app.services.features import feature_table_for_run
 from app.services.mitigation import create_mitigation_experiment, mitigation_payload
+from app.services.orchestration_profiles import (
+    bound_orchestration_snapshot,
+    validate_orchestration_config,
+)
 from app.services.orchestrator import RunOrchestrator
 from app.services.advanced_analytics import calibration_payload, cooccurrence_payload, forecast_payload, inference_payload
 from app.services.providers import provider_capabilities, validate_provider
@@ -368,12 +373,16 @@ def create_orchestration_profile(
     payload: OrchestrationProfileCreate,
     db: Session = Depends(get_db),
 ) -> OrchestrationProfileOut:
+    try:
+        validated_config = validate_orchestration_config(payload.config)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     row = OrchestrationProfile(
         name=payload.name,
         description=payload.description,
         version=payload.version,
         status=payload.status,
-        config=payload.config,
+        config=validated_config,
     )
     db.add(row)
     db.commit()
@@ -406,14 +415,21 @@ def update_orchestration_profile(
     row = db.query(OrchestrationProfile).filter(OrchestrationProfile.id == profile_id).one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="Orchestration profile not found")
+    current_version = row.version
     if payload.description is not None:
         row.description = payload.description
+    if payload.version is not None and payload.version == current_version:
+        raise HTTPException(status_code=400, detail="version must advance when updating orchestration profile")
     if payload.version is not None:
         row.version = payload.version
     if payload.status is not None:
         row.status = payload.status
     if payload.config is not None:
-        row.config = payload.config
+        try:
+            merged_config = {**(row.config or {}), **payload.config}
+            row.config = validate_orchestration_config(merged_config)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
     db.refresh(row)
     return OrchestrationProfileOut.model_validate(row, from_attributes=True)
@@ -464,6 +480,7 @@ def create_profile(payload: ConfigProfileCreate, db: Session = Depends(get_db)) 
         raise HTTPException(status_code=404, detail="Session not found")
 
     orchestration_cfg = payload.benchmark_config.afk_orchestration
+    orchestration_meta: dict[str, str] | None = None
     if payload.orchestration_profile_id:
         orchestration_profile = (
             db.query(OrchestrationProfile)
@@ -472,7 +489,22 @@ def create_profile(payload: ConfigProfileCreate, db: Session = Depends(get_db)) 
         )
         if not orchestration_profile:
             raise HTTPException(status_code=404, detail="Orchestration profile not found")
-        orchestration_cfg = {**(orchestration_profile.config or {}), **(orchestration_cfg or {})}
+        try:
+            merged = {**(orchestration_profile.config or {}), **(orchestration_cfg or {})}
+            orchestration_cfg = validate_orchestration_config(merged)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        orchestration_meta = bound_orchestration_snapshot(
+            profile_id=orchestration_profile.id,
+            profile_name=orchestration_profile.name,
+            profile_version=orchestration_profile.version,
+            config=orchestration_cfg,
+        )
+    else:
+        try:
+            orchestration_cfg = validate_orchestration_config(orchestration_cfg)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     row = ConfigProfile(
         session_id=payload.session_id,
@@ -480,7 +512,11 @@ def create_profile(payload: ConfigProfileCreate, db: Session = Depends(get_db)) 
         strictness_mode=payload.scoring_config.strictness_mode,
         orchestration_profile_id=payload.orchestration_profile_id,
         target_config=payload.target_config.model_dump(),
-        benchmark_config={**payload.benchmark_config.model_dump(), "afk_orchestration": orchestration_cfg},
+        benchmark_config={
+            **payload.benchmark_config.model_dump(),
+            "afk_orchestration": orchestration_cfg,
+            "orchestration_profile_snapshot": orchestration_meta,
+        },
         scoring_config=payload.scoring_config.model_dump(),
         runtime_config=payload.runtime_config.model_dump(),
     )
@@ -525,6 +561,27 @@ def create_run(
     db.commit()
     db.refresh(run)
 
+    snapshot = ConfigSnapshot(
+        config_profile_id=profile.id,
+        run_id=run.id,
+        snapshot={
+            "target_config": profile.target_config,
+            "benchmark_config": profile.benchmark_config,
+            "scoring_config": profile.scoring_config,
+            "runtime_config": profile.runtime_config,
+            "strictness": run.strictness,
+            "mode": run.mode,
+            "preset": run.preset,
+            "orchestration_profile_snapshot": (profile.benchmark_config or {}).get("orchestration_profile_snapshot"),
+        },
+    )
+    db.add(snapshot)
+    db.commit()
+    db.refresh(snapshot)
+    run.config_snapshot_id = snapshot.id
+    db.commit()
+    db.refresh(run)
+
     if payload.execute_now:
         settings = get_settings()
         if settings.run_queue_enabled:
@@ -545,7 +602,13 @@ def create_run(
 @router.get("/queue/stats")
 def queue_stats() -> dict:
     stats = RUN_QUEUE.stats()
-    return {"pending": stats.pending, "workers": stats.workers, "started": stats.started}
+    settings = get_settings()
+    return {
+        "pending": stats.pending,
+        "workers": stats.workers,
+        "started": stats.started,
+        "backend": settings.run_queue_backend,
+    }
 
 
 @router.get("/runs/{run_id}", response_model=RunOut)
@@ -576,7 +639,18 @@ def resume_run(run_id: str, background_tasks: BackgroundTasks, db: Session = Dep
         )
     )
     db.commit()
-    background_tasks.add_task(_run_pipeline_background, run.id)
+    settings = get_settings()
+    if settings.run_queue_enabled:
+        RUN_QUEUE.enqueue(run.id)
+        log_event(
+            db,
+            run_id=run.id,
+            event_type="queued",
+            step=0,
+            message="Resumed run queued for worker execution",
+        )
+    else:
+        background_tasks.add_task(_run_pipeline_background, run.id)
     db.refresh(run)
     return RunOut.model_validate(run, from_attributes=True)
 

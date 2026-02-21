@@ -129,10 +129,14 @@ class Run(Base):
     mode: Mapped[str] = mapped_column(String(40), default="deterministic_ci")
     strictness: Mapped[str] = mapped_column(String(60), default="balanced")
     status: Mapped[str] = mapped_column(String(40), default="queued")
+    thread_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     total_attacks: Mapped[int] = mapped_column(Integer, default=0)
     completed_attacks: Mapped[int] = mapped_column(Integer, default=0)
+    budget_spent_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    estimated_final_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     summary_metrics: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     gate_result: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    cost_gate_result: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, nullable=False)
@@ -149,6 +153,8 @@ class Execution(Base):
         String(36), ForeignKey("attack_cases.id", ondelete="CASCADE"), nullable=False
     )
     target_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    provider_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    model_resolved: Mapped[str | None] = mapped_column(String(200), nullable=True)
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     response: Mapped[str] = mapped_column(Text, nullable=False)
     latency_ms: Mapped[float] = mapped_column(Float, default=0.0)
@@ -401,3 +407,141 @@ class ReportArtifact(Base):
     path: Mapped[str] = mapped_column(String(500), nullable=False)
     meta: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, nullable=False)
+
+
+class ProviderCredential(Base):
+    __tablename__ = "provider_credentials"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    provider_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    encrypted_secret: Mapped[str] = mapped_column(Text, nullable=False)
+    key_version: Mapped[str] = mapped_column(String(40), default="v1")
+    status: Mapped[str] = mapped_column(String(40), default="active")
+    last_validated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, nullable=False)
+
+
+class PricingProfile(Base):
+    __tablename__ = "pricing_profiles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    currency: Mapped[str] = mapped_column(String(12), default="USD")
+    fallback_policy: Mapped[str] = mapped_column(String(40), default="hybrid")
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, nullable=False)
+
+
+class ModelPricing(Base):
+    __tablename__ = "model_pricing"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    pricing_profile_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("pricing_profiles.id", ondelete="CASCADE"), nullable=False
+    )
+    provider_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    model: Mapped[str] = mapped_column(String(200), nullable=False)
+    input_per_1k: Mapped[float] = mapped_column(Float, default=0.0)
+    output_per_1k: Mapped[float] = mapped_column(Float, default=0.0)
+    reasoning_per_1k: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class ExecutionCost(Base):
+    __tablename__ = "execution_costs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    execution_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("executions.id", ondelete="CASCADE"), nullable=False
+    )
+    provider_name: Mapped[str] = mapped_column(String(120), nullable=False, default="unknown")
+    model: Mapped[str] = mapped_column(String(200), nullable=False, default="unknown")
+    prompt_tokens: Mapped[float] = mapped_column(Float, default=0.0)
+    completion_tokens: Mapped[float] = mapped_column(Float, default=0.0)
+    total_tokens: Mapped[float] = mapped_column(Float, default=0.0)
+    provider_reported_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    estimated_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    effective_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    cost_source: Mapped[str] = mapped_column(String(40), default="fallback")
+    confidence: Mapped[float] = mapped_column(Float, default=0.5)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, nullable=False)
+
+
+class RunCostAggregate(Base):
+    __tablename__ = "run_cost_aggregates"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    run_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    total_prompt_tokens: Mapped[float] = mapped_column(Float, default=0.0)
+    total_completion_tokens: Mapped[float] = mapped_column(Float, default=0.0)
+    total_effective_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    total_provider_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    total_estimated_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    breakdown: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, nullable=False)
+
+
+class AFKRunState(Base):
+    __tablename__ = "afk_run_states"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    thread_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    state: Mapped[str] = mapped_column(String(40), default="running")
+    step: Mapped[int] = mapped_column(Integer, default=0)
+    checkpoint: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, nullable=False)
+
+
+class StatisticalTest(Base):
+    __tablename__ = "statistical_tests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    metric_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    effect_size: Mapped[float] = mapped_column(Float, default=0.0)
+    p_value: Mapped[float] = mapped_column(Float, default=1.0)
+    adjusted_p_value: Mapped[float] = mapped_column(Float, default=1.0)
+    power: Mapped[float] = mapped_column(Float, default=0.0)
+    mde: Mapped[float] = mapped_column(Float, default=0.0)
+    ci_low: Mapped[float] = mapped_column(Float, default=0.0)
+    ci_high: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class CalibrationBin(Base):
+    __tablename__ = "calibration_bins"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    failure_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    bin_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    count: Mapped[int] = mapped_column(Integer, default=0)
+    avg_confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    avg_accuracy: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class CooccurrenceEdge(Base):
+    __tablename__ = "cooccurrence_edges"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    source: Mapped[str] = mapped_column(String(160), nullable=False)
+    target: Mapped[str] = mapped_column(String(160), nullable=False)
+    weight: Mapped[float] = mapped_column(Float, default=0.0)
+    relation: Mapped[str] = mapped_column(String(80), default="cooccur")
+
+
+class ForecastReport(Base):
+    __tablename__ = "forecast_reports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    metric_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    horizon: Mapped[int] = mapped_column(Integer, default=7)
+    predicted_value: Mapped[float] = mapped_column(Float, default=0.0)
+    low: Mapped[float] = mapped_column(Float, default=0.0)
+    high: Mapped[float] = mapped_column(Float, default=0.0)
+    method: Mapped[str] = mapped_column(String(80), default="ewma")

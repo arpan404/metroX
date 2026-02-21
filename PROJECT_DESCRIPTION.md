@@ -24,6 +24,7 @@ It evaluates not only final answers, but full agent contracts:
 ## 4. Primary Capabilities
 ### 4.1 Benchmark Dataset
 - Hybrid curated + generated attack dataset
+- Multi-agent attacker orchestration (Attacker, Critic, Verifier, Analyst)
 - Taxonomy coverage:
   - prompt injection
   - jailbreak

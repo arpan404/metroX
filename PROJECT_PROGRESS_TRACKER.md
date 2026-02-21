@@ -23,6 +23,7 @@
 | Config Profiles | Create/get reusable configs | DONE | Snapshot-compatible |
 | Runs | Launch and monitor runs | DONE | Background orchestration |
 | Benchmark | Hybrid curated + generated | DONE | Versioned snapshot + dedupe hash |
+| Benchmark | Multi-agent attack orchestration | DONE | Attacker/Critic/Verifier/Analyst roles with AFK-live or mock mode |
 | Detection | Heuristic detectors + weak supervision | DONE | Extensible architecture |
 | Scoring | Caps + composite + CI output | DONE | Regression checks supported |
 | Feature Store | Materialized per-execution features | DONE | Versioned feature definitions |
@@ -65,3 +66,4 @@
 ## Change Log
 - 2026-02-21: Initial implementation of DS+ platform scaffold, backend API suite, DS modules, frontend wizard/monitor/analytics, and root governance docs.
 - 2026-02-21: Migrated backend/CI to uv, added API contract + integration tests, added frontend vitest coverage, and finalized release-readiness checklist items.
+- 2026-02-21: Enabled multi-agent attack orchestration in benchmark generation with role-based attacker pipeline and frontend controls.

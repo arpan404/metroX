@@ -27,6 +27,9 @@ export default function WizardPage() {
   const [taxonomy, setTaxonomy] = useState<string[]>([...TAXONOMY])
   const [seed, setSeed] = useState(42)
   const [curatedRatio, setCuratedRatio] = useState(0.6)
+  const [agenticAttacking, setAgenticAttacking] = useState(true)
+  const [agenticProvider, setAgenticProvider] = useState<'auto' | 'mock' | 'afk_live'>('auto')
+  const [agenticModel, setAgenticModel] = useState('')
 
   const [strictness, setStrictness] = useState('balanced')
   const [asrMax, setAsrMax] = useState(0.25)
@@ -70,6 +73,9 @@ export default function WizardPage() {
           generated_ratio: 1 - curatedRatio,
           seed,
           slices: ['default'],
+          agentic_attacking: agenticAttacking,
+          agentic_provider: agenticProvider,
+          agentic_model: agenticModel || null,
         },
         scoring_config: {
           strictness_mode: strictness,
@@ -210,6 +216,32 @@ export default function WizardPage() {
                 ))}
               </div>
             </div>
+            <label>
+              Multi-Agent Attacking
+              <select
+                value={agenticAttacking ? 'enabled' : 'disabled'}
+                onChange={(event) => setAgenticAttacking(event.target.value === 'enabled')}
+              >
+                <option value="enabled">Enabled</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </label>
+            <label>
+              Agentic Provider
+              <select value={agenticProvider} onChange={(event) => setAgenticProvider(event.target.value as typeof agenticProvider)}>
+                <option value="auto">Auto (afk_live if key exists)</option>
+                <option value="mock">Mock deterministic</option>
+                <option value="afk_live">AFK live</option>
+              </select>
+            </label>
+            <label className="span-2">
+              Agentic Model (optional)
+              <input
+                value={agenticModel}
+                onChange={(event) => setAgenticModel(event.target.value)}
+                placeholder="defaults to target model"
+              />
+            </label>
           </div>
         )}
 

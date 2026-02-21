@@ -16,7 +16,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useWorkspace, type PanelId, type CanvasMode } from '@/stores/workspace-store'
 import { cn } from '@/lib/utils'
 
@@ -54,35 +53,42 @@ export function CommandBar() {
       data-onboarding="command-bar"
     >
       {/* Mode toggle */}
-      <ToggleGroup
-        type="single"
-        value={state.canvasMode}
-        onValueChange={(v) => v && dispatch({ type: 'SET_CANVAS_MODE', mode: v as CanvasMode })}
-        className="gap-0"
-      >
+      <div className="flex items-center gap-0">
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="inline-flex">
-              <ToggleGroupItem value="evaluate" className="h-7 px-2.5 text-[11px] rounded-lg data-[state=on]:bg-primary/15 data-[state=on]:text-primary">
-                <Activity className="h-3 w-3 mr-1" />
-                Evaluate
-              </ToggleGroupItem>
-            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                'h-7 px-2.5 text-[11px] rounded-lg',
+                state.canvasMode === 'evaluate' && 'bg-primary/15 text-primary',
+              )}
+              onClick={() => dispatch({ type: 'SET_CANVAS_MODE', mode: 'evaluate' as CanvasMode })}
+            >
+              <Activity className="h-3 w-3 mr-1" />
+              Evaluate
+            </Button>
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">Attack evaluation canvas</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="inline-flex">
-              <ToggleGroupItem value="studio" className="h-7 px-2.5 text-[11px] rounded-lg data-[state=on]:bg-primary/15 data-[state=on]:text-primary">
-                <Workflow className="h-3 w-3 mr-1" />
-                Studio
-              </ToggleGroupItem>
-            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                'h-7 px-2.5 text-[11px] rounded-lg',
+                state.canvasMode === 'studio' && 'bg-primary/15 text-primary',
+              )}
+              onClick={() => dispatch({ type: 'SET_CANVAS_MODE', mode: 'studio' as CanvasMode })}
+            >
+              <Workflow className="h-3 w-3 mr-1" />
+              Studio
+            </Button>
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">Workflow builder</TooltipContent>
         </Tooltip>
-      </ToggleGroup>
+      </div>
 
       <div className="h-5 w-px bg-border/40" />
 

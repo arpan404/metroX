@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactFlow, {
   addEdge,
   Background,
@@ -16,7 +16,6 @@ import 'reactflow/dist/style.css'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
 import {
-  RefreshCw,
   Activity,
   Plus,
   ListCollapse,
@@ -52,8 +51,8 @@ import {
 import { CanvasBackground } from '@/components/canvas/CanvasBackground'
 import { FloatingPanel } from '@/components/canvas/FloatingPanel'
 import { FloatingToolbar, type ToolbarMode } from '@/components/canvas/FloatingToolbar'
+import { GlassPanel } from '@/components/canvas/GlassPanel'
 import { CommandPalette } from '@/components/CommandPalette'
-import { GlassPanel } from '@/components/ui/sheet'
 import { useOnboardingContext } from '@/components/onboarding/OnboardingProvider'
 import { SpotlightWalkthrough } from '@/components/onboarding/SpotlightWalkthrough'
 
@@ -63,25 +62,6 @@ import { SettingsPanel } from '@/components/panels/SettingsPanel'
 import { AttackDetailPanel } from '@/components/panels/AttackDetailPanel'
 import { StudioInspectorPanel } from '@/components/panels/StudioInspectorPanel'
 import { EventsDrawer } from '@/components/panels/EventsDrawer'
-
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from '@/components/ui/context-menu'
-
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from '@/components/ui/tooltip'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -102,6 +82,13 @@ type EventRow = {
   created_at: string
 }
 
+type ContextMenuState = {
+  x: number
+  y: number
+  nodeId: string | null
+  nodeType: 'attack' | 'studio' | null
+} | null
+
 /* ------------------------------------------------------------------ */
 /*  AppPage                                                           */
 /* ------------------------------------------------------------------ */
@@ -116,7 +103,6 @@ export function AppPage() {
   const onboarding = useOnboardingContext()
   useEffect(() => {
     if (onboarding.completed) return
-    /* Wait for canvas to fully mount, then verify a target element exists */
     const timer = setTimeout(() => {
       const firstTarget = document.querySelector('[data-onboarding]')
       if (firstTarget) onboarding.start()
@@ -163,6 +149,10 @@ export function AppPage() {
   const [studioNodes, setStudioNodes, onStudioNodesChange] = useNodesState(initialStudioNodes)
   const [studioEdges, setStudioEdges, onStudioEdgesChange] = useEdgesState(initialStudioEdges)
   const [selectedStudioNodeId, setSelectedStudioNodeId] = useState<string | null>(null)
+
+  /* ---- context menu state ---- */
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
 
   /* ---- derived ---- */
   const selectedAttack = useMemo(
@@ -395,8 +385,17 @@ export function AppPage() {
     setPanels((p) => ({ ...p, left: null }))
   }, [])
 
-  /* ---- context menu node state ---- */
-  const [contextNode, setContextNode] = useState<{ id: string; type: 'attack' | 'studio' } | null>(null)
+  /* ---- close context menu on outside click ---- */
+  useEffect(() => {
+    if (!contextMenu) return
+    function handleClick(e: MouseEvent) {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [contextMenu])
 
   const isAttack = canvasMode === 'attack'
 
@@ -411,6 +410,14 @@ export function AppPage() {
         activeMode={activeToolbarMode}
         onModeChange={handleModeChange}
         onCommandPalette={() => setCommandOpen(true)}
+        runId={runId}
+        onRunIdChange={setRunId}
+        onRefresh={() => void refreshAll()}
+        canvasMode={canvasMode}
+        onCanvasModeChange={(mode) => {
+          setCanvasMode(mode)
+          setPanels((p) => ({ ...p, right: null }))
+        }}
       />
 
       {/* ---- Command Palette ---- */}
@@ -424,106 +431,166 @@ export function AppPage() {
         }}
       />
 
-      {/* ---- Canvas area with context menu ---- */}
-      <ContextMenu>
-        <ContextMenuTrigger className="absolute inset-0 pt-16">
-          {isAttack ? (
-            <ReactFlow
-              className="h-full w-full"
-              nodes={attackFlow.nodes}
-              edges={attackFlow.edges}
-              nodeTypes={attackNodeTypes}
-              onNodeClick={(_, node) => {
-                if (node.id.startsWith('attack-')) {
-                  const attackType = (node.data as AttackNodeData).attackType
-                  setSelectedAttackType(attackType)
-                  setPanels((p) => ({ ...p, right: 'attack-detail' }))
-                }
-                if (node.id === 'analytics') {
-                  setPanels((p) => ({ ...p, right: 'analytics' }))
-                }
-              }}
-              onNodeContextMenu={(_, node) => {
-                if (node.id.startsWith('attack-')) {
-                  setContextNode({ id: node.id, type: 'attack' })
-                }
-              }}
-              fitView
-            >
-              <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
-              <Controls position="bottom-right" />
-              <MiniMap className="hidden sm:block" pannable zoomable />
-            </ReactFlow>
-          ) : (
-            <ReactFlow
-              className="h-full w-full"
-              nodes={studioNodes}
-              edges={studioEdges}
-              nodeTypes={studioNodeTypes}
-              onNodesChange={onStudioNodesChange}
-              onEdgesChange={onStudioEdgesChange}
-              onConnect={onStudioConnect}
-              onNodeClick={(_, node) => {
-                setSelectedStudioNodeId(node.id)
-                setPanels((p) => ({ ...p, right: 'studio-inspector' }))
-              }}
-              onNodeContextMenu={(_, node) => {
-                setContextNode({ id: node.id, type: 'studio' })
-              }}
-              fitView
-            >
-              <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
-              <Controls position="bottom-right" />
-              <MiniMap className="hidden sm:block" pannable zoomable />
-            </ReactFlow>
-          )}
-        </ContextMenuTrigger>
+      {/* ---- Canvas area ---- */}
+      <div
+        className="absolute inset-0 pt-12"
+        onContextMenu={(e) => {
+          e.preventDefault()
+          setContextMenu({ x: e.clientX, y: e.clientY, nodeId: null, nodeType: null })
+        }}
+      >
+        {isAttack ? (
+          <ReactFlow
+            className="h-full w-full"
+            nodes={attackFlow.nodes}
+            edges={attackFlow.edges}
+            nodeTypes={attackNodeTypes}
+            onNodeClick={(_, node) => {
+              if (node.id.startsWith('attack-')) {
+                const attackType = (node.data as AttackNodeData).attackType
+                setSelectedAttackType(attackType)
+                setPanels((p) => ({ ...p, right: 'attack-detail' }))
+              }
+              if (node.id === 'analytics') {
+                setPanels((p) => ({ ...p, right: 'analytics' }))
+              }
+            }}
+            onNodeContextMenu={(e, node) => {
+              e.preventDefault()
+              if (node.id.startsWith('attack-')) {
+                setContextMenu({ x: (e as React.MouseEvent).clientX, y: (e as React.MouseEvent).clientY, nodeId: node.id, nodeType: 'attack' })
+              }
+            }}
+            fitView
+          >
+            <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
+            <Controls position="bottom-right" />
+            <MiniMap className="hidden sm:block" pannable zoomable />
+          </ReactFlow>
+        ) : (
+          <ReactFlow
+            className="h-full w-full"
+            nodes={studioNodes}
+            edges={studioEdges}
+            nodeTypes={studioNodeTypes}
+            onNodesChange={onStudioNodesChange}
+            onEdgesChange={onStudioEdgesChange}
+            onConnect={onStudioConnect}
+            onNodeClick={(_, node) => {
+              setSelectedStudioNodeId(node.id)
+              setPanels((p) => ({ ...p, right: 'studio-inspector' }))
+            }}
+            onNodeContextMenu={(e, node) => {
+              e.preventDefault()
+              setContextMenu({ x: (e as React.MouseEvent).clientX, y: (e as React.MouseEvent).clientY, nodeId: node.id, nodeType: 'studio' })
+            }}
+            fitView
+          >
+            <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
+            <Controls position="bottom-right" />
+            <MiniMap className="hidden sm:block" pannable zoomable />
+          </ReactFlow>
+        )}
+      </div>
 
-        <ContextMenuContent className="w-52">
-          <ContextMenuItem onClick={() => setPanels((p) => ({ ...p, left: p.left === 'config' ? null : 'config' }))}>
-            <Rocket className="size-3.5 mr-2" /> {panels.left === 'config' ? 'Close Config' : 'Open Config'}
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => setPanels((p) => ({ ...p, right: p.right === 'analytics' ? null : 'analytics' }))}>
-            <FileText className="size-3.5 mr-2" /> {panels.right === 'analytics' ? 'Close Analytics' : 'Open Analytics'}
-          </ContextMenuItem>
-          <ContextMenuSeparator />
+      {/* ---- Custom context menu ---- */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          style={{
+            position: 'fixed',
+            top: contextMenu.y,
+            left: contextMenu.x,
+            zIndex: 100,
+            minWidth: '180px',
+            background: 'rgba(12,12,18,0.96)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: '8px',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
+            padding: '4px',
+            backdropFilter: 'blur(16px)',
+          }}
+        >
+          {[
+            {
+              icon: <Rocket size={13} />,
+              label: panels.left === 'config' ? 'Close Config' : 'Open Config',
+              onClick: () => {
+                setPanels((p) => ({ ...p, left: p.left === 'config' ? null : 'config' }))
+                setContextMenu(null)
+              },
+            },
+            {
+              icon: <FileText size={13} />,
+              label: panels.right === 'analytics' ? 'Close Analytics' : 'Open Analytics',
+              onClick: () => {
+                setPanels((p) => ({ ...p, right: p.right === 'analytics' ? null : 'analytics' }))
+                setContextMenu(null)
+              },
+            },
+          ].map((item) => (
+            <button
+              key={item.label}
+              onClick={item.onClick}
+              style={ctxItemStyle}
+              onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.07)')}
+              onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'transparent')}
+            >
+              {item.icon}
+              {item.label}
+            </button>
+          ))}
 
-          {contextNode?.type === 'attack' && (
+          {contextMenu.nodeType === 'attack' && contextMenu.nodeId && (
             <>
-              <ContextMenuItem
+              <div style={ctxSepStyle} />
+              <button
                 onClick={() => {
-                  const attackType = contextNode.id.replace('attack-', '')
+                  const attackType = contextMenu.nodeId!.replace('attack-', '')
                   setSelectedAttackType(attackType)
                   setPanels((p) => ({ ...p, right: 'attack-detail' }))
+                  setContextMenu(null)
                 }}
+                style={ctxItemStyle}
+                onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.07)')}
+                onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'transparent')}
               >
                 View Details
-              </ContextMenuItem>
-              <ContextMenuItem
+              </button>
+              <button
                 onClick={() => {
-                  const attackType = contextNode.id.replace('attack-', '')
+                  const attackType = contextMenu.nodeId!.replace('attack-', '')
                   void navigator.clipboard.writeText(attackType)
                   toast.success('Attack type copied')
+                  setContextMenu(null)
                 }}
+                style={ctxItemStyle}
+                onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.07)')}
+                onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'transparent')}
               >
-                <Copy className="size-3.5 mr-2" /> Copy Attack Type
-              </ContextMenuItem>
-              <ContextMenuSeparator />
+                <Copy size={13} /> Copy Attack Type
+              </button>
             </>
           )}
-          {contextNode?.type === 'studio' && (
+
+          {contextMenu.nodeType === 'studio' && contextMenu.nodeId && (
             <>
-              <ContextMenuItem
+              <div style={ctxSepStyle} />
+              <button
                 onClick={() => {
-                  setSelectedStudioNodeId(contextNode.id)
+                  setSelectedStudioNodeId(contextMenu.nodeId!)
                   setPanels((p) => ({ ...p, right: 'studio-inspector' }))
+                  setContextMenu(null)
                 }}
+                style={ctxItemStyle}
+                onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.07)')}
+                onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'transparent')}
               >
                 Edit Node
-              </ContextMenuItem>
-              <ContextMenuItem
+              </button>
+              <button
                 onClick={() => {
-                  const original = studioNodes.find((n) => n.id === contextNode.id)
+                  const original = studioNodes.find((n) => n.id === contextMenu.nodeId)
                   if (original) {
                     const id = `node-${Date.now()}`
                     const clone: Node<StudioNodeData> = {
@@ -534,76 +601,97 @@ export function AppPage() {
                     setStudioNodes((cur) => [...cur, clone])
                     toast.success('Node duplicated')
                   }
+                  setContextMenu(null)
                 }}
+                style={ctxItemStyle}
+                onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.07)')}
+                onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'transparent')}
               >
-                <Copy className="size-3.5 mr-2" /> Duplicate Node
-              </ContextMenuItem>
-              <ContextMenuItem
-                className="text-destructive"
+                <Copy size={13} /> Duplicate Node
+              </button>
+              <button
                 onClick={() => {
-                  deleteStudioNode(contextNode.id)
+                  deleteStudioNode(contextMenu.nodeId!)
                   toast.success('Node deleted')
+                  setContextMenu(null)
                 }}
+                style={{ ...ctxItemStyle, color: 'rgba(248,113,113,0.85)' }}
+                onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.07)')}
+                onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'transparent')}
               >
-                <Trash2 className="size-3.5 mr-2" /> Delete Node
-              </ContextMenuItem>
-              <ContextMenuSeparator />
+                <Trash2 size={13} /> Delete Node
+              </button>
             </>
           )}
 
-          <ContextMenuItem onClick={() => setCanvasMode(isAttack ? 'studio' : 'attack')}>
+          <div style={ctxSepStyle} />
+          <button
+            onClick={() => {
+              setCanvasMode(isAttack ? 'studio' : 'attack')
+              setContextMenu(null)
+            }}
+            style={ctxItemStyle}
+            onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.07)')}
+            onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'transparent')}
+          >
             {isAttack ? (
-              <><Workflow className="size-3.5 mr-2" /> Switch to Studio</>
+              <><Workflow size={13} /> Switch to Studio</>
             ) : (
-              <><Swords className="size-3.5 mr-2" /> Switch to Attack Canvas</>
+              <><Swords size={13} /> Switch to Attack Canvas</>
             )}
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
+          </button>
+        </div>
+      )}
 
-      {/* ---- Floating status panel -- top left ---- */}
-      <FloatingPanel position="top-left" className="p-4 w-64">
+      {/* ---- Floating status panel -- top right ---- */}
+      <FloatingPanel position="top-right" className="p-4 w-64">
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }} className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Run Status</span>
-            <Badge
-              variant={run?.status === 'running' ? 'default' : run?.status === 'completed' ? 'secondary' : 'outline'}
-              className="text-[10px]"
-            >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={labelStyle}>Run Status</span>
+            <span style={{
+              ...badgeStyle,
+              background: run?.status === 'running'
+                ? 'rgba(34,197,94,0.15)'
+                : run?.status === 'completed'
+                  ? 'rgba(148,163,184,0.15)'
+                  : 'rgba(255,255,255,0.06)',
+              color: run?.status === 'running'
+                ? 'rgba(74,222,128,0.9)'
+                : run?.status === 'completed'
+                  ? 'rgba(203,213,225,0.8)'
+                  : 'rgba(255,255,255,0.45)',
+              borderColor: run?.status === 'running'
+                ? 'rgba(34,197,94,0.3)'
+                : 'rgba(255,255,255,0.1)',
+            }}>
               {run?.status ?? 'idle'}
-            </Badge>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Progress</span>
-            <span className="font-mono text-xs text-foreground">
-              {run?.completed_attacks ?? 0}/{run?.total_attacks ?? 0}
             </span>
           </div>
-          <Separator />
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Spent</span>
-            <span className="font-mono text-xs text-foreground">
-              ${Number(telemetry?.cost?.spent_usd ?? run?.budget_spent_usd ?? 0).toFixed(3)}
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={labelStyle}>Progress</span>
+            <span style={monoStyle}>{run?.completed_attacks ?? 0}/{run?.total_attacks ?? 0}</span>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Projected</span>
-            <span className="font-mono text-xs text-foreground">
-              ${Number(telemetry?.cost?.projected_final_usd ?? run?.estimated_final_cost_usd ?? 0).toFixed(3)}
-            </span>
+          <div style={sepStyle} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={labelStyle}>Spent</span>
+            <span style={monoStyle}>${Number(telemetry?.cost?.spent_usd ?? run?.budget_spent_usd ?? 0).toFixed(3)}</span>
           </div>
-          <Separator />
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Stream</span>
-            <div className="flex items-center gap-1.5">
-              <span
-                className={
-                  streaming
-                    ? 'inline-block size-1.5 rounded-full bg-emerald-500 animate-pulse'
-                    : 'inline-block size-1.5 rounded-full bg-muted-foreground'
-                }
-              />
-              <span className={`text-[11px] font-mono text-foreground ${streaming ? 'live-pulse' : ''}`}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={labelStyle}>Projected</span>
+            <span style={monoStyle}>${Number(telemetry?.cost?.projected_final_usd ?? run?.estimated_final_cost_usd ?? 0).toFixed(3)}</span>
+          </div>
+          <div style={sepStyle} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={labelStyle}>Stream</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{
+                display: 'inline-block',
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                background: streaming ? 'rgb(52,211,153)' : 'rgba(255,255,255,0.25)',
+              }} />
+              <span style={{ ...monoStyle, color: streaming ? 'rgba(52,211,153,0.9)' : 'rgba(255,255,255,0.4)' }}>
                 {streaming ? 'LIVE' : 'CLOSED'}
               </span>
             </div>
@@ -611,118 +699,59 @@ export function AppPage() {
         </motion.div>
       </FloatingPanel>
 
-      {/* ---- Floating run input -- top right ---- */}
-      <FloatingPanel position="top-right" className="p-3 w-72">
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }} className="flex items-center gap-2">
-          <Input
-            value={runId}
-            onChange={(e) => setRunId(e.target.value)}
-            placeholder="Paste run ID..."
-            className="h-8 text-xs"
-          />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="icon-sm" onClick={() => void refreshAll()}>
-                <RefreshCw className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">Refresh run data</TooltipContent>
-          </Tooltip>
-        </motion.div>
-      </FloatingPanel>
-
-      {/* ---- Floating bottom-left: mode toggle + studio actions ---- */}
+      {/* ---- Floating bottom-left: studio actions + events/refresh ---- */}
       <FloatingPanel position="bottom-left" className="p-1.5">
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="flex items-center gap-2">
-          <ToggleGroup
-            type="single"
-            value={canvasMode}
-            onValueChange={(v) => {
-              if (v === 'attack' || v === 'studio') {
-                setCanvasMode(v)
-                setPanels((p) => ({ ...p, right: null }))
-              }
-            }}
-            variant="outline"
-            size="sm"
-          >
-            <ToggleGroupItem value="attack" className="gap-1.5 text-xs">
-              <Swords className="size-3.5" /> Attack Canvas
-            </ToggleGroupItem>
-            <ToggleGroupItem value="studio" className="gap-1.5 text-xs">
-              <Workflow className="size-3.5" /> Studio
-            </ToggleGroupItem>
-          </ToggleGroup>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
 
           {canvasMode === 'studio' && (
-            <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-1">
-              <Separator orientation="vertical" className="h-5 mx-1" />
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="xs" onClick={() => addStudioNode('attacker')}>
-                    <Plus className="size-3" /> Attacker
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">Add attacker node</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="xs" onClick={() => addStudioNode('critic')}>
-                    <Plus className="size-3" /> Critic
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">Add critic node</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="xs" onClick={() => addStudioNode('verifier')}>
-                    <Plus className="size-3" /> Verifier
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">Add verifier node</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="xs" onClick={() => addStudioNode('analyst')}>
-                    <Plus className="size-3" /> Analyst
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">Add analyst node</TooltipContent>
-              </Tooltip>
+            <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+              {(['attacker', 'critic', 'verifier', 'analyst'] as const).map((role) => (
+                <button
+                  key={role}
+                  onClick={() => addStudioNode(role)}
+                  title={`Add ${role} node`}
+                  style={ghostBtnStyle}
+                  onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)')}
+                  onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'transparent')}
+                >
+                  <Plus size={11} />
+                  <span style={{ textTransform: 'capitalize' }}>{role}</span>
+                </button>
+              ))}
+              <div style={{ ...sepStyle, width: '1px', height: '18px', margin: '0 4px' }} />
             </motion.div>
           )}
 
-          <Separator orientation="vertical" className="h-5 mx-1" />
+          <button
+            onClick={() => setPanels((p) => ({ ...p, bottom: p.bottom === 'events' ? null : 'events' }))}
+            title="Toggle event timeline"
+            style={ghostBtnStyle}
+            onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)')}
+            onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'transparent')}
+          >
+            <ListCollapse size={13} />
+            <span>Events</span>
+            {streaming && (
+              <span style={{
+                width: '7px',
+                height: '7px',
+                borderRadius: '50%',
+                background: 'rgba(99,102,241,0.9)',
+                animation: 'ping 1s cubic-bezier(0,0,0.2,1) infinite',
+                display: 'inline-block',
+              }} />
+            )}
+          </button>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="xs"
-                onClick={() => setPanels((p) => ({ ...p, bottom: p.bottom === 'events' ? null : 'events' }))}
-                className="gap-1.5 text-xs"
-              >
-                <ListCollapse className="size-3.5" />
-                Events
-                {streaming && (
-                  <span className="relative flex size-2 ml-0.5">
-                    <span className="absolute inline-flex size-full rounded-full bg-primary opacity-75 animate-ping" />
-                    <span className="relative inline-flex size-2 rounded-full bg-primary" />
-                  </span>
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="text-xs">Toggle event timeline</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="xs" onClick={() => void refreshAll()} className="gap-1.5 text-xs">
-                <Activity className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="text-xs">Refresh data</TooltipContent>
-          </Tooltip>
+          <button
+            onClick={() => void refreshAll()}
+            title="Refresh data"
+            style={ghostBtnStyle}
+            onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)')}
+            onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'transparent')}
+          >
+            <Activity size={13} />
+          </button>
         </motion.div>
       </FloatingPanel>
 
@@ -802,4 +831,74 @@ export function AppPage() {
       <SpotlightWalkthrough />
     </CanvasBackground>
   )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Shared style constants                                            */
+/* ------------------------------------------------------------------ */
+
+const labelStyle: React.CSSProperties = {
+  fontSize: '11px',
+  fontWeight: 500,
+  color: 'rgba(255,255,255,0.4)',
+  letterSpacing: '0.02em',
+}
+
+const monoStyle: React.CSSProperties = {
+  fontFamily: 'monospace',
+  fontSize: '11px',
+  color: 'rgba(255,255,255,0.75)',
+}
+
+const badgeStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  padding: '1px 7px',
+  borderRadius: '4px',
+  fontSize: '10px',
+  fontWeight: 600,
+  letterSpacing: '0.04em',
+  textTransform: 'uppercase',
+  border: '1px solid',
+}
+
+const sepStyle: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.08)',
+  height: '1px',
+  width: '100%',
+}
+
+const ghostBtnStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '5px',
+  padding: '4px 8px',
+  background: 'transparent',
+  border: 'none',
+  borderRadius: '5px',
+  color: 'rgba(255,255,255,0.55)',
+  fontSize: '11px',
+  cursor: 'pointer',
+  transition: 'background 0.12s',
+}
+
+const ctxItemStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  width: '100%',
+  padding: '6px 10px',
+  background: 'transparent',
+  border: 'none',
+  borderRadius: '5px',
+  color: 'rgba(255,255,255,0.65)',
+  fontSize: '12px',
+  cursor: 'pointer',
+  textAlign: 'left',
+}
+
+const ctxSepStyle: React.CSSProperties = {
+  height: '1px',
+  background: 'rgba(255,255,255,0.07)',
+  margin: '3px 0',
 }

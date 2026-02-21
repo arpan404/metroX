@@ -672,7 +672,6 @@ function NodeInfoDialog({
   if (node) {
     rows.push({ label: 'Node ID', value: node.id })
     rows.push({ label: 'Type', value: node.type ?? 'unknown' })
-    rows.push({ label: 'Position', value: `x: ${Math.round(node.position.x)}, y: ${Math.round(node.position.y)}` })
   }
   if (typeof nodeData.label === 'string' && nodeData.label.trim()) rows.push({ label: 'Name', value: nodeData.label })
   if (typeof nodeData.role === 'string' && nodeData.role.trim()) rows.push({ label: 'Agent', value: nodeData.role })

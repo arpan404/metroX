@@ -13,6 +13,7 @@ import { SettingsPanel } from '@/components/workspace/SettingsPanel'
 import { EventsPanel } from '@/components/workspace/EventsPanel'
 import { AttackDetailPanel } from '@/components/workspace/AttackDetailPanel'
 import { StudioInspectorPanel } from '@/components/workspace/StudioInspectorPanel'
+import { QueueCenterPanel } from '@/components/workspace/QueueCenterPanel'
 import { CommandPalette } from '@/components/workspace/CommandPalette'
 
 /* ── Keyboard Shortcuts ── */
@@ -30,6 +31,7 @@ function useKeyboardShortcuts() {
         '2': 'analytics',
         '3': 'settings',
         '4': 'studio-inspector',
+        '5': 'queue-center',
       }
 
       if (panelKeys[e.key]) {
@@ -82,6 +84,7 @@ function WorkspaceInner() {
         <SettingsPanel key="settings" />
         <AttackDetailPanel key="attack-detail" />
         <StudioInspectorPanel key="studio-inspector" />
+        <QueueCenterPanel key="queue-center" />
       </AnimatePresence>
 
       {/* Events panel: bottom pop-up */}

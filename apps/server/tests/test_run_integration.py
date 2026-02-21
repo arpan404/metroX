@@ -224,6 +224,12 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
         if row.get("event_type") == "progress"
     ]
     assert len(progress_events) == run_out.json()["completed_attacks"]
+    sample_progress = progress_events[0]
+    assert isinstance(sample_progress.get("data"), dict)
+    sample_data = sample_progress["data"]
+    assert isinstance(sample_data.get("attack_type"), str)
+    assert isinstance(sample_data.get("attack_delta"), dict)
+    assert sample_data["attack_delta"].get("attack_type") == sample_data.get("attack_type")
 
 
 def test_resume_continues_from_checkpoint_without_duplicate_executions(integrated_client, monkeypatch) -> None:

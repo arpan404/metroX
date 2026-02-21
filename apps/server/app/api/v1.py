@@ -214,6 +214,27 @@ def _queue_priority_for_run(*, preset: str, mode: str, is_resume: bool = False) 
     return priority
 
 
+def _queue_run_payload(run: Run | None) -> dict[str, Any] | None:
+    if not run:
+        return None
+    return {
+        "id": run.id,
+        "session_id": run.session_id,
+        "config_profile_id": run.config_profile_id,
+        "preset": run.preset,
+        "mode": run.mode,
+        "strictness": run.strictness,
+        "status": run.status,
+        "total_attacks": int(run.total_attacks or 0),
+        "completed_attacks": int(run.completed_attacks or 0),
+        "budget_spent_usd": float(run.budget_spent_usd or 0.0),
+        "estimated_final_cost_usd": float(run.estimated_final_cost_usd or 0.0),
+        "created_at": run.created_at.isoformat() if run.created_at else None,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "ended_at": run.ended_at.isoformat() if run.ended_at else None,
+    }
+
+
 def _run_pipeline_background(run_id: str) -> None:
     db = SessionLocal()
     try:
@@ -1165,6 +1186,93 @@ def queue_stats() -> dict:
     }
 
 
+@router.get("/queue/runs")
+def queue_runs(
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> dict:
+    settings = get_settings()
+    pending = RUN_QUEUE.list_pending(limit=limit)
+    pending_run_ids = [str(row.get("run_id", "")).strip() for row in pending if str(row.get("run_id", "")).strip()]
+    run_rows = (
+        db.query(Run).filter(Run.id.in_(pending_run_ids)).all()
+        if pending_run_ids
+        else []
+    )
+    run_map = {row.id: row for row in run_rows}
+    pending_payload = [
+        {
+            **row,
+            "run": _queue_run_payload(run_map.get(str(row.get("run_id", "")))),
+        }
+        for row in pending
+    ]
+
+    running_rows = (
+        db.query(Run)
+        .filter(Run.status == "running")
+        .order_by(Run.started_at.desc(), Run.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    completed_rows = (
+        db.query(Run)
+        .filter(Run.status.in_(["completed", "failed", "interrupted"]))
+        .order_by(Run.ended_at.desc(), Run.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "backend": settings.run_queue_backend,
+        "pending": pending_payload,
+        "running": [_queue_run_payload(row) for row in running_rows],
+        "completed": [_queue_run_payload(row) for row in completed_rows],
+    }
+
+
+@router.post("/queue/runs/{run_id}/move-up")
+def queue_move_up(run_id: str, db: Session = Depends(get_db)) -> dict:
+    updated = RUN_QUEUE.move_up(run_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Run not found in queue")
+    try:
+        log_event(
+            db,
+            run_id=run_id,
+            event_type="queue_reprioritized",
+            step=0,
+            message=f"Queue move-up applied (priority={updated.get('priority')})",
+            data={"action": "move_up", **updated},
+        )
+    except Exception:
+        db.rollback()
+    return {"ok": True, "updated": updated}
+
+
+@router.post("/queue/runs/{run_id}/priority")
+def queue_set_priority(
+    run_id: str,
+    priority: int = Query(..., ge=0, le=9),
+    db: Session = Depends(get_db),
+) -> dict:
+    updated = RUN_QUEUE.set_priority(run_id, priority)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Run not found in queue")
+    try:
+        log_event(
+            db,
+            run_id=run_id,
+            event_type="queue_reprioritized",
+            step=0,
+            message=f"Queue priority updated (priority={updated.get('priority')})",
+            data={"action": "set_priority", **updated},
+        )
+    except Exception:
+        db.rollback()
+    return {"ok": True, "updated": updated}
+
+
 @router.get("/runs/{run_id}", response_model=RunOut)
 def get_run(run_id: str, db: Session = Depends(get_db)) -> RunOut:
     run = db.query(Run).filter(Run.id == run_id).one_or_none()
@@ -1210,6 +1318,46 @@ def resume_run(run_id: str, background_tasks: BackgroundTasks, db: Session = Dep
     return RunOut.model_validate(run, from_attributes=True)
 
 
+@router.post("/runs/{run_id}/stop", response_model=RunOut)
+def stop_run(run_id: str, db: Session = Depends(get_db)) -> RunOut:
+    run = db.query(Run).filter(Run.id == run_id).one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.status in {"completed", "failed", "interrupted"}:
+        return RunOut.model_validate(run, from_attributes=True)
+
+    removed_from_queue = False
+    if run.status == "queued":
+        removed_from_queue = RUN_QUEUE.remove(run_id)
+
+    run.status = "interrupted"
+    run.ended_at = datetime.now(timezone.utc)
+    db.commit()
+    db.add(
+        AFKRunState(
+            run_id=run.id,
+            thread_id=run.thread_id or f"run-{run.id}",
+            state="interrupted",
+            step=0,
+            checkpoint={
+                "stop_requested_at": datetime.now(timezone.utc).isoformat(),
+                "removed_from_queue": removed_from_queue,
+            },
+        )
+    )
+    db.commit()
+    log_event(
+        db,
+        run_id=run.id,
+        event_type="run_stop_requested",
+        step=0,
+        message="Stop requested from queue center",
+        data={"removed_from_queue": removed_from_queue},
+    )
+    db.refresh(run)
+    return RunOut.model_validate(run, from_attributes=True)
+
+
 @router.get("/runs/{run_id}/events")
 def stream_run_events(run_id: str, db: Session = Depends(get_db)) -> StreamingResponse:
     run = db.query(Run).filter(Run.id == run_id).one_or_none()
@@ -1219,6 +1367,7 @@ def stream_run_events(run_id: str, db: Session = Depends(get_db)) -> StreamingRe
     def event_generator() -> str:
         last_id = 0
         terminal_states = {"completed", "failed", "interrupted"}
+        poll_interval_s = 0.2
         stream_db = SessionLocal()
         try:
             while True:
@@ -1244,7 +1393,7 @@ def stream_run_events(run_id: str, db: Session = Depends(get_db)) -> StreamingRe
                 if current and current.status in terminal_states:
                     yield "event: end\ndata: {}\n\n"
                     break
-                time.sleep(1)
+                time.sleep(poll_interval_s)
         finally:
             stream_db.close()
 
@@ -1292,6 +1441,9 @@ async def stream_run_events_ws(websocket: WebSocket, run_id: str) -> None:
     await websocket.accept()
     last_id = 0
     terminal_states = {"completed", "failed", "interrupted"}
+    poll_interval_s = 0.2
+    heartbeat_interval_s = 1.0
+    last_heartbeat_at = time.monotonic()
     stream_db = SessionLocal()
     try:
         while True:
@@ -1317,8 +1469,11 @@ async def stream_run_events_ws(websocket: WebSocket, run_id: str) -> None:
             if current and current.status in terminal_states:
                 await websocket.send_json({"event_type": "end"})
                 break
-            await websocket.send_json({"event_type": "heartbeat"})
-            await asyncio.sleep(1.0)
+            now = time.monotonic()
+            if now - last_heartbeat_at >= heartbeat_interval_s:
+                await websocket.send_json({"event_type": "heartbeat"})
+                last_heartbeat_at = now
+            await asyncio.sleep(poll_interval_s)
     except WebSocketDisconnect:
         return
     except Exception:

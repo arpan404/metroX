@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import {
   Search,
@@ -11,6 +11,7 @@ import {
   SkipForward,
   Radio,
   ChevronDown,
+  ListTodo,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Link } from 'react-router-dom'
@@ -26,6 +27,10 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
   const { theme, setTheme } = useTheme()
   const [runIdInput, setRunIdInput] = useState(state.currentRunId ?? '')
   const [isRefreshing, setIsRefreshing] = useState(false)
+
+  useEffect(() => {
+    setRunIdInput(state.currentRunId ?? '')
+  }, [state.currentRunId])
 
   const handleLoadRun = useCallback(() => {
     const id = runIdInput.trim()
@@ -147,6 +152,23 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
 
       {/* Actions */}
       <div className="flex items-center gap-0.5">
+        {/* Queue center */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn('h-7 w-7', state.activePanel === 'queue-center' && 'bg-primary/15 text-primary')}
+              onClick={() => dispatch({ type: 'TOGGLE_PANEL', panel: 'queue-center' })}
+            >
+              <ListTodo className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            Queue Center <kbd className="ml-1 font-mono text-[10px]">5</kbd>
+          </TooltipContent>
+        </Tooltip>
+
         {/* Refresh */}
         <Tooltip>
           <TooltipTrigger asChild>

@@ -330,6 +330,85 @@ def test_create_run_contract(api_client) -> None:
     assert payload["status"] == "queued"
 
 
+def test_queue_center_controls_contract(api_client, monkeypatch) -> None:
+    client, _ = api_client
+    session_id, profile_id = _create_session_and_profile(client)
+    run_one = _create_run(client, session_id, profile_id)
+    run_two = _create_run(client, session_id, profile_id)
+
+    queue_rows: list[dict[str, int | str]] = [
+        {"run_id": run_one, "attempt": 0, "priority": 3},
+        {"run_id": run_two, "attempt": 0, "priority": 2},
+    ]
+
+    def _reindex() -> None:
+        queue_rows.sort(key=lambda row: (int(row["priority"]), str(row["run_id"])))
+        for idx, row in enumerate(queue_rows):
+            row["position"] = idx + 1
+
+    def _list_pending(limit: int = 100):
+        _reindex()
+        return [dict(row) for row in queue_rows[:limit]]
+
+    def _move_up(run_id: str):
+        for row in queue_rows:
+            if str(row["run_id"]) != run_id:
+                continue
+            row["priority"] = max(0, int(row["priority"]) - 1)
+            _reindex()
+            return {"run_id": run_id, "attempt": int(row["attempt"]), "priority": int(row["priority"])}
+        return None
+
+    def _set_priority(run_id: str, priority: int):
+        for row in queue_rows:
+            if str(row["run_id"]) != run_id:
+                continue
+            row["priority"] = max(0, int(priority))
+            _reindex()
+            return {"run_id": run_id, "attempt": int(row["attempt"]), "priority": int(row["priority"])}
+        return None
+
+    def _remove(run_id: str):
+        before = len(queue_rows)
+        queue_rows[:] = [row for row in queue_rows if str(row["run_id"]) != run_id]
+        _reindex()
+        return len(queue_rows) < before
+
+    monkeypatch.setattr(v1.RUN_QUEUE, "list_pending", _list_pending)
+    monkeypatch.setattr(v1.RUN_QUEUE, "move_up", _move_up)
+    monkeypatch.setattr(v1.RUN_QUEUE, "set_priority", _set_priority)
+    monkeypatch.setattr(v1.RUN_QUEUE, "remove", _remove)
+
+    listing = client.get("/v1/queue/runs?limit=50", headers=_headers())
+    assert listing.status_code == 200
+    pending = listing.json()["pending"]
+    pending_ids = [row["run_id"] for row in pending]
+    assert run_one in pending_ids
+    assert run_two in pending_ids
+
+    moved = client.post(f"/v1/queue/runs/{run_one}/move-up", headers=_headers())
+    assert moved.status_code == 200
+    assert moved.json()["ok"] is True
+
+    prioritized = client.post(
+        f"/v1/queue/runs/{run_two}/priority",
+        params={"priority": 0},
+        headers=_headers(),
+    )
+    assert prioritized.status_code == 200
+    assert prioritized.json()["ok"] is True
+    assert int(prioritized.json()["updated"]["priority"]) == 0
+
+    stopped = client.post(f"/v1/runs/{run_one}/stop", headers=_headers())
+    assert stopped.status_code == 200
+    assert stopped.json()["status"] == "interrupted"
+
+    relisted = client.get("/v1/queue/runs?limit=50", headers=_headers())
+    assert relisted.status_code == 200
+    relisted_ids = [row["run_id"] for row in relisted.json()["pending"]]
+    assert run_one not in relisted_ids
+
+
 def test_attack_summary_prepopulates_taxonomy_before_execution(api_client) -> None:
     client, _ = api_client
     session_id, profile_id = _create_session_and_profile(client)

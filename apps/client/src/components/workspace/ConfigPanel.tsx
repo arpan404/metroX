@@ -577,7 +577,7 @@ export function ConfigPanel() {
       dispatch({ type: 'SET_RUN_ID', runId })
       const resumed = await api.resumeRun(runId)
       dispatch({ type: 'SET_RUN_DATA', data: resumed })
-      actions.startStreaming()
+      actions.startStreaming(runId)
       await actions.fetchRunData()
       await refreshHistory(state.sessionId, state.configProfileId)
       toast.success(`Run ${runId.slice(0, 8)} resumed.`)
@@ -921,7 +921,7 @@ export function ConfigPanel() {
       })
 
       // Start streaming
-      actions.startStreaming()
+      actions.startStreaming(run.id)
       if (!state.eventsOpen) dispatch({ type: 'TOGGLE_EVENTS' })
       actions.fetchRunData()
       setTimeout(() => {

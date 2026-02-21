@@ -358,6 +358,7 @@ import {
   Play,
   RotateCcw,
   Download,
+  ListTodo,
 } from 'lucide-react'
 import { Shield } from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react'
@@ -385,6 +386,12 @@ function CanvasContextMenu({ x, y, onClose }: { x: number; y: number; onClose: (
       icon: Settings2,
       action: () => dispatch({ type: 'TOGGLE_PANEL', panel: 'settings' }),
       shortcut: '3',
+    },
+    {
+      label: 'Open Queue Center',
+      icon: ListTodo,
+      action: () => dispatch({ type: 'TOGGLE_PANEL', panel: 'queue-center' }),
+      shortcut: '5',
     },
     { separator: true } as const,
     {
@@ -564,7 +571,7 @@ function NodeContextMenu({
           data: { run_id: rerun.id },
         },
       })
-      actions.startStreaming()
+      actions.startStreaming(rerun.id)
       if (!state.eventsOpen) dispatch({ type: 'TOGGLE_EVENTS' })
       toast.success(`Rerun launched: ${rerun.id.slice(0, 8)}`)
     } catch (error) {

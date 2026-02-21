@@ -103,6 +103,11 @@ export type AttackSummaryPayload = {
     avg_uncertainty?: number
     severity_breakdown: Record<string, number>
   }>
+  detector_summary?: {
+    avg_disagreement: number
+    avg_uncertainty: number
+    count: number
+  }
 }
 
 export type ClusterPayload = {
@@ -404,8 +409,49 @@ export type QueueStats = {
   dlq_pending: number
   workers: number
   live_workers: number
-  started: number
+  started: boolean
   backend: string
+}
+
+export type QueueRunItem = {
+  id: string
+  session_id: string
+  config_profile_id: string
+  preset: string
+  mode: string
+  strictness: string
+  status: string
+  total_attacks: number
+  completed_attacks: number
+  budget_spent_usd: number
+  estimated_final_cost_usd: number
+  created_at?: string | null
+  started_at?: string | null
+  ended_at?: string | null
+}
+
+export type QueuePendingItem = {
+  run_id: string
+  attempt: number
+  priority: number
+  position: number
+  run?: QueueRunItem | null
+}
+
+export type QueueRunsPayload = {
+  backend: string
+  pending: QueuePendingItem[]
+  running: QueueRunItem[]
+  completed: QueueRunItem[]
+}
+
+export type QueueActionResponse = {
+  ok: boolean
+  updated: {
+    run_id: string
+    attempt: number
+    priority: number
+  }
 }
 
 /* ------------------------------------------------------------------ */

@@ -68,8 +68,12 @@ async def chat(agent_name: str, req: ChatRequest):
         tool_events = [
             {
                 "tool_name": t.tool_name,
-                "success": t.success,
+                "success": bool(t.success),
                 "output": str(t.output)[:500] if t.output else None,
+                "input": getattr(t, "input", None) or getattr(t, "arguments", None),
+                "approved": getattr(t, "approved", None),
+                "mutating": getattr(t, "mutating", None),
+                "error": str(getattr(t, "error", "") or ""),
             }
             for t in result.tool_executions
         ]

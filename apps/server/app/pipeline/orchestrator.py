@@ -414,6 +414,17 @@ class RunOrchestrator:
             for case in attack_cases:
                 if case.id in processed_case_ids:
                     continue
+                self.db.refresh(run)
+                if run.status == "interrupted":
+                    interrupted_early = True
+                    log_event(
+                        self.db,
+                        run_id=run.id,
+                        event_type="run_interrupted",
+                        step=2,
+                        message="Run interrupted by user request",
+                    )
+                    break
                 request = TargetRequest(
                     run_id=run.id,
                     attack_id=case.id,
@@ -495,6 +506,10 @@ class RunOrchestrator:
                 self.db.add(label)
                 executions.append(execution)
                 processed_case_ids.add(case.id)
+                execution_failure = bool(any(bool(value) for value in (detection.failure_flags or {}).values()))
+                severity = str(detection.severity or "low").lower()
+                if severity not in {"critical", "high", "medium", "low"}:
+                    severity = "low"
                 cost_row = compute_execution_cost(
                     self.db,
                     run_id=run.id,
@@ -551,6 +566,18 @@ class RunOrchestrator:
                         "total": len(attack_cases),
                         "spent_usd": run.budget_spent_usd,
                         "projected_final_usd": run.estimated_final_cost_usd,
+                        "attack_type": case.attack_type,
+                        "attack_delta": {
+                            "attack_type": case.attack_type,
+                            "total_inc": 1,
+                            "success_inc": 1 if execution_failure else 0,
+                            "failure_inc": 0 if execution_failure else 1,
+                            "confidence_sum_inc": float(detection.confidence or 0.0),
+                            "disagreement_sum_inc": float(detection.disagreement_score or 0.0),
+                            "uncertainty_sum_inc": float(detection.uncertainty or 0.0),
+                            "severity_inc": {severity: 1},
+                        },
+                        "execution_id": execution.id,
                     },
                     auto_commit=False,
                 )

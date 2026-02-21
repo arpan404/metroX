@@ -9,10 +9,8 @@ import {
   RefreshCw,
   Play,
   Pause,
-  SkipForward,
   Radio,
   ChevronDown,
-  ListTodo,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Link } from 'react-router-dom'
@@ -83,7 +81,6 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
   }, [actions])
 
   const runStatus = state.runData?.status
-  const canResumeRun = runStatus === 'interrupted' || runStatus === 'failed'
   const progress = state.runData
     ? state.runData.total_attacks > 0
       ? Math.round((state.runData.completed_attacks / state.runData.total_attacks) * 100)
@@ -230,23 +227,6 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
 
       {/* Actions */}
       <div className="flex items-center gap-0.5">
-        {/* Queue center */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn('h-7 w-7', state.activePanel === 'queue-center' && 'bg-primary/15 text-primary')}
-              onClick={() => dispatch({ type: 'TOGGLE_PANEL', panel: 'queue-center' })}
-            >
-              <ListTodo className="h-3.5 w-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="text-xs">
-            Queue Center <kbd className="ml-1 font-mono text-[10px]">5</kbd>
-          </TooltipContent>
-        </Tooltip>
-
         {/* Refresh */}
         <Tooltip>
           <TooltipTrigger asChild>
@@ -261,23 +241,6 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs">Refresh data</TooltipContent>
         </Tooltip>
-
-        {/* Resume run */}
-        {canResumeRun && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => actions.resumeRun()}
-              >
-                <SkipForward className="h-3.5 w-3.5 text-amber-400" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">Resume run</TooltipContent>
-          </Tooltip>
-        )}
 
         <div className="h-5 w-px bg-border/40 mx-0.5" />
 

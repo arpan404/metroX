@@ -8,6 +8,7 @@ import type {
   ExecutionSlicesPayload,
   PricingProfilePayload,
   ProviderCredential,
+  ProviderCredentialListPayload,
   ProviderValidation,
   RiskCards,
   RunOut,
@@ -77,7 +78,11 @@ export const api = {
   },
 
   listProviderCredentials() {
-    return request<{ credentials: ProviderCredential[] }>('/v1/providers/credentials')
+    return request<ProviderCredentialListPayload>('/v1/providers/credentials')
+  },
+
+  getProviderCredential(credentialId: string) {
+    return request<ProviderCredential>(`/v1/providers/credentials/${credentialId}`)
   },
 
   rotateProviderCredential(credentialId: string, payload: { api_key: string; key_version?: string; status?: string }) {

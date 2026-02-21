@@ -113,6 +113,10 @@ export type ProviderCredential = {
   last_validated_at?: string | null
 }
 
+export type ProviderCredentialListPayload = {
+  credentials: ProviderCredential[]
+}
+
 export type PricingProfilePayload = {
   id: string
   name: string

@@ -73,6 +73,12 @@ make dev client
 - `POST /v1/mitigation-experiments`
 - `GET /v1/compare`
 
+## Frontend Pages
+- `/` Setup Wizard
+- `/monitor` Live Monitor
+- `/analytics` Analytics
+- `/providers` Provider Credentials (create/list/rotate/validate)
+
 ## Required Docs
 - `AGENTS.md`
 - `PROJECT_DESCRIPTION.md`

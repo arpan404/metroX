@@ -349,6 +349,14 @@ td {
   text-align: left;
 }
 
+tbody tr {
+  cursor: pointer;
+}
+
+.table-row-active td {
+  background: rgba(0, 179, 164, 0.16);
+}
+
 th {
   color: var(--muted);
   font-weight: 500;

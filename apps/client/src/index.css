@@ -98,11 +98,11 @@
 /* ─── Dark mode ──────────────────────────────────────────── */
 .dark {
     /* Surfaces */
-    --background:           oklch(0.08  0 0);   /* near-black     */
+    --background:           oklch(0     0 0);   /* pure black     */
     --foreground:           oklch(0.96  0 0);   /* near-white     */
-    --card:                 oklch(0.11  0 0);
+    --card:                 oklch(0.08  0 0);
     --card-foreground:      oklch(0.96  0 0);
-    --popover:              oklch(0.11  0 0);
+    --popover:              oklch(0.08  0 0);
     --popover-foreground:   oklch(0.96  0 0);
 
     /* Primary = catchy bright aqua (dark mode) */
@@ -133,7 +133,7 @@
     --chart-5:              oklch(0.65 0.17 280);
 
     /* Sidebar */
-    --sidebar:                      oklch(0.09  0 0);
+    --sidebar:                      oklch(0.05  0 0);
     --sidebar-foreground:           oklch(0.96  0 0);
     --sidebar-primary:              oklch(0.74  0.16 195);
     --sidebar-primary-foreground:   oklch(0.08  0 0);

@@ -1,3 +1,5 @@
+"use client"
+
 import * as React from "react"
 import { XIcon } from "lucide-react"
 import { Dialog as SheetPrimitive } from "radix-ui"
@@ -83,121 +85,6 @@ function SheetContent({
   )
 }
 
-/* ------------------------------------------------------------------ */
-/*  GlassPanel — full-viewport modal with clean header bar            */
-/* ------------------------------------------------------------------ */
-
-function GlassPanel({
-  open,
-  onClose,
-  title,
-  side: _side = "right",
-  className,
-  children,
-}: {
-  open: boolean
-  onClose: () => void
-  title?: string
-  side?: "left" | "right"
-  className?: string
-  children: React.ReactNode
-}) {
-  /* Close on Escape */
-  React.useEffect(() => {
-    if (!open) return
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose()
-    }
-    document.addEventListener("keydown", handleKey)
-    return () => document.removeEventListener("keydown", handleKey)
-  }, [open, onClose])
-
-  return (
-    <>
-      {/* ── Backdrop ── */}
-      <div
-        aria-hidden="true"
-        onClick={onClose}
-        className={cn(
-          "fixed inset-0 z-40 transition-all duration-300",
-          "bg-black/25 dark:bg-black/55",
-          open
-            ? "opacity-100 pointer-events-auto"
-            : "opacity-0 pointer-events-none",
-        )}
-      />
-
-      {/* ── Modal ── */}
-      <div
-        data-slot="glass-panel"
-        data-state={open ? "open" : "closed"}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className={cn(
-          "fixed z-50",
-          /* Responsive insets: snug on mobile, generous on larger screens */
-          "inset-2 sm:inset-4 md:inset-6 lg:inset-8",
-          /* Layout */
-          "flex flex-col",
-          /* Surface: solid, always legible */
-          "bg-background",
-          "border border-border",
-          "rounded-xl overflow-hidden",
-          /* Depth */
-          "shadow-[0_8px_40px_-8px_rgb(0_0_0_/_0.18),0_2px_8px_-2px_rgb(0_0_0_/_0.08)]",
-          "dark:shadow-[0_8px_40px_-8px_rgb(0_0_0_/_0.6),0_2px_8px_-2px_rgb(0_0_0_/_0.4)]",
-          /* Entry animation: scale + fade */
-          "transition-all duration-200 ease-out",
-          open
-            ? "opacity-100 scale-100 translate-y-0 pointer-events-auto"
-            : "opacity-0 scale-[0.98] translate-y-1 pointer-events-none",
-          className,
-        )}
-      >
-        {/* ── Header bar ── */}
-        <div className={cn(
-          "flex-none flex items-center justify-between",
-          "px-5 py-3.5",
-          "border-b border-border",
-          "bg-card",
-        )}>
-          {title ? (
-            <div className="flex items-center gap-2.5">
-              {/* Accent pip */}
-              <span className="block h-3.5 w-0.5 rounded-full bg-foreground/30" />
-              <span className="text-[13px] font-semibold tracking-tight text-foreground">
-                {title}
-              </span>
-            </div>
-          ) : (
-            <span />
-          )}
-
-          <button
-            onClick={onClose}
-            aria-label="Close panel"
-            className={cn(
-              "grid place-items-center size-7 rounded-md",
-              "text-muted-foreground",
-              "hover:bg-muted hover:text-foreground",
-              "transition-colors duration-150",
-              "focus:outline-none focus:ring-1 focus:ring-ring focus:ring-offset-1",
-            )}
-          >
-            <XIcon className="size-3.5" />
-          </button>
-        </div>
-
-        {/* ── Content — flex-1 + min-h-0 so scroll areas work ── */}
-        <div className="flex-1 min-h-0 overflow-hidden">
-          {children}
-        </div>
-      </div>
-    </>
-  )
-}
-
 function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -253,5 +140,4 @@ export {
   SheetFooter,
   SheetTitle,
   SheetDescription,
-  GlassPanel,
 }

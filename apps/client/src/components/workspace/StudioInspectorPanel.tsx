@@ -293,7 +293,7 @@ export function StudioInspectorPanel() {
             <div className="min-w-0 text-[10px] leading-snug text-muted-foreground">
               Saved values are written into <code>benchmark_config.afk_orchestration.roles</code>.
             </div>
-            <div className="flex flex-wrap items-center justify-start gap-1.5">
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
               <Button
                 type="button"
                 variant="outline"

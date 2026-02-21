@@ -428,11 +428,9 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
     streamCleanupRef.current?.()
     dispatch({ type: 'SET_STREAMING', active: true })
 
-    let settled = false
     const wsCleanup = api.streamRunEventsWs(
       runId,
       (evt) => {
-        settled = true
         dispatch({ type: 'ADD_EVENT', event: evt as RunEvent })
       },
       () => {
@@ -440,20 +438,7 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
       },
     )
 
-    const fallbackTimer = setTimeout(() => {
-      if (!settled) {
-        wsCleanup()
-        const sseCleanup = api.streamRunEvents(
-          runId,
-          (evt) => dispatch({ type: 'ADD_EVENT', event: evt as RunEvent }),
-          () => dispatch({ type: 'SET_STREAMING', active: false }),
-        )
-        streamCleanupRef.current = sseCleanup
-      }
-    }, 2000)
-
     streamCleanupRef.current = () => {
-      clearTimeout(fallbackTimer)
       wsCleanup()
     }
   }
@@ -488,6 +473,13 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
         await fetchRunDataInternal(runId)
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to fetch run data'
+        if (/run not found|not found|404/i.test(message)) {
+          streamCleanupRef.current?.()
+          streamCleanupRef.current = null
+          dispatch({ type: 'SET_STREAMING', active: false })
+          dispatch({ type: 'SET_RUN_ID', runId: null })
+          return
+        }
         dispatch({
           type: 'ADD_EVENT',
           event: {

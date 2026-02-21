@@ -34,9 +34,9 @@ export function AttackNode({ data, selected }: NodeProps<AttackNodeData>) {
   return (
     <div
       className={cn(
-        'w-52 rounded-lg border bg-card p-3 shadow-sm transition-all duration-200',
-        selected && 'ring-2 ring-primary shadow-md',
-        riskPercent > 50 && 'border-destructive/40',
+        'w-52 rounded-lg border bg-background p-3 transition-all duration-200',
+        selected && 'ring-2 ring-primary',
+        riskPercent > 50 ? 'border-destructive/50' : 'border-border',
       )}
     >
       <Handle type="target" position={Position.Left} />
@@ -53,9 +53,7 @@ export function AttackNode({ data, selected }: NodeProps<AttackNodeData>) {
       </div>
       <Progress value={riskPercent} className="mb-2 h-1.5" />
       <div className="flex justify-between font-mono text-[11px] text-muted-foreground">
-        <span>
-          {data.success}/{data.total} pass
-        </span>
+        <span>{data.success}/{data.total} pass</span>
         <span>{data.failure} fail</span>
       </div>
       <Handle type="source" position={Position.Right} />
@@ -67,7 +65,7 @@ export function RootNode({ data, selected }: NodeProps<RootNodeData>) {
   return (
     <div
       className={cn(
-        'w-48 rounded-lg border-2 border-primary/40 bg-card p-3 shadow-sm transition-all duration-200',
+        'w-48 rounded-lg border-2 border-primary/40 bg-background p-3 transition-all duration-200',
         selected && 'ring-2 ring-primary',
       )}
     >
@@ -90,23 +88,19 @@ export function RootNode({ data, selected }: NodeProps<RootNodeData>) {
           />
           {data.status}
         </div>
-        <div>
-          {data.completed}/{data.total} attacks
-        </div>
+        <div>{data.completed}/{data.total} attacks</div>
       </div>
     </div>
   )
 }
 
-export function AnalyticsNode({
-  data,
-  selected,
-}: NodeProps<AnalyticsNodeData>) {
+export function AnalyticsNode({ data, selected }: NodeProps<AnalyticsNodeData>) {
   return (
     <div
       className={cn(
-        'w-44 rounded-lg border bg-card p-3 shadow-sm transition-all duration-200',
+        'w-44 rounded-lg border bg-background p-3 transition-all duration-200',
         selected && 'ring-2 ring-primary',
+        data.gatePass ? 'border-emerald-500/40' : 'border-destructive/40',
       )}
     >
       <Handle type="target" position={Position.Left} />

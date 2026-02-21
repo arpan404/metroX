@@ -5,6 +5,7 @@ import { Sections } from './components/landing/sections'
 import { Footer } from './components/landing/footer'
 import { DocsPage } from './components/pages/DocsPage'
 import { AppPage } from './pages/AppPage'
+import { TooltipProvider } from './components/ui/tooltip'
 
 function LandingPage() {
     return (
@@ -22,12 +23,14 @@ function LandingPage() {
 
 export default function App() {
     return (
-        <BrowserRouter>
-            <Routes>
-                <Route path="/" element={<LandingPage />} />
-                <Route path="/docs" element={<DocsPage />} />
-                <Route path="/app" element={<AppPage />} />
-            </Routes>
-        </BrowserRouter>
+        <TooltipProvider delayDuration={400}>
+            <BrowserRouter>
+                <Routes>
+                    <Route path="/" element={<LandingPage />} />
+                    <Route path="/docs" element={<DocsPage />} />
+                    <Route path="/app" element={<AppPage />} />
+                </Routes>
+            </BrowserRouter>
+        </TooltipProvider>
     )
 }

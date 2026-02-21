@@ -29,33 +29,33 @@
   /* node fills inside minimap come from the nodeColor prop, nothing to override */
 
   .workspace-canvas .react-flow__controls {
-    border-radius: 12px !important;
-    border: 1px solid hsl(var(--border) / 0.45) !important;
-    background: hsl(var(--background) / 0.62) !important;
-    backdrop-filter: blur(16px) saturate(1.2) !important;
-    -webkit-backdrop-filter: blur(16px) saturate(1.2) !important;
-    box-shadow: 0 6px 20px -10px rgb(0 0 0 / 0.35) !important;
+    border-radius: 10px !important;
+    border: 1px solid hsl(var(--border) / 0.38) !important;
+    background: hsl(var(--background) / 0.5) !important;
+    backdrop-filter: blur(12px) saturate(1.12) !important;
+    -webkit-backdrop-filter: blur(12px) saturate(1.12) !important;
+    box-shadow: 0 4px 14px -10px rgb(0 0 0 / 0.25) !important;
     overflow: hidden !important;
   }
 
   .workspace-canvas .react-flow__controls button {
-    border-color: hsl(var(--border) / 0.45) !important;
-    background: hsl(var(--background) / 0.62) !important;
+    border-color: hsl(var(--border) / 0.35) !important;
+    background: hsl(var(--background) / 0.5) !important;
     color: var(--foreground) !important;
-    width: 40px !important;
-    height: 40px !important;
+    width: 34px !important;
+    height: 34px !important;
     /* ensure SVG does not swallow pointer events */
     cursor: pointer !important;
   }
 
   .workspace-canvas .react-flow__controls button:hover {
-    background: hsl(var(--accent) / 0.7) !important;
+    background: hsl(var(--accent) / 0.55) !important;
   }
 
   .workspace-canvas .react-flow__controls button svg {
     fill: var(--foreground) !important;
-    width: 20px !important;
-    height: 20px !important;
+    width: 16px !important;
+    height: 16px !important;
     pointer-events: none; /* clicks go to the button element, not the SVG */
   }
 

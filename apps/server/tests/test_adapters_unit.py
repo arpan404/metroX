@@ -415,6 +415,91 @@ class TestHttpTargetAdapter:
         resp = adapter.invoke(req)
         assert resp.provider_name == "my_provider"
 
+    def test_agent_http_payload_contains_message_and_thread(self, monkeypatch) -> None:
+        captured: dict[str, object] = {}
+
+        class MockResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"response_text": "ok", "thread_id": "thread-123"}
+
+        class MockClient:
+            def __init__(self, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+            def post(self, url, headers=None, json=None):
+                captured["url"] = url
+                captured["payload"] = json or {}
+                return MockResponse()
+
+        import httpx
+
+        monkeypatch.setattr(httpx, "Client", MockClient)
+        adapter = HttpTargetAdapter()
+        req = TargetRequest(
+            run_id="r-1",
+            attack_id="a-1",
+            prompt="hello agent",
+            target_type="agent_http",
+            endpoint="http://127.0.0.1:8001/agents/refund/chat",
+            extra={"thread_id": "thread-123"},
+        )
+        resp = adapter.invoke(req)
+        payload = captured["payload"]
+        assert isinstance(payload, dict)
+        assert payload["message"] == "hello agent"
+        assert payload["prompt"] == "hello agent"
+        assert payload["user_message"] == "hello agent"
+        assert payload["thread_id"] == "thread-123"
+        assert resp.raw_payload["thread_id"] == "thread-123"
+
+    def test_agent_http_thread_id_extracted_from_nested_raw_payload(self, monkeypatch) -> None:
+        class MockResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"response_text": "ok", "raw_payload": {"thread_id": "nested-thread"}}
+
+        class MockClient:
+            def __init__(self, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+            def post(self, url, headers=None, json=None):
+                return MockResponse()
+
+        import httpx
+
+        monkeypatch.setattr(httpx, "Client", MockClient)
+        adapter = HttpTargetAdapter()
+        req = TargetRequest(
+            run_id="r-1",
+            attack_id="a-1",
+            prompt="probe",
+            target_type="agent_http",
+            endpoint="http://127.0.0.1:8001/agents/refund/chat",
+        )
+        resp = adapter.invoke(req)
+        assert resp.raw_payload["thread_id"] == "nested-thread"
+
 
 # ---------------------------------------------------------------------------
 # AFKLLMRuntimeAdapter fallback path (no afk installed)

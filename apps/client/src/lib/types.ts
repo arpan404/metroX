@@ -6,6 +6,11 @@ export type SessionOut = {
   created_at: string
 }
 
+export type SessionListPayload = {
+  sessions: SessionOut[]
+  total: number
+}
+
 export type ConfigProfileOut = {
   id: string
   session_id: string
@@ -16,6 +21,11 @@ export type ConfigProfileOut = {
   scoring_config: Record<string, unknown>
   runtime_config: Record<string, unknown>
   created_at: string
+}
+
+export type ConfigProfileListPayload = {
+  profiles: ConfigProfileOut[]
+  total: number
 }
 
 export type RunOut = {
@@ -36,6 +46,12 @@ export type RunOut = {
   gate_result: { pass?: boolean; reasons?: string[] }
   cost_gate_result?: { pass?: boolean; budget_usd?: number; spent_usd?: number; projected_final_usd?: number }
   created_at: string
+}
+
+export type RunListPayload = {
+  runs: RunOut[]
+  total: number
+  status_counts: Record<string, number>
 }
 
 export type Scorecard = {
@@ -301,10 +317,23 @@ export type TargetConfig = {
   base_url: string | null
   api_key_ref: string | null
   agent_index_url?: string | null
+  agent_id?: string | null
   agent_name?: string | null
   agent_description?: string | null
   agent_url?: string | null
   extra: Record<string, unknown>
+}
+
+export type TestAgentCatalogAgent = {
+  id: string
+  name: string
+  chat_url: string
+}
+
+export type TestAgentCatalog = {
+  base_url: string
+  source: 'runtime_api' | 'filesystem_fallback'
+  agents: TestAgentCatalogAgent[]
 }
 
 export type BenchmarkConfig = {

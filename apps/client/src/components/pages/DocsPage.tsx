@@ -38,6 +38,7 @@ const apiGroups = [
         group: 'Runtime',
         routes: [
             { method: 'POST', path: '/v1/runs', desc: 'Create run, bind config snapshot, enqueue' },
+            { method: 'GET', path: '/v1/runs', desc: 'List run history with profile/session filters' },
             { method: 'GET', path: '/v1/runs/{id}', desc: 'Run status and metadata' },
             { method: 'POST', path: '/v1/runs/{id}/resume', desc: 'Resume from checkpoint' },
             { method: 'GET', path: '/v1/runs/{id}/events', desc: 'SSE event stream' },
@@ -90,9 +91,12 @@ const apiGroups = [
     {
         group: 'Configuration',
         routes: [
+            { method: 'GET', path: '/v1/sessions', desc: 'List sessions for profile/run history controls' },
             { method: 'POST', path: '/v1/orchestration-profiles', desc: 'Create profile (schema-validated)' },
             { method: 'PATCH', path: '/v1/orchestration-profiles/{id}', desc: 'Update profile' },
+            { method: 'GET', path: '/v1/test-agents/catalog', desc: 'List demo target agents and resolved chat endpoints' },
             { method: 'POST', path: '/v1/sessions', desc: 'Create session' },
+            { method: 'GET', path: '/v1/config-profiles', desc: 'List config profiles for a selected session' },
             { method: 'POST', path: '/v1/config-profiles', desc: 'Create config profile' },
             { method: 'POST', path: '/v1/pricing-profiles', desc: 'Create pricing profile' },
         ],

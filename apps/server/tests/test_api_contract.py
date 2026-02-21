@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+import app.api.v1 as v1
 from app.api.v1 import router
 from app.db import get_db
 from app.models import Base
@@ -152,6 +153,45 @@ def test_create_run_contract(api_client) -> None:
     assert payload["status"] == "queued"
 
 
+def test_history_list_contract(api_client) -> None:
+    client, _ = api_client
+    session_id, profile_id = _create_session_and_profile(client)
+
+    for _ in range(2):
+        run = client.post(
+            "/v1/runs",
+            json={
+                "session_id": session_id,
+                "config_profile_id": profile_id,
+                "preset": "quick",
+                "mode": "deterministic_ci",
+                "strictness": "balanced",
+                "execute_now": False,
+            },
+            headers=_headers(),
+        )
+        assert run.status_code == 200
+
+    sessions = client.get("/v1/sessions?limit=10", headers=_headers())
+    assert sessions.status_code == 200
+    session_payload = sessions.json()
+    assert session_payload["total"] >= 1
+    assert any(row["id"] == session_id for row in session_payload["sessions"])
+
+    profiles = client.get(f"/v1/config-profiles?session_id={session_id}", headers=_headers())
+    assert profiles.status_code == 200
+    profile_payload = profiles.json()
+    assert profile_payload["total"] >= 1
+    assert any(row["id"] == profile_id for row in profile_payload["profiles"])
+
+    runs = client.get(f"/v1/runs?config_profile_id={profile_id}", headers=_headers())
+    assert runs.status_code == 200
+    run_payload = runs.json()
+    assert run_payload["total"] == 2
+    assert len(run_payload["runs"]) == 2
+    assert run_payload["status_counts"]["queued"] == 2
+
+
 def test_afk_capabilities_contract(api_client) -> None:
     client, _ = api_client
     response = client.get("/v1/afk/capabilities", headers=_headers())
@@ -160,6 +200,37 @@ def test_afk_capabilities_contract(api_client) -> None:
     assert payload["version"] == "v1"
     assert isinstance(payload["high_impact_features"], list)
     assert "ci_strict" in payload["recommended_profiles"]
+
+
+def test_test_agents_catalog_runtime_source(api_client, monkeypatch) -> None:
+    client, _ = api_client
+
+    monkeypatch.setattr(v1, "_read_runtime_test_agents", lambda base_url, timeout_s: ["refund", "loan"])
+    response = client.get("/v1/test-agents/catalog", headers=_headers())
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "runtime_api"
+    ids = [row["id"] for row in payload["agents"]]
+    assert ids == ["refund", "loan"]
+    assert payload["agents"][0]["chat_url"].endswith("/agents/refund/chat")
+
+
+def test_test_agents_catalog_filesystem_fallback(api_client, monkeypatch) -> None:
+    client, _ = api_client
+
+    def _explode(*_args, **_kwargs):
+        raise RuntimeError("runtime unavailable")
+
+    monkeypatch.setattr(v1, "_read_runtime_test_agents", _explode)
+    monkeypatch.setattr(v1, "_read_filesystem_test_agents", lambda: ["kyc"])
+
+    response = client.get("/v1/test-agents/catalog", headers=_headers())
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "filesystem_fallback"
+    assert payload["agents"][0]["id"] == "kyc"
+    assert payload["agents"][0]["chat_url"].endswith("/agents/kyc/chat")
 
 
 def test_provider_and_pricing_contract(api_client) -> None:
@@ -439,6 +510,39 @@ def test_config_profile_accepts_execution_order_and_extra_context(api_client) ->
     assert orchestration["execution_order"] == ["attacker", "critic", "verifier"]
     assert orchestration["extra_system_prompt"] == "Prioritize policy-consistency checks."
     assert orchestration["extra_context"]["campaign"] == "nightly"
+
+
+def test_config_profile_resolves_agent_id_to_endpoint(api_client) -> None:
+    client, _ = api_client
+    session = client.post("/v1/sessions", json={"name": "agent-id-suite"}, headers=_headers())
+    assert session.status_code == 200
+    session_id = session.json()["id"]
+
+    profile = client.post(
+        "/v1/config-profiles",
+        json={
+            "session_id": session_id,
+            "name": "agent-id-profile",
+            "target_config": {
+                "target_type": "agent_http",
+                "agent_id": "refund",
+                "agent_name": "refund-agent",
+                "agent_description": "refund handler",
+                "model": "gpt-4.1-mini",
+                "extra": {},
+            },
+            "benchmark_config": {"taxonomy": ["refund_abuse"]},
+            "scoring_config": {"strictness_mode": "balanced"},
+            "runtime_config": {"preset": "quick"},
+        },
+        headers=_headers(),
+    )
+    assert profile.status_code == 200
+    target = profile.json()["target_config"]
+    assert target["target_type"] == "agent_http"
+    assert target["agent_id"] == "refund"
+    assert target["endpoint"].endswith("/agents/refund/chat")
+    assert target["extra"]["agent_id"] == "refund"
 
 
 def test_config_profile_rejects_legacy_target_type(api_client) -> None:

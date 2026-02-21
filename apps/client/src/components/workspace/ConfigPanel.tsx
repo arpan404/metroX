@@ -11,6 +11,7 @@ import {
   CircleHelp,
   Loader2,
   FlaskConical,
+  ChevronDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,12 +20,14 @@ import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Progress } from '@/components/ui/progress'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { PanelShell, PanelSection, FieldGroup } from './PanelShell'
 import { useWorkspace } from '@/stores/workspace-store'
 import { api } from '@/lib/api'
 import { configTemplates, type ConfigTemplate } from '@/lib/config-templates'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import type { ConfigProfileOut, RunOut as RunHistoryOut, SessionOut } from '@/lib/types'
 import {
   STUDIO_BASE_MODEL,
   STUDIO_ROLES,
@@ -81,6 +84,59 @@ const TEMPLATE_ICONS: Record<string, typeof Zap> = {
   Zap, Shield, Microscope, GitBranch, Moon, FlaskConical,
 }
 
+const FALLBACK_TEST_AGENTS: Array<{ id: string; name: string; chat_url: string }> = [
+  { id: 'refund', name: 'Refund', chat_url: '' },
+  { id: 'insurance', name: 'Insurance', chat_url: '' },
+  { id: 'loan', name: 'Loan', chat_url: '' },
+  { id: 'kyc', name: 'KYC', chat_url: '' },
+  { id: 'transaction-monitoring', name: 'Transaction Monitoring', chat_url: '' },
+  { id: 'chargeback', name: 'Chargeback', chat_url: '' },
+  { id: 'account-recovery', name: 'Account Recovery', chat_url: '' },
+  { id: 'wire-transfer', name: 'Wire Transfer', chat_url: '' },
+  { id: 'expense', name: 'Expense', chat_url: '' },
+  { id: 'credit-dispute', name: 'Credit Dispute', chat_url: '' },
+]
+
+const SCENARIO_PRESETS: Array<{
+  id: string
+  label: string
+  description: string
+  taxonomy: string[]
+  curatedRatio: number
+  agenticAttacking: boolean
+}> = [
+  {
+    id: 'smoke',
+    label: 'Smoke',
+    description: 'Core checks for quick validation',
+    taxonomy: ['prompt_injection', 'jailbreak', 'refund_abuse'],
+    curatedRatio: 0.8,
+    agenticAttacking: false,
+  },
+  {
+    id: 'balanced',
+    label: 'Balanced',
+    description: 'Default fraud + safety coverage',
+    taxonomy: ['prompt_injection', 'jailbreak', 'hallucination', 'refund_abuse', 'claim_manipulation'],
+    curatedRatio: 0.6,
+    agenticAttacking: true,
+  },
+  {
+    id: 'red-team',
+    label: 'Red Team',
+    description: 'Stress adversarial generation paths',
+    taxonomy: ['prompt_injection', 'jailbreak', 'tool_misuse', 'refund_abuse', 'identity_mismatch', 'data_exfiltration'],
+    curatedRatio: 0.3,
+    agenticAttacking: true,
+  },
+]
+
+const PRESET_ATTACK_ESTIMATE: Record<string, number> = {
+  quick: 100,
+  standard: 2000,
+  deep: 12000,
+}
+
 /* ------------------------------------------------------------------ */
 /*  ConfigPanel                                                       */
 /* ------------------------------------------------------------------ */
@@ -93,12 +149,21 @@ export function ConfigPanel() {
   const [sessionName, setSessionName] = useState('Financial Agent Evaluation')
   const [sessionOwner, setSessionOwner] = useState('risk-team')
   const [profileName, setProfileName] = useState('finance-fraud-profile')
+  const [sessionList, setSessionList] = useState<SessionOut[]>([])
+  const [profileList, setProfileList] = useState<ConfigProfileOut[]>([])
+  const [sessionRunHistory, setSessionRunHistory] = useState<RunHistoryOut[]>([])
+  const [sessionRunStatusCounts, setSessionRunStatusCounts] = useState<Record<string, number>>({})
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  const [launchProfileMode, setLaunchProfileMode] = useState<'existing' | 'new'>('new')
+  const [lastLoadedProfileId, setLastLoadedProfileId] = useState<string | null>(null)
 
   // ─── Target ───
   const [model, setModel] = useState('gpt-4.1-mini')
+  const [agentId, setAgentId] = useState('refund')
   const [agentName, setAgentName] = useState('financial-agent')
   const [agentDescription, setAgentDescription] = useState('Financial assistant agent under fraud-resilience testing.')
-  const [agentUrl, setAgentUrl] = useState('http://localhost:8000/v1/agent-index/agents/default/invoke')
+  const [testAgentCatalog, setTestAgentCatalog] = useState<Array<{ id: string; name: string; chat_url: string }>>(FALLBACK_TEST_AGENTS)
+  const [testAgentBaseUrl, setTestAgentBaseUrl] = useState('http://127.0.0.1:8001')
 
   // ─── Benchmark ───
   const [taxonomy, setTaxonomy] = useState<string[]>(['prompt_injection', 'jailbreak', 'hallucination'])
@@ -130,6 +195,25 @@ export function ConfigPanel() {
   const [isLaunching, setIsLaunching] = useState(false)
   const [isValidating, setIsValidating] = useState(false)
   const [templateBootstrapped, setTemplateBootstrapped] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [scenarioPresetId, setScenarioPresetId] = useState('balanced')
+
+  const selectedAgent = useMemo(
+    () => testAgentCatalog.find((row) => row.id === agentId) ?? null,
+    [testAgentCatalog, agentId],
+  )
+  const resolvedAgentUrl = selectedAgent?.chat_url || (agentId ? `${testAgentBaseUrl.replace(/\/+$/, '')}/agents/${agentId}/chat` : '')
+  const selectedProfile = useMemo(
+    () => profileList.find((profile) => profile.id === state.configProfileId) ?? null,
+    [profileList, state.configProfileId],
+  )
+  const profileRunHistory = useMemo(
+    () =>
+      state.configProfileId
+        ? sessionRunHistory.filter((run) => run.config_profile_id === state.configProfileId)
+        : [],
+    [sessionRunHistory, state.configProfileId],
+  )
 
   const studioOrchestration = useMemo(() => {
     const isStudioRole = (value: string): value is (typeof STUDIO_ROLES)[number] =>
@@ -185,6 +269,195 @@ export function ConfigPanel() {
     }
   }, [agenticModel, model, state.studioNodes, state.studioEdges])
 
+  const asRecord = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+    return value as Record<string, unknown>
+  }
+
+  const loadProfileIntoForm = (profile: ConfigProfileOut) => {
+    setProfileName(profile.name || 'finance-fraud-profile')
+
+    const targetConfig = asRecord(profile.target_config)
+    const benchmarkConfig = asRecord(profile.benchmark_config)
+    const scoringConfig = asRecord(profile.scoring_config)
+    const runtimeConfig = asRecord(profile.runtime_config)
+    const orchestrationConfig = asRecord(benchmarkConfig.afk_orchestration)
+
+    const profileModel = typeof targetConfig.model === 'string' ? targetConfig.model.trim() : ''
+    if (profileModel) setModel(profileModel)
+
+    const profileAgentId = typeof targetConfig.agent_id === 'string' ? targetConfig.agent_id.trim() : ''
+    if (profileAgentId) setAgentId(profileAgentId)
+    const profileAgentName = typeof targetConfig.agent_name === 'string' ? targetConfig.agent_name : ''
+    if (profileAgentName) setAgentName(profileAgentName)
+    const profileAgentDescription =
+      typeof targetConfig.agent_description === 'string' ? targetConfig.agent_description : ''
+    if (profileAgentDescription) setAgentDescription(profileAgentDescription)
+
+    const taxonomyRows = Array.isArray(benchmarkConfig.taxonomy)
+      ? benchmarkConfig.taxonomy.map((entry) => String(entry).trim()).filter(Boolean)
+      : []
+    if (taxonomyRows.length > 0) setTaxonomy(taxonomyRows)
+
+    if (typeof benchmarkConfig.seed === 'number' && Number.isFinite(benchmarkConfig.seed)) {
+      setSeed(Math.trunc(benchmarkConfig.seed))
+    }
+    if (typeof benchmarkConfig.curated_ratio === 'number' && Number.isFinite(benchmarkConfig.curated_ratio)) {
+      setCuratedRatio(Math.max(0, Math.min(1, benchmarkConfig.curated_ratio)))
+    }
+    if (typeof benchmarkConfig.agentic_attacking === 'boolean') {
+      setAgenticAttacking(benchmarkConfig.agentic_attacking)
+    }
+    if (benchmarkConfig.agentic_provider === 'auto' || benchmarkConfig.agentic_provider === 'afk_live') {
+      setAgenticProvider(benchmarkConfig.agentic_provider)
+    }
+    const nextAgenticModel = typeof benchmarkConfig.agentic_model === 'string' ? benchmarkConfig.agentic_model : ''
+    setAgenticModel(nextAgenticModel)
+
+    if (typeof profile.strictness_mode === 'string' && profile.strictness_mode.trim()) {
+      setStrictness(profile.strictness_mode)
+    } else if (typeof scoringConfig.strictness_mode === 'string' && scoringConfig.strictness_mode.trim()) {
+      setStrictness(scoringConfig.strictness_mode)
+    }
+    if (typeof scoringConfig.active_adjudication === 'boolean') {
+      setActiveAdjudication(scoringConfig.active_adjudication)
+    }
+    const gateThresholds = asRecord(scoringConfig.gate_thresholds)
+    if (typeof gateThresholds.composite_min === 'number' && Number.isFinite(gateThresholds.composite_min)) {
+      setCompositeMin(gateThresholds.composite_min)
+    }
+
+    if (typeof runtimeConfig.preset === 'string' && PRESET_OPTIONS.some((row) => row.value === runtimeConfig.preset)) {
+      setPreset(runtimeConfig.preset)
+    }
+    if (typeof runtimeConfig.max_concurrency === 'number' && Number.isFinite(runtimeConfig.max_concurrency)) {
+      setMaxConcurrency(Math.max(1, Math.trunc(runtimeConfig.max_concurrency)))
+    }
+    if (typeof runtimeConfig.budget_usd === 'number' && Number.isFinite(runtimeConfig.budget_usd)) {
+      setBudgetUsd(Math.max(0, runtimeConfig.budget_usd))
+    }
+    if (typeof runtimeConfig.live_mode === 'boolean') {
+      setMode(runtimeConfig.live_mode ? 'live_nightly' : 'deterministic_ci')
+    }
+
+    if (typeof orchestrationConfig.join_policy === 'string' && orchestrationConfig.join_policy.trim()) {
+      setJoinPolicy(orchestrationConfig.join_policy)
+    }
+    if (
+      typeof orchestrationConfig.subagent_router_strategy === 'string'
+      && orchestrationConfig.subagent_router_strategy.trim()
+    ) {
+      setRouterStrategy(orchestrationConfig.subagent_router_strategy)
+    }
+    if (
+      typeof orchestrationConfig.max_concurrent_subagents === 'number'
+      && Number.isFinite(orchestrationConfig.max_concurrent_subagents)
+    ) {
+      setMaxSubagents(Math.max(1, Math.trunc(orchestrationConfig.max_concurrent_subagents)))
+    }
+
+    setScenarioPresetId('custom')
+  }
+
+  const refreshHistory = async (preferredSessionId?: string | null, preferredProfileId?: string | null) => {
+    setIsLoadingHistory(true)
+    try {
+      const sessionsPayload = await api.listSessions({ limit: 100 })
+      const sessions = Array.isArray(sessionsPayload.sessions) ? sessionsPayload.sessions : []
+      setSessionList(sessions)
+
+      let resolvedSessionId = preferredSessionId ?? state.sessionId ?? null
+      if (!resolvedSessionId && sessions.length > 0) {
+        resolvedSessionId = sessions[0].id
+      }
+      if (resolvedSessionId && !sessions.some((session) => session.id === resolvedSessionId)) {
+        resolvedSessionId = sessions[0]?.id ?? null
+      }
+      if (resolvedSessionId && resolvedSessionId !== state.sessionId) {
+        dispatch({ type: 'SET_SESSION', sessionId: resolvedSessionId })
+      }
+
+      if (!resolvedSessionId) {
+        setProfileList([])
+        setSessionRunHistory([])
+        setSessionRunStatusCounts({})
+        return
+      }
+
+      const [profilesPayload, runsPayload] = await Promise.all([
+        api.listConfigProfiles({ session_id: resolvedSessionId, limit: 200 }),
+        api.listRuns({ session_id: resolvedSessionId, limit: 200 }),
+      ])
+
+      const profiles = Array.isArray(profilesPayload.profiles) ? profilesPayload.profiles : []
+      setProfileList(profiles)
+      setSessionRunHistory(Array.isArray(runsPayload.runs) ? runsPayload.runs : [])
+      setSessionRunStatusCounts(runsPayload.status_counts || {})
+
+      let resolvedProfileId = preferredProfileId ?? state.configProfileId ?? null
+      if (resolvedProfileId && !profiles.some((profile) => profile.id === resolvedProfileId)) {
+        resolvedProfileId = null
+      }
+      if (!resolvedProfileId && profiles.length > 0) {
+        resolvedProfileId = profiles[0].id
+      }
+      if (resolvedProfileId && resolvedProfileId !== state.configProfileId) {
+        dispatch({ type: 'SET_CONFIG_PROFILE', configProfileId: resolvedProfileId })
+      }
+      if (!resolvedProfileId) {
+        setLaunchProfileMode('new')
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to refresh session history'
+      toast.error(message)
+    } finally {
+      setIsLoadingHistory(false)
+    }
+  }
+
+  const handleSelectSession = async (nextSessionId: string) => {
+    dispatch({ type: 'SET_SESSION', sessionId: nextSessionId })
+    dispatch({ type: 'SET_CONFIG_PROFILE', configProfileId: null })
+    setLaunchProfileMode('new')
+    await refreshHistory(nextSessionId, null)
+  }
+
+  const handleSelectProfile = async (nextProfileId: string) => {
+    dispatch({ type: 'SET_CONFIG_PROFILE', configProfileId: nextProfileId })
+    setLaunchProfileMode('existing')
+    const profile = profileList.find((entry) => entry.id === nextProfileId)
+    const latestRun = sessionRunHistory.find((run) => run.config_profile_id === nextProfileId)
+    if (latestRun) {
+      dispatch({ type: 'SET_RUN_ID', runId: latestRun.id })
+    }
+    if (profile) {
+      loadProfileIntoForm(profile)
+      setLastLoadedProfileId(profile.id)
+    }
+    await actions.fetchRunData()
+  }
+
+  const handleAttachRunFromHistory = async (runId: string) => {
+    dispatch({ type: 'SET_RUN_ID', runId })
+    dispatch({ type: 'OPEN_PANEL', panel: 'analytics' })
+    await actions.fetchRunData()
+  }
+
+  const handleResumeFromHistory = async (runId: string) => {
+    try {
+      dispatch({ type: 'SET_RUN_ID', runId })
+      const resumed = await api.resumeRun(runId)
+      dispatch({ type: 'SET_RUN_DATA', data: resumed })
+      actions.startStreaming()
+      await actions.fetchRunData()
+      await refreshHistory(state.sessionId, state.configProfileId)
+      toast.success(`Run ${runId.slice(0, 8)} resumed.`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to resume run'
+      toast.error(message)
+    }
+  }
+
   /* ─── Template application ─── */
   const applyOrchestrationTemplate = (templateId: StudioTemplateId) => {
     const map = createStudioMapFromTemplate(templateId)
@@ -196,14 +469,23 @@ export function ConfigPanel() {
     setOrchestrationTemplate(templateId)
   }
 
+  const applyScenarioPreset = (presetId: string) => {
+    const presetConfig = SCENARIO_PRESETS.find((presetOption) => presetOption.id === presetId)
+    if (!presetConfig) return
+    setScenarioPresetId(presetConfig.id)
+    setTaxonomy(presetConfig.taxonomy)
+    setCuratedRatio(presetConfig.curatedRatio)
+    setAgenticAttacking(presetConfig.agenticAttacking)
+  }
+
   const applyTemplate = (t: ConfigTemplate) => {
     setSessionName(t.config.sessionName)
     setSessionOwner(t.config.sessionOwner)
     setProfileName(t.config.profileName)
     setModel(t.config.model)
+    setAgentId(t.config.agentId || 'refund')
     setAgentName(t.config.agentName || 'financial-agent')
     setAgentDescription(t.config.agentDescription || '')
-    setAgentUrl(t.config.agentUrl || '')
     setTaxonomy(
       t.config.taxonomy
         .split(',')
@@ -224,8 +506,68 @@ export function ConfigPanel() {
     setMode(t.config.mode)
     setBudgetUsd(t.config.budgetUsd)
     setMaxConcurrency(t.config.maxConcurrency)
-      toast.success(`Applied template: ${t.name}`)
+    setLaunchProfileMode('new')
+    setLastLoadedProfileId(null)
+    const matchingScenario = SCENARIO_PRESETS.find((presetOption) => {
+      if (Math.abs(presetOption.curatedRatio - t.config.curatedRatio) > 0.001) return false
+      const templateTaxonomy = t.config.taxonomy
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+      return templateTaxonomy.length === presetOption.taxonomy.length
+        && templateTaxonomy.every((entry) => presetOption.taxonomy.includes(entry))
+    })
+    setScenarioPresetId(matchingScenario?.id ?? 'balanced')
+    toast.success(`Applied template: ${t.name}`)
   }
+
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const catalog = await api.listTestAgentsCatalog()
+        if (!mounted) return
+        setTestAgentBaseUrl(catalog.base_url || 'http://127.0.0.1:8001')
+        if (Array.isArray(catalog.agents) && catalog.agents.length > 0) {
+          setTestAgentCatalog(catalog.agents)
+          if (!catalog.agents.some((row) => row.id === agentId)) {
+            setAgentId(catalog.agents[0].id)
+          }
+        }
+      } catch {
+        if (!mounted) return
+        setTestAgentCatalog(FALLBACK_TEST_AGENTS)
+      }
+    })()
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isOpen) return
+    refreshHistory().catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen])
+
+  useEffect(() => {
+    if (selectedProfile) {
+      setLaunchProfileMode('existing')
+      return
+    }
+    setLaunchProfileMode('new')
+  }, [selectedProfile])
+
+  useEffect(() => {
+    if (!selectedProfile) {
+      setLastLoadedProfileId(null)
+      return
+    }
+    if (selectedProfile.id === lastLoadedProfileId) return
+    loadProfileIntoForm(selectedProfile)
+    setLastLoadedProfileId(selectedProfile.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProfile, lastLoadedProfileId])
 
   useEffect(() => {
     if (templateBootstrapped) return
@@ -254,19 +596,51 @@ export function ConfigPanel() {
 
   /* ─── Provider validation ─── */
   const handleValidate = async () => {
+    setIsValidating(true)
     if (!agentName.trim()) {
       toast.error('Agent name is required')
+      setIsValidating(false)
       return
     }
     if (!agentDescription.trim()) {
       toast.error('Agent description is required')
+      setIsValidating(false)
       return
     }
-    if (!agentUrl.trim()) {
-      toast.error('Agent URL is required')
+    if (!agentId.trim()) {
+      toast.error('Agent selection is required')
+      setIsValidating(false)
       return
     }
-    toast.success('Agent endpoint looks configured.')
+    if (!resolvedAgentUrl.trim()) {
+      toast.error('Agent endpoint could not be resolved')
+      setIsValidating(false)
+      return
+    }
+    toast.success(`Selected agent "${agentId}" is configured.`)
+    setIsValidating(false)
+  }
+
+  const handleCreateSession = async () => {
+    if (!sessionName.trim()) {
+      toast.error('Session name is required')
+      return
+    }
+    try {
+      const session = await api.createSession({
+        name: sessionName,
+        owner: sessionOwner || undefined,
+      })
+      dispatch({ type: 'SET_SESSION', sessionId: session.id })
+      dispatch({ type: 'SET_CONFIG_PROFILE', configProfileId: null })
+      setLaunchProfileMode('new')
+      setLastLoadedProfileId(null)
+      await refreshHistory(session.id, null)
+      toast.success(`Session ${session.name} created`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to create session'
+      toast.error(message)
+    }
   }
 
   /* ─── Build config payload ─── */
@@ -276,20 +650,21 @@ export function ConfigPanel() {
     orchestration_profile_id: orchestrationProfileId || undefined,
     target_config: {
       target_type: 'agent_http',
-      endpoint: agentUrl || null,
+      endpoint: null,
       auth_headers: {},
       model,
       provider_name: null,
       base_url: null,
       api_key_ref: null,
+      agent_id: agentId || null,
       agent_name: agentName || null,
       agent_description: agentDescription || null,
-      agent_url: agentUrl || null,
+      agent_url: null,
       agent_index_url: null,
       extra: {
+        agent_id: agentId || null,
         agent_name: agentName || null,
         agent_description: agentDescription || null,
-        agent_url: agentUrl || null,
       },
     },
     benchmark_config: {
@@ -311,6 +686,10 @@ export function ConfigPanel() {
         roles: studioOrchestration.roles,
         max_concurrent_subagents: maxSubagents,
         interaction_mode: 'headless',
+        threading: {
+          enabled: true,
+          strategy: 'per_attack_type',
+        },
         fail_safe: {
           max_steps: 50,
           max_llm_calls: 200,
@@ -355,18 +734,35 @@ export function ConfigPanel() {
   const handleLaunch = async () => {
     setIsLaunching(true)
     try {
-      // 1. Create session
-      const session = await api.createSession({ name: sessionName, owner: sessionOwner })
-      dispatch({ type: 'SET_SESSION', sessionId: session.id })
+      // 1. Reuse session if selected, otherwise create one.
+      let sessionId = state.sessionId
+      if (sessionId && !sessionList.some((session) => session.id === sessionId)) {
+        sessionId = null
+      }
+      if (!sessionId) {
+        const session = await api.createSession({ name: sessionName, owner: sessionOwner })
+        sessionId = session.id
+        dispatch({ type: 'SET_SESSION', sessionId })
+      }
 
-      // 2. Create config profile
-      const profile = await api.createConfigProfile(buildPayload(session.id))
-      dispatch({ type: 'SET_CONFIG_PROFILE', configProfileId: profile.id })
+      // 2. Reuse or create config profile based on launch mode.
+      let profileId = state.configProfileId
+      const hasSelectedProfile = profileId && profileList.some((profile) => profile.id === profileId)
+      const shouldCreateProfile = launchProfileMode === 'new' || !hasSelectedProfile
+
+      if (shouldCreateProfile) {
+        const profile = await api.createConfigProfile(buildPayload(sessionId))
+        profileId = profile.id
+        dispatch({ type: 'SET_CONFIG_PROFILE', configProfileId: profileId })
+        setLaunchProfileMode('existing')
+      } else if (!profileId) {
+        throw new Error('Select or create a profile before launching.')
+      }
 
       // 3. Create & execute run
       const run = await api.createRun({
-        session_id: session.id,
-        config_profile_id: profile.id,
+        session_id: sessionId,
+        config_profile_id: profileId,
         preset,
         mode,
         strictness,
@@ -397,6 +793,7 @@ export function ConfigPanel() {
       setTimeout(() => {
         actions.fetchRunData()
       }, 1500)
+      await refreshHistory(sessionId, profileId)
 
       toast.success(`Run ${run.id.slice(0, 8)} started.`)
       dispatch({ type: 'CLOSE_PANEL' })
@@ -412,14 +809,24 @@ export function ConfigPanel() {
     sessionName.length > 0,
     taxonomy.length > 0,
     budgetUsd > 0,
+    agentId.trim().length > 0,
     agentName.trim().length > 0,
     agentDescription.trim().length > 0,
-    agentUrl.trim().length > 0,
+    resolvedAgentUrl.trim().length > 0,
   ]
   const readinessPercent = (readiness.filter(Boolean).length / readiness.length) * 100
+  const estimatedAttacks = PRESET_ATTACK_ESTIMATE[preset] ?? PRESET_ATTACK_ESTIMATE.quick
 
   const toggleChip = (arr: string[], item: string, setter: (v: string[]) => void) => {
-    setter(arr.includes(item) ? arr.filter((x) => x !== item) : [...arr, item])
+    const next = arr.includes(item) ? arr.filter((x) => x !== item) : [...arr, item]
+    setter(next)
+    const matchedPreset = SCENARIO_PRESETS.find((presetOption) =>
+      next.length === presetOption.taxonomy.length
+      && next.every((entry) => presetOption.taxonomy.includes(entry))
+      && Math.abs(curatedRatio - presetOption.curatedRatio) < 0.001
+      && agenticAttacking === presetOption.agenticAttacking,
+    )
+    setScenarioPresetId(matchedPreset?.id ?? 'custom')
   }
 
   return (
@@ -456,25 +863,24 @@ export function ConfigPanel() {
         </div>
       }
     >
-      {/* Templates */}
-      <PanelSection title="Quick Start" description="Pick a finance testing template">
+      <PanelSection title="Quick Start" description="Apply a finance template and launch fast">
         <div className="grid grid-cols-2 gap-2">
           {configTemplates.map((t) => {
             const Icon = TEMPLATE_ICONS[t.icon] ?? Zap
             return (
               <motion.button
                 key={t.id}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
                 onClick={() => applyTemplate(t)}
                 className={cn(
-                  'flex items-center gap-2 rounded-lg border border-border/40 p-2.5 text-left',
-                  'hover:border-primary/40 hover:bg-primary/5 transition-colors',
+                  'flex items-center gap-2 rounded-lg border p-2.5 text-left transition-colors',
+                  'border-border/40 bg-background/40 hover:border-primary/45 hover:bg-primary/8',
                 )}
               >
-                <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <Icon className="h-3.5 w-3.5 text-primary shrink-0" />
                 <div className="min-w-0">
-                  <p className="text-[11px] font-medium truncate">{t.name}</p>
+                  <p className="text-[11px] font-semibold truncate">{t.name}</p>
                   <p className="text-[9px] text-muted-foreground line-clamp-1">{t.description}</p>
                 </div>
               </motion.button>
@@ -483,256 +889,524 @@ export function ConfigPanel() {
         </div>
       </PanelSection>
 
-      {/* Session */}
-      <PanelSection title="Project" description="Basic run naming">
-        <div className="grid grid-cols-2 gap-2">
-          <FieldGroup label={helpLabel('Session Name', 'Readable name shown in run history and reports.')}>
-            <Input value={sessionName} onChange={(e) => setSessionName(e.target.value)} className="h-7 text-xs" />
-          </FieldGroup>
-          <FieldGroup label={helpLabel('Team', 'Owner team or person responsible for this evaluation.')}>
-            <Input value={sessionOwner} onChange={(e) => setSessionOwner(e.target.value)} className="h-7 text-xs" />
-          </FieldGroup>
-        </div>
-        <FieldGroup label={helpLabel('Profile Name', 'Saved config profile name for reuse.')}>
-          <Input value={profileName} onChange={(e) => setProfileName(e.target.value)} className="h-7 text-xs" />
-        </FieldGroup>
-      </PanelSection>
-
-      {/* Target */}
-      <PanelSection title="Agent Under Test" description="Only required target inputs for orchestration" badge={
-        <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={handleValidate} disabled={isValidating}>
-          {isValidating ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Check URL'}
-        </Button>
-      }>
-        <FieldGroup label={helpLabel('Target Type', 'Locked to Agent HTTP mode for agentic attack orchestration runs.')}>
-          <Input value="Agent HTTP" className="h-7 text-xs font-mono bg-muted/30" readOnly />
-        </FieldGroup>
-        <FieldGroup
-          label={helpLabel('Agent Name', 'Human-readable name of the production agent being tested.')}
-        >
-          <Input
-            value={agentName}
-            onChange={(e) => setAgentName(e.target.value)}
-            placeholder="refund-agent"
-            className="h-7 text-xs"
-          />
-        </FieldGroup>
-        <FieldGroup
-          label={helpLabel('Agent Description', 'Brief responsibility of the tested agent (used for run context and reporting).')}
-        >
-          <Input
-            value={agentDescription}
-            onChange={(e) => setAgentDescription(e.target.value)}
-            placeholder="Handles refund eligibility and decisions."
-            className="h-7 text-xs"
-          />
-        </FieldGroup>
-        <FieldGroup
-          label={helpLabel('Agent URL', 'HTTP invoke endpoint of the agent under test.')}
-          hint="Example: http://localhost:8000/v1/agent-index/agents/default/invoke"
-        >
-          <Input
-            value={agentUrl}
-            onChange={(e) => setAgentUrl(e.target.value)}
-            placeholder="http://localhost:8000/v1/agent-index/agents/default/invoke"
-            className="h-7 text-xs font-mono"
-          />
-        </FieldGroup>
-      </PanelSection>
-
-      {/* Benchmark */}
-      <PanelSection title="Risk Scenarios" description="What to test">
-        <FieldGroup label={helpLabel('Scenario Types', 'Fraud and safety categories used to generate and evaluate test cases.')}>
-          <div className="flex flex-wrap gap-1">
-            {TAXONOMY_OPTIONS.map((t) => (
-              <Badge
-                key={t}
-                variant={taxonomy.includes(t) ? 'default' : 'outline'}
-                className={cn(
-                  'text-[9px] cursor-pointer transition-all hover:scale-105',
-                  taxonomy.includes(t) ? '' : 'opacity-50 hover:opacity-80',
-                )}
-                onClick={() => toggleChip(taxonomy, t, setTaxonomy)}
-              >
-                {TAXONOMY_LABELS[t] || t.replace(/_/g, ' ')}
-              </Badge>
-            ))}
+      <PanelSection
+        title="Workspace History"
+        description="Reuse sessions/profiles and control runs per profile"
+        badge={
+          <div className="flex items-center gap-1.5">
+            <Badge variant="secondary" className="text-[10px] h-4 font-mono">
+              queued {sessionRunStatusCounts.queued ?? 0}
+            </Badge>
+            <Badge variant="secondary" className="text-[10px] h-4 font-mono">
+              running {sessionRunStatusCounts.running ?? 0}
+            </Badge>
+            <Badge variant="secondary" className="text-[10px] h-4 font-mono">
+              completed {sessionRunStatusCounts.completed ?? 0}
+            </Badge>
           </div>
-        </FieldGroup>
-        <div className="grid grid-cols-3 gap-2">
-          <FieldGroup label={helpLabel('Seed', 'Keeps generated tests reproducible across runs.')}>
-            <Input type="number" value={seed} onChange={(e) => setSeed(+e.target.value)} className="h-7 text-xs font-mono" />
-          </FieldGroup>
-          <FieldGroup label={helpLabel('Curated Mix', 'Portion of hand-curated cases. The rest are generated automatically.')}>
-            <Input type="number" value={curatedRatio} onChange={(e) => setCuratedRatio(+e.target.value)} step={0.1} min={0} max={1} className="h-7 text-xs font-mono" />
-          </FieldGroup>
-          <FieldGroup label={helpLabel('Generated Mix', 'Auto-generated case portion based on selected scenarios.')}>
-            <Input type="number" value={(1 - curatedRatio).toFixed(1)} readOnly className="h-7 text-xs font-mono bg-muted/30" />
-          </FieldGroup>
-        </div>
-        <FieldGroup label={helpLabel('Adaptive Attack Generation', 'Uses attacker agents to create harder, adaptive fraud attempts.')} horizontal>
-          <Switch checked={agenticAttacking} onCheckedChange={setAgenticAttacking} />
-        </FieldGroup>
-        {agenticAttacking && (
-          <div className="grid grid-cols-2 gap-2">
-            <FieldGroup label={helpLabel('Attack Runtime', 'Runtime used to execute attacker roles during generation.')}>
-              <Select value={agenticProvider} onValueChange={(v) => setAgenticProvider(v as 'auto' | 'afk_live')}>
-                <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+        }
+      >
+        <div className="rounded-lg border border-border/40 bg-background/40 p-3 space-y-2.5">
+          <div className="grid grid-cols-[1fr_auto] gap-2">
+            <FieldGroup label={helpLabel('Evaluation Session', 'Top-level container for multiple profiles and all run history.')}>
+              <Select
+                value={state.sessionId ?? '__none__'}
+                onValueChange={(value) => {
+                  if (value === '__none__') return
+                  handleSelectSession(value).catch(() => {})
+                }}
+              >
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue placeholder="Select session" />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="auto" className="text-xs">Auto</SelectItem>
-                  <SelectItem value="afk_live" className="text-xs">Live Runtime</SelectItem>
+                  <SelectItem value="__none__" className="text-xs">
+                    Select session
+                  </SelectItem>
+                  {sessionList.map((session) => (
+                    <SelectItem key={session.id} value={session.id} className="text-xs">
+                      {session.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </FieldGroup>
-            <FieldGroup label={helpLabel('Attack Model (optional)', 'Optional model override for attacker orchestration roles.')}>
-              <Input value={agenticModel} onChange={(e) => setAgenticModel(e.target.value)} placeholder="auto" className="h-7 text-xs font-mono" />
-            </FieldGroup>
-          </div>
-        )}
-      </PanelSection>
-
-      {/* Scoring */}
-      <PanelSection title="Pass / Fail Rules" description="Scoring behavior">
-        <FieldGroup label={helpLabel('Strictness', 'How hard the gate should be. Strict catches more issues but can flag more false positives.')}>
-          <div className="flex gap-1">
-            {STRICTNESS_OPTIONS.map((s) => (
+            <div className="pt-6">
               <Button
-                key={s}
-                variant={strictness === s ? 'default' : 'outline'}
+                type="button"
+                variant="outline"
                 size="sm"
-                className="h-6 text-[10px] flex-1 capitalize"
-                onClick={() => setStrictness(s)}
+                className="h-7 text-[10px]"
+                onClick={handleCreateSession}
+                disabled={isLaunching}
               >
-                {s}
+                New Session
               </Button>
-            ))}
+            </div>
           </div>
-        </FieldGroup>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-          <FieldGroup label={helpLabel('Minimum Score', 'Minimum composite score required for this run to pass.')} horizontal>
-            <Input type="number" value={compositeMin} onChange={(e) => setCompositeMin(+e.target.value)} className="h-6 w-16 text-[10px] font-mono text-right" />
-          </FieldGroup>
-        </div>
-        <div className="flex gap-4 mt-1">
-          <FieldGroup label={helpLabel('Manual Review Queue', 'Sends uncertain or disputed cases for human review.')} horizontal>
-            <Switch checked={activeAdjudication} onCheckedChange={setActiveAdjudication} />
-          </FieldGroup>
-        </div>
-      </PanelSection>
 
-      {/* Orchestration */}
-      <PanelSection title="Advanced Orchestration" description="Optional multi-agent controls">
-        <div className="grid grid-cols-[1fr_auto] gap-2">
-          <FieldGroup label={helpLabel('Workflow Template', 'Predefined orchestration layer for studio nodes and execution paths.')}>
+          <FieldGroup label={helpLabel('Profile', 'A profile stores one full target + benchmark + orchestration configuration.')}>
             <Select
-              value={orchestrationTemplate}
-              onValueChange={(v) => setOrchestrationTemplate(v as StudioTemplateId)}
+              value={state.configProfileId ?? '__none__'}
+              onValueChange={(value) => {
+                if (value === '__none__') {
+                  dispatch({ type: 'SET_CONFIG_PROFILE', configProfileId: null })
+                  setLaunchProfileMode('new')
+                  return
+                }
+                handleSelectProfile(value).catch(() => {})
+              }}
             >
-              <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue placeholder="Select profile" />
+              </SelectTrigger>
               <SelectContent>
-                {STUDIO_GRAPH_TEMPLATES.map((tpl) => (
-                  <SelectItem key={tpl.id} value={tpl.id} className="text-xs">
-                    {tpl.name}
+                <SelectItem value="__none__" className="text-xs">
+                  New profile from form
+                </SelectItem>
+                {profileList.map((profile) => (
+                  <SelectItem key={profile.id} value={profile.id} className="text-xs">
+                    {profile.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </FieldGroup>
-          <div className="pt-6">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 text-[10px]"
-              onClick={() => applyOrchestrationTemplate(orchestrationTemplate)}
-            >
-              Apply
-            </Button>
-          </div>
-        </div>
-        <p className="text-[10px] text-muted-foreground -mt-1">
-          {STUDIO_GRAPH_TEMPLATES.find((tpl) => tpl.id === orchestrationTemplate)?.description}
-        </p>
-        <div className="grid grid-cols-2 gap-2">
-          <FieldGroup label={helpLabel('Join Policy', 'How many role outputs are needed before moving to the next step.')}>
-            <Select value={joinPolicy} onValueChange={setJoinPolicy}>
-              <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {['all_required', 'allow_optional_failures', 'first_success', 'quorum', 'majority'].map((p) => (
-                  <SelectItem key={p} value={p} className="text-xs">{p.replace(/_/g, ' ')}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+
+          <FieldGroup
+            label={helpLabel('Launch Mode', 'Run with current profile config or save a new profile from this form first.')}
+            hint="Use New Profile when you changed form settings."
+          >
+            <div className="grid grid-cols-2 gap-1.5">
+              <Button
+                type="button"
+                size="sm"
+                variant={launchProfileMode === 'existing' ? 'default' : 'outline'}
+                className="h-7 text-[10px]"
+                disabled={!selectedProfile}
+                onClick={() => setLaunchProfileMode('existing')}
+              >
+                Run Existing Profile
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={launchProfileMode === 'new' ? 'default' : 'outline'}
+                className="h-7 text-[10px]"
+                onClick={() => {
+                  setLaunchProfileMode('new')
+                  setLastLoadedProfileId(null)
+                }}
+              >
+                Save New Profile + Run
+              </Button>
+            </div>
           </FieldGroup>
-          <FieldGroup label={helpLabel('Routing Strategy', 'How tasks are distributed across orchestration roles.')}>
-            <Select value={routerStrategy} onValueChange={setRouterStrategy}>
-              <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {['taxonomy', 'difficulty', 'provider_slice', 'round_robin'].map((s) => (
-                  <SelectItem key={s} value={s} className="text-xs">{s.replace(/_/g, ' ')}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FieldGroup>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <FieldGroup label={helpLabel('Max Subagents', 'Maximum number of orchestration subagents running at once.')}>
-            <Input type="number" value={maxSubagents} onChange={(e) => setMaxSubagents(+e.target.value)} min={1} max={10} className="h-7 text-xs font-mono" />
-          </FieldGroup>
-          <FieldGroup label={helpLabel('Orchestration Profile ID', 'Optional saved orchestration profile to merge into this run.')} hint="Optional">
-            <Input value={orchestrationProfileId} onChange={(e) => setOrchestrationProfileId(e.target.value)} placeholder="optional" className="h-7 text-xs font-mono" />
+
+          <FieldGroup label={helpLabel('Run History', 'Runs are grouped under the selected profile; select one to load analytics.')}>
+            <div className="max-h-40 overflow-y-auto rounded-md border border-border/35 bg-background/45">
+              {isLoadingHistory ? (
+                <div className="flex items-center justify-center gap-2 p-3 text-[11px] text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Loading history...
+                </div>
+              ) : profileRunHistory.length === 0 ? (
+                <div className="p-3 text-[11px] text-muted-foreground">
+                  No runs for this profile yet. Launch to create the first run history entry.
+                </div>
+              ) : (
+                <div className="divide-y divide-border/35">
+                  {profileRunHistory.map((run) => {
+                    const runStatus = run.status || 'unknown'
+                    const isCurrentRun = state.currentRunId === run.id
+                    const compositeRaw = Number((run.summary_metrics as Record<string, unknown> | undefined)?.composite_score ?? Number.NaN)
+                    const compositeScore = Number.isFinite(compositeRaw) ? compositeRaw.toFixed(1) : '--'
+                    const totalAttacks = Math.max(0, run.total_attacks ?? 0)
+                    const completedAttacks = Math.max(0, run.completed_attacks ?? 0)
+                    const progress = totalAttacks > 0 ? `${completedAttacks}/${totalAttacks}` : `${completedAttacks}`
+                    return (
+                      <div key={run.id} className={cn('p-2 space-y-1.5', isCurrentRun && 'bg-primary/8')}>
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            className="min-w-0 text-left"
+                            onClick={() => handleAttachRunFromHistory(run.id).catch(() => {})}
+                          >
+                            <p className="text-[11px] font-mono truncate">{run.id}</p>
+                            <p className="text-[9px] text-muted-foreground">
+                              {new Date(run.created_at).toLocaleString()}
+                            </p>
+                          </button>
+                          <Badge
+                            variant={runStatus === 'failed' ? 'destructive' : 'secondary'}
+                            className="text-[9px] h-4 font-mono"
+                          >
+                            {runStatus}
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1 text-[9px] text-muted-foreground font-mono">
+                          <span>progress {progress}</span>
+                          <span>score {compositeScore}</span>
+                          <span>cost ${Number(run.budget_spent_usd ?? 0).toFixed(2)}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-6 text-[9px]"
+                            onClick={() => handleAttachRunFromHistory(run.id).catch(() => {})}
+                          >
+                            Open
+                          </Button>
+                          {(runStatus === 'failed' || runStatus === 'interrupted') && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-6 text-[9px]"
+                              onClick={() => handleResumeFromHistory(run.id)}
+                            >
+                              Resume
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </FieldGroup>
         </div>
       </PanelSection>
 
-      {/* Runtime / Launch Config */}
-      <PanelSection title="Run Size & Cost" description="Execution scale and spend">
-        <FieldGroup label={helpLabel('Run Size', 'Predefined scale for speed vs depth tradeoff.')}>
+      <PanelSection
+        title="Guided Setup"
+        description="Only the controls most users need"
+        badge={
+          <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={handleValidate} disabled={isValidating}>
+            {isValidating ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Validate'}
+          </Button>
+        }
+      >
+        <div className="grid grid-cols-3 gap-1.5">
+          <div className="rounded-md border border-border/40 bg-background/50 px-2 py-1.5">
+            <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Estimated Cases</p>
+            <p className="text-xs font-mono font-semibold">{estimatedAttacks.toLocaleString()}</p>
+          </div>
+          <div className="rounded-md border border-border/40 bg-background/50 px-2 py-1.5">
+            <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Adaptive Attacks</p>
+            <p className="text-xs font-semibold">{agenticAttacking ? 'Enabled' : 'Disabled'}</p>
+          </div>
+          <div className="rounded-md border border-border/40 bg-background/50 px-2 py-1.5">
+            <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Manual Review</p>
+            <p className="text-xs font-semibold">{activeAdjudication ? 'Enabled' : 'Disabled'}</p>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border/40 bg-background/40 p-3 space-y-2.5">
+          <FieldGroup label={helpLabel('Test Agent', 'Select the demo target agent served by the local test-agents runtime.')}>
+            <Select value={agentId} onValueChange={setAgentId}>
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue placeholder="Select agent" />
+              </SelectTrigger>
+              <SelectContent>
+                {testAgentCatalog.map((row) => (
+                  <SelectItem key={row.id} value={row.id} className="text-xs">
+                    {row.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FieldGroup>
+          <div className="grid grid-cols-2 gap-2">
+            <FieldGroup label={helpLabel('Agent Name', 'Human-readable name of the production agent being tested.')}>
+              <Input
+                value={agentName}
+                onChange={(e) => setAgentName(e.target.value)}
+                placeholder="refund-agent"
+                className="h-7 text-xs"
+              />
+            </FieldGroup>
+            <FieldGroup label={helpLabel('Agent Description', 'Brief responsibility of the tested agent for run context.')}>
+              <Input
+                value={agentDescription}
+                onChange={(e) => setAgentDescription(e.target.value)}
+                placeholder="Handles refund eligibility and decisions."
+                className="h-7 text-xs"
+              />
+            </FieldGroup>
+          </div>
+          <FieldGroup
+            label={helpLabel('Resolved Endpoint', 'Read-only URL built from selected test agent and runtime base URL.')}
+            hint="This endpoint is resolved automatically from your dropdown selection."
+          >
+            <Input
+              value={resolvedAgentUrl}
+              readOnly
+              className="h-7 text-xs font-mono bg-muted/30"
+            />
+          </FieldGroup>
+        </div>
+
+        <FieldGroup label={helpLabel('Scenario Profile', 'Use a profile for safer defaults, then fine-tune tags below if needed.')}>
+          <div className="grid grid-cols-3 gap-1.5">
+            {SCENARIO_PRESETS.map((presetOption) => (
+              <button
+                key={presetOption.id}
+                type="button"
+                onClick={() => applyScenarioPreset(presetOption.id)}
+                className={cn(
+                  'rounded-md border px-2 py-1.5 text-left transition-colors',
+                  scenarioPresetId === presetOption.id
+                    ? 'border-primary/70 bg-primary/10'
+                    : 'border-border/40 bg-background/50 hover:border-primary/40',
+                )}
+              >
+                <p className="text-[10px] font-semibold">{presetOption.label}</p>
+                <p className="text-[9px] text-muted-foreground line-clamp-2">{presetOption.description}</p>
+              </button>
+            ))}
+          </div>
+        </FieldGroup>
+
+        <FieldGroup label={helpLabel('Scenario Types', 'Tap chips to include or exclude attack categories.')}>
+          <div className="max-h-28 overflow-y-auto rounded-md border border-border/35 bg-background/35 p-1.5">
+            <div className="flex flex-wrap gap-1">
+              {TAXONOMY_OPTIONS.map((t) => (
+                <Badge
+                  key={t}
+                  variant={taxonomy.includes(t) ? 'default' : 'outline'}
+                  className={cn(
+                    'text-[9px] cursor-pointer transition-all',
+                    taxonomy.includes(t) ? '' : 'opacity-55 hover:opacity-90',
+                  )}
+                  onClick={() => toggleChip(taxonomy, t, setTaxonomy)}
+                >
+                  {TAXONOMY_LABELS[t] || t.replace(/_/g, ' ')}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        </FieldGroup>
+
+        <FieldGroup label={helpLabel('Run Size', 'Choose the evaluation depth and cost envelope.')}>
           <div className="grid grid-cols-3 gap-1.5">
             {PRESET_OPTIONS.map((p) => (
               <motion.button
                 key={p.value}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
                 onClick={() => setPreset(p.value)}
                 className={cn(
-                  'flex flex-col items-center gap-1 p-2 rounded-lg border transition-colors',
-                  preset === p.value ? 'border-primary bg-primary/10 text-primary' : 'border-border/40 hover:border-border',
+                  'flex flex-col items-center gap-1 rounded-lg border p-2 transition-colors',
+                  preset === p.value
+                    ? 'border-primary/70 bg-primary/12 text-primary'
+                    : 'border-border/40 bg-background/45 hover:border-primary/40',
                 )}
               >
                 <p.icon className="h-3.5 w-3.5" />
-                <span className="text-[10px] font-medium">{p.label}</span>
+                <span className="text-[10px] font-semibold">{p.label}</span>
                 <span className="text-[9px] text-muted-foreground">{p.desc}</span>
               </motion.button>
             ))}
           </div>
         </FieldGroup>
+
         <div className="grid grid-cols-2 gap-2">
-          <FieldGroup label={helpLabel('Run Mode', 'Single Run is deterministic. Nightly is for recurring monitoring.')}>
-            <Select value={mode} onValueChange={setMode}>
-              <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {MODE_OPTIONS.map((m) => (
-                  <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FieldGroup>
-          <FieldGroup label={helpLabel('Budget ($)', 'Soft budget used for cost tracking and scoring gates.')}>
+          <FieldGroup label={helpLabel('Budget ($)', 'Soft budget used for cost tracking and score gates.')}>
             <Input type="number" value={budgetUsd} onChange={(e) => setBudgetUsd(+e.target.value)} min={0} step={1} className="h-7 text-xs font-mono" />
           </FieldGroup>
-          <FieldGroup label={helpLabel('Parallel Jobs', 'Maximum parallel executions in the run pipeline.')}>
+          <FieldGroup label={helpLabel('Parallel Jobs', 'Max parallel executions during the run.')}>
             <Input type="number" value={maxConcurrency} onChange={(e) => setMaxConcurrency(+e.target.value)} min={1} max={64} className="h-7 text-xs font-mono" />
           </FieldGroup>
         </div>
-        <FieldGroup label={helpLabel('Baseline Run ID', 'Optional prior run ID used for drift/regression comparison.')} hint="Optional">
-          <Input
-            value={baselineRunId}
-            onChange={(e) => setBaselineRunId(e.target.value)}
-            placeholder="optional"
-            className="h-7 text-xs font-mono"
-          />
+
+        <FieldGroup label={helpLabel('Manual Review Queue', 'Send uncertain or disputed cases for human review.')} horizontal>
+          <Switch checked={activeAdjudication} onCheckedChange={setActiveAdjudication} />
         </FieldGroup>
+      </PanelSection>
+
+      <PanelSection title="Advanced Controls" description="Project metadata and orchestration tuning">
+        <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
+          <CollapsibleTrigger asChild>
+            <Button variant="outline" className="w-full h-8 justify-between text-[11px]">
+              {showAdvanced ? 'Hide Advanced Controls' : 'Show Advanced Controls'}
+              <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', showAdvanced && 'rotate-180')} />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-3 space-y-3">
+            <div className="rounded-lg border border-border/40 bg-background/40 p-3 space-y-2.5">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Project Metadata</p>
+              <div className="grid grid-cols-2 gap-2">
+                <FieldGroup label={helpLabel('Session Name', 'Readable name shown in run history and reports.')}>
+                  <Input value={sessionName} onChange={(e) => setSessionName(e.target.value)} className="h-7 text-xs" />
+                </FieldGroup>
+                <FieldGroup label={helpLabel('Team', 'Owner team or person responsible for this evaluation.')}>
+                  <Input value={sessionOwner} onChange={(e) => setSessionOwner(e.target.value)} className="h-7 text-xs" />
+                </FieldGroup>
+              </div>
+              <FieldGroup label={helpLabel('Profile Name', 'Saved config profile name for reuse.')}>
+                <Input value={profileName} onChange={(e) => setProfileName(e.target.value)} className="h-7 text-xs" />
+              </FieldGroup>
+              <div className="grid grid-cols-2 gap-2">
+                <FieldGroup label={helpLabel('Run Mode', 'Single Run is deterministic. Nightly is for recurring monitoring.')}>
+                  <Select value={mode} onValueChange={setMode}>
+                    <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {MODE_OPTIONS.map((m) => (
+                        <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FieldGroup>
+                <FieldGroup label={helpLabel('Baseline Run ID', 'Optional prior run ID used for regression comparison.')} hint="Optional">
+                  <Input
+                    value={baselineRunId}
+                    onChange={(e) => setBaselineRunId(e.target.value)}
+                    placeholder="optional"
+                    className="h-7 text-xs font-mono"
+                  />
+                </FieldGroup>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border/40 bg-background/40 p-3 space-y-2.5">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Scoring & Attack Generation</p>
+              <FieldGroup label={helpLabel('Strictness', 'How hard the pass/fail gate should be.')}>
+                <div className="flex gap-1">
+                  {STRICTNESS_OPTIONS.map((s) => (
+                    <Button
+                      key={s}
+                      variant={strictness === s ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-6 text-[10px] flex-1 capitalize"
+                      onClick={() => setStrictness(s)}
+                    >
+                      {s}
+                    </Button>
+                  ))}
+                </div>
+              </FieldGroup>
+              <div className="grid grid-cols-3 gap-2">
+                <FieldGroup label={helpLabel('Seed', 'Keeps generated tests reproducible across runs.')}>
+                  <Input type="number" value={seed} onChange={(e) => setSeed(+e.target.value)} className="h-7 text-xs font-mono" />
+                </FieldGroup>
+                <FieldGroup label={helpLabel('Curated Mix', 'Portion of hand-curated cases.')} hint="0.0 - 1.0">
+                  <Input
+                    type="number"
+                    value={curatedRatio}
+                    onChange={(e) => {
+                      setCuratedRatio(+e.target.value)
+                      setScenarioPresetId('custom')
+                    }}
+                    step={0.1}
+                    min={0}
+                    max={1}
+                    className="h-7 text-xs font-mono"
+                  />
+                </FieldGroup>
+                <FieldGroup label={helpLabel('Generated Mix', 'Auto-generated case proportion.')}>
+                  <Input type="number" value={(1 - curatedRatio).toFixed(1)} readOnly className="h-7 text-xs font-mono bg-muted/30" />
+                </FieldGroup>
+              </div>
+              <FieldGroup label={helpLabel('Adaptive Attack Generation', 'Use attacker orchestration to create adaptive fraud attempts.')} horizontal>
+                <Switch
+                  checked={agenticAttacking}
+                  onCheckedChange={(value) => {
+                    setAgenticAttacking(value)
+                    setScenarioPresetId('custom')
+                  }}
+                />
+              </FieldGroup>
+              {agenticAttacking && (
+                <div className="grid grid-cols-2 gap-2">
+                  <FieldGroup label={helpLabel('Attack Runtime', 'Runtime used to execute attacker roles during generation.')}>
+                    <Select value={agenticProvider} onValueChange={(v) => setAgenticProvider(v as 'auto' | 'afk_live')}>
+                      <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto" className="text-xs">Auto</SelectItem>
+                        <SelectItem value="afk_live" className="text-xs">Live Runtime</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FieldGroup>
+                  <FieldGroup label={helpLabel('Attack Model (optional)', 'Optional model override for attacker orchestration roles.')}>
+                    <Input value={agenticModel} onChange={(e) => setAgenticModel(e.target.value)} placeholder="auto" className="h-7 text-xs font-mono" />
+                  </FieldGroup>
+                </div>
+              )}
+              <FieldGroup label={helpLabel('Minimum Score', 'Minimum composite score required for this run to pass.')}>
+                <Input type="number" value={compositeMin} onChange={(e) => setCompositeMin(+e.target.value)} className="h-7 text-xs font-mono" />
+              </FieldGroup>
+            </div>
+
+            <div className="rounded-lg border border-border/40 bg-background/40 p-3 space-y-2.5">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Orchestration Layer</p>
+              <div className="grid grid-cols-[1fr_auto] gap-2">
+                <FieldGroup label={helpLabel('Workflow Template', 'Predefined orchestration layer for studio nodes and execution paths.')}>
+                  <Select
+                    value={orchestrationTemplate}
+                    onValueChange={(v) => setOrchestrationTemplate(v as StudioTemplateId)}
+                  >
+                    <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {STUDIO_GRAPH_TEMPLATES.map((tpl) => (
+                        <SelectItem key={tpl.id} value={tpl.id} className="text-xs">
+                          {tpl.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FieldGroup>
+                <div className="pt-6">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-[10px]"
+                    onClick={() => applyOrchestrationTemplate(orchestrationTemplate)}
+                  >
+                    Apply
+                  </Button>
+                </div>
+              </div>
+              <p className="text-[10px] text-muted-foreground -mt-1">
+                {STUDIO_GRAPH_TEMPLATES.find((tpl) => tpl.id === orchestrationTemplate)?.description}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <FieldGroup label={helpLabel('Join Policy', 'How many role outputs are needed before the next step.')}>
+                  <Select value={joinPolicy} onValueChange={setJoinPolicy}>
+                    <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {['all_required', 'allow_optional_failures', 'first_success', 'quorum', 'majority'].map((p) => (
+                        <SelectItem key={p} value={p} className="text-xs">{p.replace(/_/g, ' ')}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FieldGroup>
+                <FieldGroup label={helpLabel('Routing Strategy', 'How tasks are distributed across orchestration roles.')}>
+                  <Select value={routerStrategy} onValueChange={setRouterStrategy}>
+                    <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {['taxonomy', 'difficulty', 'provider_slice', 'round_robin'].map((s) => (
+                        <SelectItem key={s} value={s} className="text-xs">{s.replace(/_/g, ' ')}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FieldGroup>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <FieldGroup label={helpLabel('Max Subagents', 'Maximum number of orchestration subagents running at once.')}>
+                  <Input type="number" value={maxSubagents} onChange={(e) => setMaxSubagents(+e.target.value)} min={1} max={10} className="h-7 text-xs font-mono" />
+                </FieldGroup>
+                <FieldGroup label={helpLabel('Orchestration Profile ID', 'Optional saved orchestration profile to merge into this run.')} hint="Optional">
+                  <Input value={orchestrationProfileId} onChange={(e) => setOrchestrationProfileId(e.target.value)} placeholder="optional" className="h-7 text-xs font-mono" />
+                </FieldGroup>
+              </div>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
       </PanelSection>
     </PanelShell>
   )

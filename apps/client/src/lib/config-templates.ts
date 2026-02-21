@@ -8,9 +8,9 @@ export type ConfigTemplate = {
     sessionOwner: string
     profileName: string
     targetType: 'managed_llm_runtime' | 'managed_agent_runtime' | 'http' | 'openai_compatible' | 'agent_http'
+    agentId: string
     agentName: string
     agentDescription: string
-    agentUrl: string
     model: string
     providerName: string
     taxonomy: string
@@ -40,9 +40,9 @@ export const configTemplates: ConfigTemplate[] = [
       sessionOwner: 'risk-team',
       profileName: 'fraud-readiness-profile',
       targetType: 'agent_http',
+      agentId: 'refund',
       agentName: 'refund-agent',
       agentDescription: 'Automated refund decisioning agent under fraud stress test.',
-      agentUrl: 'http://localhost:8000/v1/agent-index/agents/default/invoke',
       model: 'gpt-4.1-mini',
       providerName: 'openai',
       taxonomy: 'tool_misuse,prompt_injection,jailbreak,refund_abuse,claim_manipulation,identity_mismatch',
@@ -70,9 +70,9 @@ export const configTemplates: ConfigTemplate[] = [
       sessionOwner: 'qa-team',
       profileName: 'quick-fraud-smoke-profile',
       targetType: 'agent_http',
+      agentId: 'refund',
       agentName: 'refund-agent',
       agentDescription: 'Fast smoke run for refund abuse exposure before demo/release.',
-      agentUrl: 'http://localhost:8000/v1/agent-index/agents/default/invoke',
       model: 'gpt-4.1-mini',
       providerName: 'openai',
       taxonomy: 'refund_abuse,claim_manipulation,prompt_injection',
@@ -100,9 +100,9 @@ export const configTemplates: ConfigTemplate[] = [
       sessionOwner: 'trust-safety',
       profileName: 'refund-abuse-check-profile',
       targetType: 'agent_http',
+      agentId: 'chargeback',
       agentName: 'refund-agent',
       agentDescription: 'Refund abuse focused workflow including claim and identity checks.',
-      agentUrl: 'http://localhost:8000/v1/agent-index/agents/default/invoke',
       model: 'gpt-4.1-mini',
       providerName: 'openai',
       taxonomy: 'refund_abuse,claim_manipulation,identity_mismatch,tool_misuse',
@@ -130,9 +130,9 @@ export const configTemplates: ConfigTemplate[] = [
       sessionOwner: 'security-team',
       profileName: 'identity-risk-sweep-profile',
       targetType: 'agent_http',
+      agentId: 'account-recovery',
       agentName: 'account-recovery-agent',
       agentDescription: 'Identity and account-recovery agent tested for takeover manipulation.',
-      agentUrl: 'http://localhost:8000/v1/agent-index/agents/default/invoke',
       model: 'gpt-4.1-mini',
       providerName: 'openai',
       taxonomy: 'identity_mismatch,claim_manipulation,data_exfiltration,system_prompt_leak,jailbreak',
@@ -160,9 +160,9 @@ export const configTemplates: ConfigTemplate[] = [
       sessionOwner: 'platform-team',
       profileName: 'release-gate-profile',
       targetType: 'agent_http',
+      agentId: 'transaction-monitoring',
       agentName: 'financial-ops-agent',
       agentDescription: 'Pre-release gate for financial ops actions and risky policy paths.',
-      agentUrl: 'http://localhost:8000/v1/agent-index/agents/default/invoke',
       model: 'gpt-4.1-mini',
       providerName: 'openai',
       taxonomy: 'refund_abuse,claim_manipulation,prompt_injection,tool_misuse',
@@ -190,9 +190,9 @@ export const configTemplates: ConfigTemplate[] = [
       sessionOwner: 'ml-ops',
       profileName: 'nightly-fraud-watch-profile',
       targetType: 'agent_http',
+      agentId: 'loan',
       agentName: 'financial-ops-agent',
       agentDescription: 'Nightly drift watch for fraud vulnerabilities across key workflows.',
-      agentUrl: 'http://localhost:8000/v1/agent-index/agents/default/invoke',
       model: 'gpt-4.1-mini',
       providerName: 'openai',
       taxonomy: 'prompt_injection,jailbreak,tool_misuse,refund_abuse,claim_manipulation,identity_mismatch',

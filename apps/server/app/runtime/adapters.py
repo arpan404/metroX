@@ -46,27 +46,62 @@ class HttpTargetAdapter(TargetAdapter):
         if not request.endpoint:
             raise ValueError("HTTP target requires endpoint")
         start = perf_counter()
-        payload = {
-            "run_id": request.run_id,
-            "attack_id": request.attack_id,
-            "prompt": request.prompt,
-            "model": request.model,
-            "extra": request.extra,
-        }
+        resolved_target_type = normalize_target_type(request.target_type)
+        if resolved_target_type == "agent_http":
+            payload = {
+                "run_id": request.run_id,
+                "attack_id": request.attack_id,
+                "prompt": request.prompt,
+                "message": request.prompt,
+                "user_message": request.prompt,
+                "thread_id": request.extra.get("thread_id"),
+                "model": request.model,
+                "extra": request.extra,
+            }
+        else:
+            payload = {
+                "run_id": request.run_id,
+                "attack_id": request.attack_id,
+                "prompt": request.prompt,
+                "model": request.model,
+                "extra": request.extra,
+            }
         with httpx.Client(timeout=60.0) as client:
             resp = client.post(request.endpoint, headers=request.auth_headers, json=payload)
             resp.raise_for_status()
             body = resp.json()
+
+        resolved_thread_id = None
+        if isinstance(body, dict):
+            candidates = [
+                body.get("thread_id"),
+                body.get("raw_payload", {}).get("thread_id") if isinstance(body.get("raw_payload"), dict) else None,
+                body.get("extra", {}).get("thread_id") if isinstance(body.get("extra"), dict) else None,
+            ]
+            for candidate in candidates:
+                value = str(candidate or "").strip()
+                if value:
+                    resolved_thread_id = value
+                    break
+        normalized_payload = body if isinstance(body, dict) else {}
+        if resolved_thread_id:
+            normalized_payload = {**normalized_payload, "thread_id": resolved_thread_id}
+            nested_raw = normalized_payload.get("raw_payload")
+            if isinstance(nested_raw, dict):
+                normalized_payload["raw_payload"] = {**nested_raw, "thread_id": resolved_thread_id}
+            else:
+                normalized_payload["raw_payload"] = {"thread_id": resolved_thread_id}
+
         latency_ms = (perf_counter() - start) * 1000
         return TargetResponse(
-            response_text=body.get("response_text", ""),
-            retrieved_docs=body.get("retrieved_docs", []),
-            tool_events=body.get("tool_events", []),
-            latency_ms=body.get("latency_ms", latency_ms),
-            token_usage=body.get("token_usage", {}),
-            raw_payload=body,
-            provider_name=str(body.get("provider_name", request.extra.get("provider_name", "http"))),
-            model_resolved=str(body.get("model_resolved", request.model)),
+            response_text=normalized_payload.get("response_text", ""),
+            retrieved_docs=normalized_payload.get("retrieved_docs", []),
+            tool_events=normalized_payload.get("tool_events", []),
+            latency_ms=normalized_payload.get("latency_ms", latency_ms),
+            token_usage=normalized_payload.get("token_usage", {}),
+            raw_payload=normalized_payload,
+            provider_name=str(normalized_payload.get("provider_name", request.extra.get("provider_name", "http"))),
+            model_resolved=str(normalized_payload.get("model_resolved", request.model)),
         )
 
 

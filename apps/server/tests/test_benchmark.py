@@ -9,6 +9,8 @@ def test_benchmark_reproducibility(db_session):
         "taxonomy": ["prompt_injection", "hallucination"],
         "seed": 77,
         "curated_ratio": 0.5,
+        "agentic_attacking": False,
+        "agentic_provider": "afk_live",
     }
 
     snapshot_1, cases_1 = create_benchmark(db_session, run_id="run-1", benchmark_config=config, attack_count=40)

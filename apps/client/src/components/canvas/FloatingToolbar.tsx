@@ -1,4 +1,3 @@
-import { useLocation, useNavigate } from 'react-router-dom'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Button } from '@/components/ui/button'
 import {
@@ -18,24 +17,25 @@ import {
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 
-const modes = [
-  { value: '/', icon: LayoutDashboard, label: 'Canvas' },
-  { value: '/config', icon: SlidersHorizontal, label: 'Config' },
-  { value: '/analytics', icon: BarChart3, label: 'Analytics' },
-  { value: '/settings', icon: KeyRound, label: 'Settings' },
+export type ToolbarMode = 'canvas' | 'config' | 'analytics' | 'settings'
+
+const modes: { value: ToolbarMode; icon: typeof LayoutDashboard; label: string }[] = [
+  { value: 'canvas', icon: LayoutDashboard, label: 'Canvas' },
+  { value: 'config', icon: SlidersHorizontal, label: 'Config' },
+  { value: 'analytics', icon: BarChart3, label: 'Analytics' },
+  { value: 'settings', icon: KeyRound, label: 'Settings' },
 ]
 
 export function FloatingToolbar({
+  activeMode,
+  onModeChange,
   onCommandPalette,
 }: {
+  activeMode: ToolbarMode
+  onModeChange: (mode: ToolbarMode) => void
   onCommandPalette?: () => void
 }) {
-  const navigate = useNavigate()
-  const location = useLocation()
   const { resolvedTheme, setTheme } = useTheme()
-
-  const currentMode =
-    modes.find((m) => m.value === location.pathname)?.value ?? '/'
 
   return (
     <motion.div
@@ -54,8 +54,10 @@ export function FloatingToolbar({
 
         <ToggleGroup
           type="single"
-          value={currentMode}
-          onValueChange={(value) => value && navigate(value)}
+          value={activeMode}
+          onValueChange={(value) => {
+            if (value) onModeChange(value as ToolbarMode)
+          }}
           className="gap-0.5"
         >
           {modes.map((mode) => (
@@ -66,9 +68,9 @@ export function FloatingToolbar({
                   size="sm"
                   className="rounded-full px-3 h-8 gap-1.5 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground transition-colors"
                   data-onboarding={
-                    mode.value === '/config'
+                    mode.value === 'config'
                       ? 'config-trigger'
-                      : mode.value === '/analytics'
+                      : mode.value === 'analytics'
                         ? 'analytics-trigger'
                         : undefined
                   }

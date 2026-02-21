@@ -83,6 +83,54 @@ function SheetContent({
   )
 }
 
+/* ------------------------------------------------------------------ */
+/*  GlassPanel - non-modal side panel with glassmorphism              */
+/*  Doesn't use Dialog/Portal/Overlay -- just a fixed div with anim  */
+/* ------------------------------------------------------------------ */
+
+function GlassPanel({
+  open,
+  onClose,
+  side = "right",
+  className,
+  children,
+}: {
+  open: boolean
+  onClose: () => void
+  side?: "left" | "right"
+  className?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div
+      data-slot="glass-panel"
+      data-state={open ? "open" : "closed"}
+      className={cn(
+        "fixed z-40 flex flex-col gap-4 transition-transform duration-300 ease-in-out",
+        "bg-card/80 backdrop-blur-xl border-border/40 shadow-xl",
+        side === "right" && "inset-y-0 right-0 h-full border-l",
+        side === "left" && "inset-y-0 left-0 h-full border-r",
+        open
+          ? "translate-x-0"
+          : side === "right"
+            ? "translate-x-full"
+            : "-translate-x-full",
+        className,
+      )}
+      style={{ pointerEvents: open ? "auto" : "none" }}
+    >
+      {children}
+      <button
+        onClick={onClose}
+        className="ring-offset-background focus:ring-ring absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden z-10"
+      >
+        <XIcon className="size-4" />
+        <span className="sr-only">Close</span>
+      </button>
+    </div>
+  )
+}
+
 function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -138,4 +186,5 @@ export {
   SheetFooter,
   SheetTitle,
   SheetDescription,
+  GlassPanel,
 }

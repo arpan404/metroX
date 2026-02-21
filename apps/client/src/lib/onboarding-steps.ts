@@ -5,7 +5,7 @@ export const onboardingSteps: OnboardingStep[] = [
     id: 'canvas',
     title: 'Welcome to AutoRedTeam',
     description:
-      'This is your reliability testing canvas. Attack flows, configuration, and analytics all overlay this workspace.',
+      'This is your single-page canvas workspace. Attack flows, configuration, analytics, and settings all open as glass panels over this canvas.',
     targetSelector: '[data-onboarding="canvas"]',
     placement: 'bottom',
   },
@@ -13,15 +13,15 @@ export const onboardingSteps: OnboardingStep[] = [
     id: 'toolbar',
     title: 'Mode Toolbar',
     description:
-      'Switch between Canvas, Config, Analytics, and Settings. Each mode loads a different view over the canvas.',
+      'Toggle panels on and off. Canvas mode closes all panels. Config, Analytics, and Settings each open a side panel.',
     targetSelector: '[data-onboarding="toolbar"]',
     placement: 'bottom',
   },
   {
     id: 'config-panel',
-    title: 'Configuration',
+    title: 'Configuration Panel',
     description:
-      'Set up your target model, benchmark taxonomy, scoring thresholds, and budget from the Config mode.',
+      'Click Config to open the left panel. Choose a quick-start template or customize your target, benchmark, and budget. Launch a run from the bottom of the panel.',
     targetSelector: '[data-onboarding="config-trigger"]',
     placement: 'bottom',
   },
@@ -29,15 +29,15 @@ export const onboardingSteps: OnboardingStep[] = [
     id: 'launch',
     title: 'Launch a Run',
     description:
-      'When your configuration is ready, launch a reliability evaluation. Watch attack nodes appear in real-time on the canvas.',
+      'When your configuration is ready, hit Launch Run. Attack nodes will appear on the canvas in real-time as the evaluation progresses.',
     targetSelector: '[data-onboarding="launch-button"]',
     placement: 'left',
   },
   {
     id: 'analytics',
-    title: 'Analytics & Reports',
+    title: 'Analytics Panel',
     description:
-      'After a run completes, switch to Analytics to explore scorecards, risk cards, drift signals, and cost breakdowns.',
+      'After a run completes, open Analytics to explore scorecards, risk cards, drift signals, cost breakdowns, and more in a scrollable right panel.',
     targetSelector: '[data-onboarding="analytics-trigger"]',
     placement: 'bottom',
   },

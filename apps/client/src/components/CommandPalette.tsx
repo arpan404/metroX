@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect } from 'react'
 import {
   CommandDialog,
   CommandEmpty,
@@ -19,17 +18,19 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
+import type { ToolbarMode } from '@/components/canvas/FloatingToolbar'
 
 export function CommandPalette({
   open,
   onOpenChange,
+  onModeChange,
   onReplayTour,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onModeChange: (mode: ToolbarMode) => void
   onReplayTour?: () => void
 }) {
-  const navigate = useNavigate()
   const { setTheme, resolvedTheme } = useTheme()
 
   useEffect(() => {
@@ -53,26 +54,20 @@ export function CommandPalette({
       <CommandInput placeholder="Type a command or search..." />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
-        <CommandGroup heading="Navigation">
-          <CommandItem onSelect={() => runCommand(() => navigate('/'))}>
+        <CommandGroup heading="Panels">
+          <CommandItem onSelect={() => runCommand(() => onModeChange('canvas'))}>
             <LayoutDashboard className="mr-2 size-4" />
             Canvas
           </CommandItem>
-          <CommandItem
-            onSelect={() => runCommand(() => navigate('/config'))}
-          >
+          <CommandItem onSelect={() => runCommand(() => onModeChange('config'))}>
             <SlidersHorizontal className="mr-2 size-4" />
             Configuration
           </CommandItem>
-          <CommandItem
-            onSelect={() => runCommand(() => navigate('/analytics'))}
-          >
+          <CommandItem onSelect={() => runCommand(() => onModeChange('analytics'))}>
             <BarChart3 className="mr-2 size-4" />
             Analytics
           </CommandItem>
-          <CommandItem
-            onSelect={() => runCommand(() => navigate('/settings'))}
-          >
+          <CommandItem onSelect={() => runCommand(() => onModeChange('settings'))}>
             <KeyRound className="mr-2 size-4" />
             Settings
           </CommandItem>

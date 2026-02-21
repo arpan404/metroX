@@ -70,6 +70,19 @@ export type DriftPayload = {
   }>
 }
 
+export type AttackSummaryPayload = {
+  run_id: string
+  attack_types: Array<{
+    attack_type: string
+    total: number
+    success: number
+    failure: number
+    success_rate: number
+    avg_confidence: number
+    severity_breakdown: Record<string, number>
+  }>
+}
+
 export type ClusterPayload = {
   run_id: string
   clusters: Array<{

@@ -140,6 +140,7 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
     risk = client.get(f"/v1/runs/{run_id}/risk-cards", headers=_headers())
     features = client.get(f"/v1/runs/{run_id}/features", headers=_headers())
     clusters = client.get(f"/v1/runs/{run_id}/clusters", headers=_headers())
+    attack_summary = client.get(f"/v1/runs/{run_id}/attack-summary", headers=_headers())
     drift = client.get(f"/v1/runs/{run_id}/drift", headers=_headers())
     report = client.post(f"/v1/reports/{run_id}/generate", headers=_headers())
 
@@ -158,6 +159,10 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
 
     assert clusters.status_code == 200
     assert "clusters" in clusters.json()
+
+    assert attack_summary.status_code == 200
+    assert "attack_types" in attack_summary.json()
+    assert isinstance(attack_summary.json()["attack_types"], list)
 
     assert drift.status_code == 200
     assert "drift_signals" in drift.json()

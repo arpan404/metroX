@@ -1,4 +1,4 @@
-import type { ClusterPayload, ConfigProfileOut, DriftPayload, RiskCards, RunOut, Scorecard, SessionOut } from './types'
+import type { AttackSummaryPayload, ClusterPayload, ConfigProfileOut, DriftPayload, RiskCards, RunOut, Scorecard, SessionOut } from './types'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 const API_KEY = import.meta.env.VITE_API_KEY ?? 'local-dev-key'
@@ -72,6 +72,10 @@ export const api = {
 
   getDrift(runId: string) {
     return request<DriftPayload>(`/v1/runs/${runId}/drift`)
+  },
+
+  getAttackSummary(runId: string) {
+    return request<AttackSummaryPayload>(`/v1/runs/${runId}/attack-summary`)
   },
 
   getFeatures(runId: string) {

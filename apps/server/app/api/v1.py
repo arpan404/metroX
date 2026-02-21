@@ -12,6 +12,7 @@ from app.auth import auth_dependency
 from app.db import SessionLocal, get_db
 from app.models import (
     Adjudication,
+    AttackCase,
     ConfigProfile,
     Detection,
     EvaluationSession,
@@ -208,6 +209,65 @@ def get_features(run_id: str, db: Session = Depends(get_db)) -> FeatureOut:
 @router.get("/runs/{run_id}/clusters")
 def get_clusters(run_id: str, db: Session = Depends(get_db)) -> dict:
     return {"run_id": run_id, "clusters": list_clusters(db, run_id)}
+
+
+@router.get("/runs/{run_id}/attack-summary")
+def get_attack_summary(run_id: str, db: Session = Depends(get_db)) -> dict:
+    run = db.query(Run).filter(Run.id == run_id).one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    execution_rows = (
+        db.query(Execution.id, AttackCase.attack_type)
+        .join(AttackCase, AttackCase.id == Execution.attack_case_id)
+        .filter(Execution.run_id == run_id)
+        .all()
+    )
+    if not execution_rows:
+        return {"run_id": run_id, "attack_types": []}
+
+    attack_type_by_execution = {execution_id: attack_type for execution_id, attack_type in execution_rows}
+    detections = (
+        db.query(Detection)
+        .filter(Detection.execution_id.in_(list(attack_type_by_execution.keys())))
+        .all()
+    )
+
+    summary: dict[str, dict] = {}
+    for detection in detections:
+        attack_type = attack_type_by_execution.get(detection.execution_id, "unknown")
+        row = summary.setdefault(
+            attack_type,
+            {
+                "attack_type": attack_type,
+                "total": 0,
+                "success": 0,
+                "failure": 0,
+                "success_rate": 0.0,
+                "avg_confidence": 0.0,
+                "severity_breakdown": {"critical": 0, "high": 0, "medium": 0, "low": 0},
+            },
+        )
+        row["total"] += 1
+        was_success = any(detection.failure_flags.values())
+        if was_success:
+            row["success"] += 1
+        else:
+            row["failure"] += 1
+        row["avg_confidence"] += float(detection.confidence)
+        sev = str(detection.severity or "low").lower()
+        if sev not in row["severity_breakdown"]:
+            sev = "low"
+        row["severity_breakdown"][sev] += 1
+
+    ordered = []
+    for attack_type, row in sorted(summary.items(), key=lambda item: item[0]):
+        total = max(int(row["total"]), 1)
+        row["success_rate"] = float(row["success"]) / total
+        row["avg_confidence"] = float(row["avg_confidence"]) / total
+        ordered.append(row)
+
+    return {"run_id": run_id, "attack_types": ordered}
 
 
 @router.get("/runs/{run_id}/drift", response_model=DriftOut)

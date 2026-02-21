@@ -86,16 +86,17 @@
 
   /* Studio flow edges: stronger directional movement toward markerEnd */
   .workspace-canvas[data-canvas-mode="studio"] .react-flow__edge.flow-edge .react-flow__edge-path {
-    stroke: hsl(var(--primary)) !important;
-    stroke-width: 1.8 !important;
-    stroke-dasharray: 8 10 !important;
-    animation: studioEdgeFlow 0.7s linear infinite !important;
+    stroke: var(--primary) !important;
+    stroke-width: 2 !important;
+    stroke-linecap: round !important;
+    stroke-dasharray: 1 11 !important; /* dotted line */
+    animation: studioEdgeFlow 0.8s linear infinite !important;
   }
   .workspace-canvas[data-canvas-mode="studio"] .react-flow__edge.flow-edge .react-flow__edge-interaction {
     stroke-width: 18 !important;
   }
   .workspace-canvas[data-canvas-mode="studio"] .react-flow__arrowhead {
-    fill: hsl(var(--primary)) !important;
+    fill: var(--primary) !important;
   }
 
   /* ─── ReactFlow handles & selection ────────────────────────── */
@@ -146,7 +147,7 @@
 }
 
 @keyframes studioEdgeFlow {
-  from { stroke-dashoffset: 18; }
+  from { stroke-dashoffset: 24; }
   to   { stroke-dashoffset: 0; }
 }
 

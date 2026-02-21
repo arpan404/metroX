@@ -24,7 +24,7 @@ Data-driven reliability testing platform for LLMs and agent systems.
 
 ## Dev Commands
 ```bash
-# backend + frontend + test-agents
+# backend + frontend + test-agents (+ queue worker for redis backend)
 make dev
 
 # backend only
@@ -37,6 +37,9 @@ make dev frontend
 
 # test-agents only
 make dev test-agents
+
+# queue worker only (required for redis backend; no-op guidance for inprocess)
+make dev worker
 ```
 
 ## Tests

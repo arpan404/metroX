@@ -20,8 +20,11 @@ async def chat(agent_name: str, req: ChatRequest):
 
     agent = AGENT_REGISTRY[agent_name]
     thread_id = req.thread_id or f"{agent_name}-{uuid4().hex[:12]}"
+    user_message = req.resolved_user_message()
+    if not user_message:
+        raise HTTPException(422, "Missing message content. Provide one of: user_message, message, or prompt.")
 
-    result = await runner.run(agent=agent, user_message=req.user_message, thread_id=thread_id)
+    result = await runner.run(agent=agent, user_message=user_message, thread_id=thread_id)
 
     tool_events = []
     if result.tool_executions:

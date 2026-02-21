@@ -32,7 +32,7 @@ import {
   STUDIO_BASE_MODEL,
   STUDIO_ROLES,
   STUDIO_GRAPH_TEMPLATES,
-  resolveStudioRoleModel,
+  createStudioNodeData,
   createStudioMapFromTemplate,
   type StudioTemplateId,
 } from '@/lib/studio-defaults'
@@ -137,6 +137,14 @@ const PRESET_ATTACK_ESTIMATE: Record<string, number> = {
   deep: 12000,
 }
 
+const DEFAULT_STUDIO_POSITIONS = createStudioMapFromTemplate('fraud_triage').nodes.reduce<Record<string, { x: number; y: number }>>(
+  (acc, node) => {
+    acc[String(node.data.role)] = { x: node.position.x, y: node.position.y }
+    return acc
+  },
+  {},
+)
+
 /* ------------------------------------------------------------------ */
 /*  ConfigPanel                                                       */
 /* ------------------------------------------------------------------ */
@@ -216,22 +224,25 @@ export function ConfigPanel() {
   )
 
   const studioOrchestration = useMemo(() => {
-    const isStudioRole = (value: string): value is (typeof STUDIO_ROLES)[number] =>
-      STUDIO_ROLES.includes(value as (typeof STUDIO_ROLES)[number])
-
     const baseModel = (agenticModel || model || STUDIO_BASE_MODEL).trim() || STUDIO_BASE_MODEL
     const roleNodes = state.studioNodes.filter((node) =>
-      STUDIO_ROLES.includes(node.data.role as (typeof STUDIO_ROLES)[number]),
+      String(node.data.role || '').trim().length > 0,
     )
 
     const roleByName = new Map<string, (typeof roleNodes)[number]>()
     for (const node of roleNodes) {
-      if (!roleByName.has(node.data.role)) roleByName.set(node.data.role, node)
+      const roleName = String(node.data.role || '').trim()
+      if (!roleName) continue
+      if (!roleByName.has(roleName)) roleByName.set(roleName, node)
     }
 
-    const roles = STUDIO_ROLES.map((role) => {
+    const orderedRoleNames = roleNodes.length > 0
+      ? Array.from(roleByName.keys())
+      : [...STUDIO_ROLES]
+
+    const roles = orderedRoleNames.map((role) => {
       const node = roleByName.get(role)
-      const resolved = resolveStudioRoleModel(role, node?.data?.model)
+      const resolved = (node?.data?.model || '').trim() || baseModel
       const inlineInstructions = (node?.data?.instructions ?? '').trim()
       return {
         name: role,
@@ -248,7 +259,7 @@ export function ConfigPanel() {
     })
 
     const graphNodes = roleNodes.length > 0
-      ? STUDIO_ROLES.filter((role) => roleByName.has(role)).map((role) => ({ id: role }))
+      ? orderedRoleNames.filter((role) => roleByName.has(role)).map((role) => ({ id: role }))
       : []
 
     const validRoleSet = new Set(graphNodes.map((node) => node.id))
@@ -256,7 +267,7 @@ export function ConfigPanel() {
     for (const edge of state.studioEdges) {
       const source = roleNodes.find((node) => node.id === edge.source)?.data.role
       const target = roleNodes.find((node) => node.id === edge.target)?.data.role
-      if (!source || !target || !isStudioRole(source) || !isStudioRole(target)) continue
+      if (!source || !target) continue
       if (!validRoleSet.has(source) || !validRoleSet.has(target) || source === target) continue
       graphEdges.push({ source, target })
     }
@@ -264,7 +275,7 @@ export function ConfigPanel() {
     return {
       baseModel,
       roles,
-      executionOrder: roles.filter((role) => role.enabled).map((role) => role.name),
+      executionOrder: orderedRoleNames.filter((role) => roles.find((entry) => entry.name === role)?.enabled),
       graph: { nodes: graphNodes, edges: graphEdges },
     }
   }, [agenticModel, model, state.studioNodes, state.studioEdges])
@@ -272,6 +283,92 @@ export function ConfigPanel() {
   const asRecord = (value: unknown): Record<string, unknown> => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
     return value as Record<string, unknown>
+  }
+
+  const hydrateStudioGraphFromOrchestration = (orchestrationConfig: Record<string, unknown>, baseModel: string) => {
+    const rolesRaw = Array.isArray(orchestrationConfig.roles) ? orchestrationConfig.roles : []
+    if (rolesRaw.length === 0) return
+
+    const graphRaw = asRecord(orchestrationConfig.graph)
+    const graphNodesRaw = Array.isArray(graphRaw.nodes) ? graphRaw.nodes : []
+    const graphEdgesRaw = Array.isArray(graphRaw.edges) ? graphRaw.edges : []
+    const executionOrderRaw = Array.isArray(orchestrationConfig.execution_order)
+      ? orchestrationConfig.execution_order.map((value) => String(value).trim()).filter(Boolean)
+      : []
+
+    const roleRows = rolesRaw
+      .map((row) => asRecord(row))
+      .filter((row) => typeof row.name === 'string' && row.name.trim().length > 0)
+
+    const roleNameSet = new Set<string>()
+    const roleRowsByName = new Map<string, Record<string, unknown>>()
+    for (const row of roleRows) {
+      const roleName = String(row.name).trim()
+      if (roleNameSet.has(roleName)) continue
+      roleNameSet.add(roleName)
+      roleRowsByName.set(roleName, row)
+    }
+    if (roleRowsByName.size === 0) return
+
+    const graphRoleOrder = graphNodesRaw
+      .map((row) => asRecord(row))
+      .map((row) => String(row.id ?? '').trim())
+      .filter((name) => roleRowsByName.has(name))
+
+    const roleOrder = (
+      executionOrderRaw.length > 0 ? executionOrderRaw : graphRoleOrder
+    ).filter((name, idx, arr) => roleRowsByName.has(name) && arr.indexOf(name) === idx)
+
+    const orderedRoles = roleOrder.length > 0
+      ? roleOrder
+      : Array.from(roleRowsByName.keys())
+
+    const nodes = orderedRoles.map((roleName, index) => {
+      const roleRow = roleRowsByName.get(roleName) || {}
+      const defaultData = createStudioNodeData(roleName, baseModel)
+      const pos = DEFAULT_STUDIO_POSITIONS[roleName] ?? { x: 120 + (index % 3) * 280, y: 140 + Math.floor(index / 3) * 220 }
+      const authHeaders = asRecord(roleRow.auth_headers)
+      const extra = asRecord(roleRow.extra)
+      const roleModel = typeof roleRow.model === 'string' && roleRow.model.trim()
+        ? roleRow.model.trim()
+        : baseModel
+      return {
+        id: `studio-${roleName}`,
+        type: 'studioRole',
+        position: pos,
+        data: {
+          ...defaultData,
+          role: roleName,
+          label: `${defaultData.label.replace(/ Node$/i, '')} Node`,
+          model: roleModel,
+          enabled: roleRow.enabled == null ? true : Boolean(roleRow.enabled),
+          runtime_provider: typeof roleRow.runtime_provider === 'string' ? roleRow.runtime_provider : defaultData.runtime_provider,
+          api_key_ref: typeof roleRow.api_key_ref === 'string' ? roleRow.api_key_ref : defaultData.api_key_ref,
+          base_url: typeof roleRow.base_url === 'string' ? roleRow.base_url : defaultData.base_url,
+          instruction_file: typeof roleRow.instruction_file === 'string' ? roleRow.instruction_file : defaultData.instruction_file,
+          instructions: typeof roleRow.instructions === 'string' ? roleRow.instructions : defaultData.instructions,
+          auth_headers: authHeaders as Record<string, string>,
+          extra,
+        },
+      }
+    })
+
+    const validRoleNames = new Set(nodes.map((node) => String(node.data.role)))
+    const edges = graphEdgesRaw
+      .map((row) => asRecord(row))
+      .map((row) => ({
+        source: String(row.source ?? '').trim(),
+        target: String(row.target ?? '').trim(),
+      }))
+      .filter((row) => row.source && row.target && row.source !== row.target)
+      .filter((row) => validRoleNames.has(row.source) && validRoleNames.has(row.target))
+      .map((row) => ({
+        id: `e-studio-${row.source}-${row.target}`,
+        source: `studio-${row.source}`,
+        target: `studio-${row.target}`,
+      }))
+
+    dispatch({ type: 'SET_STUDIO_GRAPH', nodes, edges })
   }
 
   const loadProfileIntoForm = (profile: ConfigProfileOut) => {
@@ -313,6 +410,10 @@ export function ConfigPanel() {
     }
     const nextAgenticModel = typeof benchmarkConfig.agentic_model === 'string' ? benchmarkConfig.agentic_model : ''
     setAgenticModel(nextAgenticModel)
+    const orchestrationBaseModel = typeof orchestrationConfig.model === 'string' && orchestrationConfig.model.trim().length > 0
+      ? orchestrationConfig.model.trim()
+      : (nextAgenticModel || profileModel || STUDIO_BASE_MODEL)
+    hydrateStudioGraphFromOrchestration(orchestrationConfig, orchestrationBaseModel)
 
     if (typeof profile.strictness_mode === 'string' && profile.strictness_mode.trim()) {
       setStrictness(profile.strictness_mode)

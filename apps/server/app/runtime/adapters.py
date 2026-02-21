@@ -20,7 +20,7 @@ class TargetRequest:
     target_type: str
     endpoint: str | None
     auth_headers: dict[str, str] = field(default_factory=dict)
-    model: str = "gpt-4.1-mini"
+    model: str = "ollama_chat/gpt-oss:20b"
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -47,27 +47,18 @@ class HttpTargetAdapter(TargetAdapter):
             raise ValueError("HTTP target requires endpoint")
         start = perf_counter()
         resolved_target_type = normalize_target_type(request.target_type)
-        if resolved_target_type == "agent_http":
-            payload = {
-                "run_id": request.run_id,
-                "attack_id": request.attack_id,
-                "prompt": request.prompt,
-                "message": request.prompt,
-                "user_message": request.prompt,
-                "thread_id": request.extra.get("thread_id"),
-                "model": request.model,
-                "extra": request.extra,
-            }
-        else:
-            payload = {
-                "run_id": request.run_id,
-                "attack_id": request.attack_id,
-                "prompt": request.prompt,
-                "model": request.model,
-                "extra": request.extra,
-            }
+        agent_like_endpoint = _looks_like_agent_chat_endpoint(request.endpoint)
+        should_use_agent_payload = resolved_target_type == "agent_http" or agent_like_endpoint
+        payload = _build_http_payload(
+            request,
+            include_agent_fields=should_use_agent_payload,
+        )
         with httpx.Client(timeout=60.0) as client:
             resp = client.post(request.endpoint, headers=request.auth_headers, json=payload)
+            # Backward compatibility: legacy http targets may still point to agent chat URLs.
+            if resp.status_code == 422 and not should_use_agent_payload:
+                retry_payload = _build_http_payload(request, include_agent_fields=True)
+                resp = client.post(request.endpoint, headers=request.auth_headers, json=retry_payload)
             resp.raise_for_status()
             body = resp.json()
 
@@ -103,6 +94,26 @@ class HttpTargetAdapter(TargetAdapter):
             provider_name=str(normalized_payload.get("provider_name", request.extra.get("provider_name", "http"))),
             model_resolved=str(normalized_payload.get("model_resolved", request.model)),
         )
+
+
+def _build_http_payload(request: TargetRequest, *, include_agent_fields: bool) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "run_id": request.run_id,
+        "attack_id": request.attack_id,
+        "prompt": request.prompt,
+        "model": request.model,
+        "extra": request.extra,
+    }
+    if include_agent_fields:
+        payload["message"] = request.prompt
+        payload["user_message"] = request.prompt
+        payload["thread_id"] = request.extra.get("thread_id")
+    return payload
+
+
+def _looks_like_agent_chat_endpoint(endpoint: str) -> bool:
+    value = str(endpoint or "").strip().lower()
+    return "/agents/" in value and value.endswith("/chat")
 
 
 class AFKLLMRuntimeAdapter(TargetAdapter):

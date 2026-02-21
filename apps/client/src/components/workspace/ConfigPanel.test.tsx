@@ -54,6 +54,13 @@ const renderConfigPanel = () =>
 describe('ConfigPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    workspaceStateMock.sessionId = null
+    workspaceStateMock.configProfileId = null
+    workspaceStateMock.currentRunId = null
+    workspaceStateMock.baselineRunId = null
+    workspaceStateMock.studioNodes = []
+    workspaceStateMock.studioEdges = []
+    workspaceStateMock.eventsOpen = false
     apiMock.listTestAgentsCatalog.mockResolvedValue({
       base_url: 'http://127.0.0.1:8001',
       source: 'runtime_api',
@@ -93,6 +100,26 @@ describe('ConfigPanel', () => {
 
   it('launch payload includes agent_id and per_attack_type threading', async () => {
     const user = userEvent.setup()
+    workspaceStateMock.studioNodes = [
+      {
+        id: 'studio-attacker',
+        type: 'studioRole',
+        position: { x: 120, y: 240 },
+        data: {
+          role: 'attacker',
+          label: 'Attacker Node',
+          model: 'gpt-4.1',
+          enabled: true,
+          runtime_provider: 'openai',
+          api_key_ref: 'cred-openai',
+          base_url: 'https://api.openai.com/v1',
+          instruction_file: 'attacker.md',
+          instructions: 'Generate targeted probes',
+          auth_headers: { 'x-tenant': 'demo' },
+          extra: { temperature: 0.1 },
+        },
+      },
+    ]
     renderConfigPanel()
     await waitFor(() => expect(apiMock.listTestAgentsCatalog).toHaveBeenCalled())
 
@@ -103,5 +130,100 @@ describe('ConfigPanel', () => {
     expect(payload.target_config.agent_id).toBe('refund')
     expect(payload.target_config.agent_url).toBeNull()
     expect(payload.benchmark_config.afk_orchestration.threading.strategy).toBe('per_attack_type')
+    expect(payload.benchmark_config.afk_orchestration.roles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'attacker',
+          model: 'gpt-4.1',
+          runtime_provider: 'openai',
+          api_key_ref: 'cred-openai',
+          base_url: 'https://api.openai.com/v1',
+          instruction_file: 'attacker.md',
+          instructions: 'Generate targeted probes',
+        }),
+      ]),
+    )
+  })
+
+  it('hydrates studio node llm settings from saved profile orchestration', async () => {
+    workspaceStateMock.sessionId = 'session-existing'
+    workspaceStateMock.configProfileId = 'profile-existing'
+    apiMock.listConfigProfiles.mockResolvedValue({
+      profiles: [
+        {
+          id: 'profile-existing',
+          session_id: 'session-existing',
+          name: 'finance-profile',
+          strictness_mode: 'balanced',
+          target_config: {
+            target_type: 'agent_http',
+            model: 'gpt-4.1-mini',
+            agent_id: 'refund',
+            agent_name: 'refund-agent',
+            agent_description: 'refund guard',
+          },
+          benchmark_config: {
+            taxonomy: ['prompt_injection'],
+            curated_ratio: 0.6,
+            seed: 42,
+            agentic_attacking: true,
+            agentic_provider: 'afk_live',
+            agentic_model: 'gpt-4.1-mini',
+            afk_orchestration: {
+              model: 'gpt-4.1-mini',
+              roles: [
+                {
+                  name: 'attacker',
+                  enabled: true,
+                  model: 'gpt-4.1',
+                  runtime_provider: 'openai',
+                  api_key_ref: 'cred-openai',
+                  base_url: 'https://api.openai.com/v1',
+                  instruction_file: 'attacker.md',
+                  instructions: 'Probe refund edge cases',
+                  auth_headers: { 'x-tenant': 'risk' },
+                  extra: { temperature: 0.2 },
+                },
+              ],
+              graph: {
+                nodes: [{ id: 'attacker' }],
+                edges: [],
+              },
+              execution_order: ['attacker'],
+            },
+          },
+          scoring_config: {
+            strictness_mode: 'balanced',
+            active_adjudication: true,
+            gate_thresholds: { composite_min: 70 },
+          },
+          runtime_config: {
+            preset: 'quick',
+            max_concurrency: 8,
+            budget_usd: 5,
+            live_mode: false,
+          },
+          created_at: new Date().toISOString(),
+        },
+      ],
+      total: 1,
+    })
+
+    renderConfigPanel()
+
+    await waitFor(() => {
+      const actions = dispatchMock.mock.calls.map((call) => call[0])
+      expect(actions.some((action) => action?.type === 'SET_STUDIO_GRAPH')).toBe(true)
+    })
+
+    const graphAction = dispatchMock.mock.calls
+      .map((call) => call[0])
+      .find((action) => action?.type === 'SET_STUDIO_GRAPH')
+    const attackerNode = graphAction.nodes.find((node: any) => node.data.role === 'attacker')
+    expect(attackerNode).toBeDefined()
+    expect(attackerNode.data.model).toBe('gpt-4.1')
+    expect(attackerNode.data.runtime_provider).toBe('openai')
+    expect(attackerNode.data.api_key_ref).toBe('cred-openai')
+    expect(attackerNode.data.base_url).toBe('https://api.openai.com/v1')
   })
 })

@@ -23,7 +23,7 @@ class _FakeRedis:
     """Minimal fake Redis for queue tests."""
 
     def __init__(self) -> None:
-        self.items: list[str] = []
+        self.items_by_key: dict[str, list[str]] = {}
         self.dlq: list[str] = []
         self.hashes: dict[str, dict[str, str]] = {}
 
@@ -31,17 +31,20 @@ class _FakeRedis:
         if key.endswith(":dlq"):
             self.dlq.append(payload)
             return
-        self.items.append(payload)
+        self.items_by_key.setdefault(key, []).append(payload)
 
     def llen(self, key: str) -> int:
         if key.endswith(":dlq"):
             return len(self.dlq)
-        return len(self.items)
+        return len(self.items_by_key.get(key, []))
 
-    def blpop(self, _key: str, timeout: int = 1):
-        if not self.items:
-            return None
-        return (_key, self.items.pop(0))
+    def blpop(self, key, timeout: int = 1):
+        keys = key if isinstance(key, list) else [key]
+        for queue_key in keys:
+            rows = self.items_by_key.get(queue_key, [])
+            if rows:
+                return (queue_key, rows.pop(0))
+        return None
 
     def hset(self, key: str, field: str, value: str) -> None:
         self.hashes.setdefault(key, {})[field] = value
@@ -79,15 +82,16 @@ def _settings_ctx(**overrides):
 class TestSerialization:
     def test_serialize_deserialize_roundtrip(self) -> None:
         q = RunQueue()
-        payload = q._serialize_item("run-42", 3)
-        run_id, attempt = q._deserialize_item(payload)
+        payload = q._serialize_item("run-42", 3, 1)
+        run_id, attempt, priority = q._deserialize_item(payload)
         assert run_id == "run-42"
         assert attempt == 3
+        assert priority == 1
 
     def test_deserialize_negative_attempt_clamped(self) -> None:
         q = RunQueue()
         payload = json.dumps({"run_id": "r1", "attempt": -5})
-        run_id, attempt = q._deserialize_item(payload)
+        run_id, attempt, _priority = q._deserialize_item(payload)
         assert attempt == 0
 
     def test_deserialize_missing_run_id_raises(self) -> None:
@@ -134,6 +138,21 @@ class TestInprocessQueueBackpressure:
             assert stats.workers == 0  # no workers spawned in test
             assert stats.started is True
 
+    def test_inprocess_priority_ordering(self) -> None:
+        with _settings_ctx(
+            run_queue_backend="inprocess",
+            run_queue_enabled=True,
+            run_queue_max_size=100,
+        ):
+            q = RunQueue()
+            q._started = True
+            q.enqueue("low", priority=4)
+            q.enqueue("high", priority=0)
+            first = q._queue.get_nowait()
+            second = q._queue.get_nowait()
+            assert first[2] == "high"
+            assert second[2] == "low"
+
 
 # ---------------------------------------------------------------------------
 # Redis backend
@@ -150,11 +169,13 @@ class TestRedisBackend:
             q.enqueue("run-1", 1)
             q.enqueue("run-2")
 
-            items = q._redis_client.items
+            all_items = [item for rows in q._redis_client.items_by_key.values() for item in rows]
+            items = all_items
             assert len(items) == 2
             first = json.loads(items[0])
             assert first["run_id"] == "run-1"
             assert first["attempt"] == 1
+            assert first["priority"] == 2
 
     def test_redis_stats(self) -> None:
         with _settings_ctx(
@@ -183,7 +204,7 @@ class TestRedisBackend:
         ):
             q = RunQueue()
             q._redis_client = _FakeRedis()
-            q._enqueue_retry_or_dlq("run-err", 0, "boom")
+            q._enqueue_retry_or_dlq("run-err", 0, "boom", priority=2)
             assert len(q._redis_client.dlq) == 1
             payload = json.loads(q._redis_client.dlq[0])
             assert payload["run_id"] == "run-err"
@@ -201,11 +222,12 @@ class TestRedisBackend:
             q = RunQueue()
             q._redis_client = _FakeRedis()
             q._started = True
-            q._enqueue_retry_or_dlq("run-retry", 0, "temp error")
+            q._enqueue_retry_or_dlq("run-retry", 0, "temp error", priority=2)
             # Should re-enqueue, not DLQ
-            assert len(q._redis_client.items) == 1
+            all_items = [item for rows in q._redis_client.items_by_key.values() for item in rows]
+            assert len(all_items) == 1
             assert len(q._redis_client.dlq) == 0
-            requeued = json.loads(q._redis_client.items[0])
+            requeued = json.loads(all_items[0])
             assert requeued["run_id"] == "run-retry"
             assert requeued["attempt"] == 1
 

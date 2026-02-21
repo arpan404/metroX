@@ -190,6 +190,21 @@ def _agent_index_invoke_url(index_url: str) -> str:
     return f"{normalized}/v1/agent-index/agents/default/invoke"
 
 
+def _queue_priority_for_run(*, preset: str, mode: str, is_resume: bool = False) -> int:
+    # Lower number => higher priority.
+    if is_resume:
+        return 0
+    priority = {
+        "quick": 1,
+        "standard": 2,
+        "deep": 3,
+    }.get(str(preset or "").strip().lower(), 2)
+    mode_value = str(mode or "").strip().lower()
+    if mode_value == "live_nightly":
+        priority = max(priority, 3)
+    return priority
+
+
 def _run_pipeline_background(run_id: str) -> None:
     db = SessionLocal()
     try:
@@ -1065,13 +1080,14 @@ def create_run(
     if payload.execute_now:
         settings = get_settings()
         if settings.run_queue_enabled:
-            RUN_QUEUE.enqueue(run.id)
+            priority = _queue_priority_for_run(preset=run.preset, mode=run.mode, is_resume=False)
+            RUN_QUEUE.enqueue(run.id, priority=priority)
             log_event(
                 db,
                 run_id=run.id,
                 event_type="queued",
                 step=0,
-                message="Run queued for worker execution",
+                message=f"Run queued for worker execution (priority={priority})",
             )
         else:
             background_tasks.add_task(_run_pipeline_background, run.id)
@@ -1170,13 +1186,14 @@ def resume_run(run_id: str, background_tasks: BackgroundTasks, db: Session = Dep
     db.commit()
     settings = get_settings()
     if settings.run_queue_enabled:
-        RUN_QUEUE.enqueue(run.id)
+        priority = _queue_priority_for_run(preset=run.preset, mode=run.mode, is_resume=True)
+        RUN_QUEUE.enqueue(run.id, priority=priority)
         log_event(
             db,
             run_id=run.id,
             event_type="queued",
             step=0,
-            message="Resumed run queued for worker execution",
+            message=f"Resumed run queued for worker execution (priority={priority})",
         )
     else:
         background_tasks.add_task(_run_pipeline_background, run.id)

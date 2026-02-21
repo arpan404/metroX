@@ -91,7 +91,7 @@ def build_risk_models(db: Session, run_id: str) -> None:
                     method="constant",
                     ece=0.0,
                     brier=float(np.mean((y - base_prob) ** 2)) if len(y) else 0.0,
-                    metadata={"note": "insufficient class variance"},
+                    meta={"note": "insufficient class variance"},
                 )
             )
             continue
@@ -127,7 +127,7 @@ def build_risk_models(db: Session, run_id: str) -> None:
                 method="sigmoid",
                 ece=ece,
                 brier=brier,
-                metadata={"auc": auc},
+                meta={"auc": auc},
             )
         )
 

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import numpy as np
-from scipy import stats
+from statsmodels.stats.proportion import proportions_ztest
 from sqlalchemy.orm import Session
 
 from app.models import RunEvent
@@ -35,7 +35,7 @@ def log_event(
         step=step,
         message=message,
         data=data or {},
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(event)
     db.commit()
@@ -62,7 +62,7 @@ def proportion_test(success_a: int, total_a: int, success_b: int, total_b: int) 
         return 1.0
     count = np.array([success_a, success_b])
     nobs = np.array([total_a, total_b])
-    _, pvalue = stats.proportions_ztest(count, nobs)
+    _, pvalue = proportions_ztest(count, nobs)
     return float(pvalue)
 
 

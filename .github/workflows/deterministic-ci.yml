@@ -1,0 +1,49 @@
+name: Deterministic CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  server-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: '0.8.0'
+      - name: Setup Python
+        run: uv python install 3.11
+      - name: Install backend dependencies
+        run: |
+          cd apps/server
+          uv sync --dev --frozen
+      - name: Run deterministic backend tests
+        env:
+          AUTOREDTEAM_DATABASE_URL: sqlite:///./ci.db
+          AUTOREDTEAM_API_KEY: ci-key
+        run: |
+          cd apps/server
+          uv run pytest -q
+
+  client-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: |
+          cd apps/client
+          npm ci || npm install
+      - name: Run frontend tests
+        run: |
+          cd apps/client
+          npm run test -- --run
+      - name: Build client
+        run: |
+          cd apps/client
+          npm run build

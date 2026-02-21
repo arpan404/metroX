@@ -38,3 +38,8 @@ package-dir = {"" = "."}
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
+
+[tool.pytest.ini_options]
+markers = [
+  "nightly: marks tests that are intended for nightly/live pipelines",
+]

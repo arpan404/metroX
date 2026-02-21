@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -19,7 +19,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 def now_utc() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)
 
 
 def uuid_str() -> str:
@@ -88,7 +88,7 @@ class BenchmarkSnapshot(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     version: Mapped[str] = mapped_column(String(50), nullable=False)
     source_mix: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    meta: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, nullable=False)
 
 
@@ -301,7 +301,7 @@ class CalibrationReport(Base):
     method: Mapped[str] = mapped_column(String(80), default="isotonic")
     ece: Mapped[float] = mapped_column(Float, default=0.0)
     brier: Mapped[float] = mapped_column(Float, default=0.0)
-    metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    meta: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
 
 
 class DriftSignal(Base):
@@ -399,5 +399,5 @@ class ReportArtifact(Base):
     run_id: Mapped[str] = mapped_column(String(36), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
     kind: Mapped[str] = mapped_column(String(40), default="markdown")
     path: Mapped[str] = mapped_column(String(500), nullable=False)
-    metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    meta: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, nullable=False)

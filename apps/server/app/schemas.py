@@ -37,7 +37,7 @@ class ScoringWeights(BaseModel):
 
 
 class TargetConfig(BaseModel):
-    target_type: Literal["synthetic", "http", "openai_compatible", "agent_http"] = "synthetic"
+    target_type: Literal["synthetic", "http", "openai_compatible", "agent_http", "afk_agent"] = "synthetic"
     endpoint: str | None = None
     auth_headers: dict[str, str] = Field(default_factory=dict)
     model: str = "gpt-4.1-mini"

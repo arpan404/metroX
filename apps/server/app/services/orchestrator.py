@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -58,7 +58,7 @@ class RunOrchestrator:
 
         run.config_snapshot_id = snapshot.id
         run.status = "running"
-        run.started_at = datetime.utcnow()
+        run.started_at = datetime.now(timezone.utc)
         self.db.commit()
 
         log_event(self.db, run_id=run.id, event_type="run_started", step=0, message="Run started")
@@ -177,7 +177,7 @@ class RunOrchestrator:
 
             run.summary_metrics = scorecard.metrics
             run.gate_result = scorecard.gates
-            run.ended_at = datetime.utcnow()
+            run.ended_at = datetime.now(timezone.utc)
             run.status = "completed"
             self.db.commit()
 
@@ -192,7 +192,7 @@ class RunOrchestrator:
 
         except Exception as exc:
             run.status = "failed"
-            run.ended_at = datetime.utcnow()
+            run.ended_at = datetime.now(timezone.utc)
             self.db.commit()
             log_event(
                 self.db,

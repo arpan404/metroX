@@ -55,7 +55,7 @@ def generate_markdown_report(db: Session, run_id: str) -> tuple[str, str]:
     path = reports_dir / f"run-{run_id}.md"
     path.write_text(content, encoding="utf-8")
 
-    artifact = ReportArtifact(run_id=run_id, kind="markdown", path=str(path), metadata={"bytes": len(content)})
+    artifact = ReportArtifact(run_id=run_id, kind="markdown", path=str(path), meta={"bytes": len(content)})
     db.add(artifact)
     db.commit()
 
@@ -66,11 +66,11 @@ def report_artifacts_for_run(db: Session, run_id: str) -> list[dict[str, Any]]:
     artifacts = db.query(ReportArtifact).filter(ReportArtifact.run_id == run_id).all()
     return [
         {
-            "id": artifact.id,
-            "kind": artifact.kind,
-            "path": artifact.path,
-            "metadata": artifact.metadata,
-            "created_at": artifact.created_at.isoformat(),
-        }
+                "id": artifact.id,
+                "kind": artifact.kind,
+                "path": artifact.path,
+                "metadata": artifact.meta,
+                "created_at": artifact.created_at.isoformat(),
+            }
         for artifact in artifacts
     ]

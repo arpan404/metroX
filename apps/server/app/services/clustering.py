@@ -11,18 +11,9 @@ from sqlalchemy.orm import Session
 
 from app.models import ClusterMembership, ClusterSummary, Execution
 
-try:
-    import hdbscan  # type: ignore
-except Exception:  # pragma: no cover
-    hdbscan = None
-
-try:
-    import umap  # type: ignore
-except Exception:  # pragma: no cover
-    umap = None
-
 
 def build_clusters(db: Session, run_id: str) -> list[ClusterSummary]:
+    hdbscan, umap = _load_optional_backends()
     executions = db.query(Execution).filter(Execution.run_id == run_id).all()
     db.execute(delete(ClusterMembership).where(ClusterMembership.run_id == run_id))
     db.execute(delete(ClusterSummary).where(ClusterSummary.run_id == run_id))
@@ -108,3 +99,23 @@ def list_clusters(db: Session, run_id: str) -> list[dict[str, Any]]:
         }
         for summary in summaries
     ]
+
+
+def _load_optional_backends() -> tuple[Any, Any]:
+    hdbscan_module = None
+    umap_module = None
+    try:  # pragma: no cover
+        import hdbscan as _hdbscan  # type: ignore
+
+        hdbscan_module = _hdbscan
+    except Exception:
+        hdbscan_module = None
+
+    try:  # pragma: no cover
+        import umap as _umap  # type: ignore
+
+        umap_module = _umap
+    except Exception:
+        umap_module = None
+
+    return hdbscan_module, umap_module

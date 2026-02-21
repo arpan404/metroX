@@ -20,6 +20,7 @@ dist/
 
 # Runtime artifacts
 *.log
+*.db
 .env
 .env.*
 !*.env.example
@@ -29,3 +30,4 @@ artifacts/
 reports/
 
 plan.md
+*.tsbuildinfo

@@ -107,12 +107,16 @@ export function CommandBar() {
         <TooltipTrigger asChild>
           <Button
             variant="ghost"
-            size="icon"
-            className={cn('h-7 w-7', isActive('config') && 'bg-primary/15 text-primary')}
+            size="sm"
+            className={cn(
+              'h-7 px-2.5 text-[11px] rounded-lg',
+              isActive('config') && 'bg-primary/15 text-primary',
+            )}
             onClick={() => togglePanel('config')}
             data-onboarding="config-trigger"
           >
-            <Sliders className="h-3.5 w-3.5" />
+            <Sliders className="h-3.5 w-3.5 mr-1" />
+            Configure
           </Button>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">

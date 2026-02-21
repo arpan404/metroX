@@ -118,10 +118,10 @@ function makeEdge(sourceRole: string, targetRole: string) {
 export function createStudioMapFromTemplate(templateId: StudioTemplateId) {
   if (templateId === 'refund_guard') {
     const nodes = [
-      makeStudioNode('attacker', 120, 360),
-      makeStudioNode('verifier', 540, 140),
-      makeStudioNode('fraud_analyst', 320, 120),
-      makeStudioNode('analyst', 300, 300),
+      makeStudioNode('attacker', 80, 300),
+      makeStudioNode('verifier', 420, 160),
+      makeStudioNode('fraud_analyst', 420, 460),
+      makeStudioNode('analyst', 780, 300),
     ]
     const edges = [
       makeEdge('attacker', 'verifier'),
@@ -134,11 +134,11 @@ export function createStudioMapFromTemplate(templateId: StudioTemplateId) {
 
   if (templateId === 'deep_investigation') {
     const nodes = [
-      makeStudioNode('attacker', 80, 360),
-      makeStudioNode('critic', 560, 560),
-      makeStudioNode('verifier', 720, 180),
-      makeStudioNode('fraud_analyst', 320, 120),
-      makeStudioNode('analyst', 420, 300),
+      makeStudioNode('attacker', 80, 300),
+      makeStudioNode('critic', 360, 140),
+      makeStudioNode('verifier', 640, 140),
+      makeStudioNode('fraud_analyst', 640, 460),
+      makeStudioNode('analyst', 920, 300),
     ]
     const edges = [
       makeEdge('attacker', 'critic'),
@@ -152,11 +152,11 @@ export function createStudioMapFromTemplate(templateId: StudioTemplateId) {
   }
 
   const nodes = [
-    makeStudioNode('attacker', 80, 360),
-    makeStudioNode('critic', 560, 560),
-    makeStudioNode('verifier', 720, 180),
-    makeStudioNode('fraud_analyst', 320, 120),
-    makeStudioNode('analyst', 420, 300),
+    makeStudioNode('attacker', 80, 300),
+    makeStudioNode('critic', 360, 300),
+    makeStudioNode('verifier', 640, 300),
+    makeStudioNode('fraud_analyst', 920, 300),
+    makeStudioNode('analyst', 1200, 300),
   ]
   const edges = [
     makeEdge('attacker', 'critic'),

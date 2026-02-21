@@ -1,7 +1,8 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import {
-  Search,
+  Check,
+  ChevronsUpDown,
   Command,
   Moon,
   Sun,
@@ -15,16 +16,22 @@ import {
 import { useTheme } from 'next-themes'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Command as CommandMenu, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useWorkspace } from '@/stores/workspace-store'
+import { api } from '@/lib/api'
+import type { RunOut } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void }) {
   const { state, dispatch, actions } = useWorkspace()
   const { theme, setTheme } = useTheme()
+  const [runSelectorOpen, setRunSelectorOpen] = useState(false)
   const [runIdInput, setRunIdInput] = useState(state.currentRunId ?? '')
+  const [runOptions, setRunOptions] = useState<RunOut[]>([])
+  const [isLoadingRuns, setIsLoadingRuns] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   const handleLoadRun = useCallback(() => {
@@ -33,6 +40,35 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
       dispatch({ type: 'SET_RUN_ID', runId: id })
     }
   }, [runIdInput, dispatch])
+
+  const loadRunOptions = useCallback(async () => {
+    setIsLoadingRuns(true)
+    try {
+      const payload = await api.listRuns({ limit: 30, offset: 0 })
+      setRunOptions(payload.runs ?? [])
+    } catch {
+      // Best-effort for toolbar UX.
+    } finally {
+      setIsLoadingRuns(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadRunOptions()
+  }, [loadRunOptions, state.currentRunId])
+
+  useEffect(() => {
+    if (state.currentRunId) {
+      setRunIdInput(state.currentRunId)
+    }
+  }, [state.currentRunId])
+
+  const selectorLabel = useMemo(() => {
+    const id = runIdInput.trim()
+    if (!id) return 'Select run'
+    if (id.length <= 18) return id
+    return `${id.slice(0, 8)}…${id.slice(-6)}`
+  }, [runIdInput])
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true)
@@ -57,8 +93,8 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
       className={cn(
         'absolute top-3 left-3 right-3 z-40 h-11',
         'flex items-center gap-2 px-3',
-        'rounded-xl border border-border/70 bg-background/95 dark:border-border/50 dark:bg-background/75 backdrop-blur-2xl backdrop-saturate-150',
-        'shadow-[0_2px_20px_-8px_rgba(0,0,0,0.3)]',
+        'rounded-xl border border-transparent bg-transparent backdrop-blur-sm',
+        'shadow-none',
       )}
       data-onboarding="toolbar"
     >
@@ -76,22 +112,64 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
       {/* Divider */}
       <div className="h-5 w-px bg-border/40 shrink-0" />
 
-      {/* Run ID input */}
-      <div className="flex items-center gap-1.5 flex-1 max-w-xs">
-        <div className="relative flex-1">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-          <Input
-            value={runIdInput}
-            onChange={(e) => setRunIdInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleLoadRun()}
-            placeholder="Run ID..."
-            className="h-7 pl-7 pr-2 text-xs font-mono bg-transparent border-border/40 focus-visible:ring-1 focus-visible:ring-primary/30"
-          />
-        </div>
+      {/* Run selector */}
+      <div className="flex items-center gap-2 flex-1 min-w-0 max-w-[520px]">
+        <Popover open={runSelectorOpen} onOpenChange={setRunSelectorOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              role="combobox"
+              aria-expanded={runSelectorOpen}
+              className="h-7 w-full min-w-0 justify-between border-border/35 bg-background/45 dark:bg-background/25 text-xs font-mono"
+            >
+              <span className="truncate">{selectorLabel}</span>
+              <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-60" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[420px] p-0" align="start">
+            <CommandMenu>
+              <CommandInput placeholder="Search run ID..." />
+              <CommandList>
+                <CommandEmpty>{isLoadingRuns ? 'Loading runs...' : 'No runs found.'}</CommandEmpty>
+                <CommandGroup heading="Recent Runs">
+                  {runOptions.map((run) => (
+                    <CommandItem
+                      key={run.id}
+                      value={`${run.id} ${run.status} ${run.preset}`}
+                      onSelect={() => {
+                        setRunIdInput(run.id)
+                        dispatch({ type: 'SET_RUN_ID', runId: run.id })
+                        setRunSelectorOpen(false)
+                      }}
+                      className="font-mono text-xs"
+                    >
+                      <Check
+                        className={cn(
+                          'mr-2 h-3.5 w-3.5',
+                          runIdInput === run.id ? 'opacity-100' : 'opacity-0',
+                        )}
+                      />
+                      <span className="flex-1 truncate">{run.id}</span>
+                      <Badge
+                        variant={run.status === 'completed' ? 'default' : run.status === 'failed' ? 'destructive' : 'secondary'}
+                        className="ml-2 h-4 px-1.5 text-[9px] font-mono"
+                      >
+                        {run.status}
+                      </Badge>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </CommandMenu>
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      <div className="flex items-center gap-2 shrink-0">
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0"
+          className="h-7 w-7 shrink-0 rounded-md border border-border/35 bg-background/45 dark:bg-background/25 hover:bg-background/60"
           onClick={handleLoadRun}
           disabled={!runIdInput.trim()}
         >
@@ -102,8 +180,8 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
       {/* Run status pills */}
       {state.runData && (
         <>
-          <div className="h-5 w-px bg-border/40 shrink-0 hidden md:block" />
-          <div className="hidden md:flex items-center gap-1.5">
+          <div className="h-5 w-px bg-border/40 shrink-0 mx-1" />
+          <div className="flex items-center gap-2 shrink-0">
             <Badge
               variant={runStatus === 'completed' ? 'default' : runStatus === 'failed' ? 'destructive' : 'secondary'}
               className="text-[10px] h-5 px-2 font-mono"

@@ -56,6 +56,9 @@ class TargetConfig(BaseModel):
     base_url: str | None = None
     api_key_ref: str | None = None
     agent_index_url: str | None = None
+    agent_name: str | None = None
+    agent_description: str | None = None
+    agent_url: str | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
 
 

@@ -301,6 +301,9 @@ export type TargetConfig = {
   base_url: string | null
   api_key_ref: string | null
   agent_index_url?: string | null
+  agent_name?: string | null
+  agent_description?: string | null
+  agent_url?: string | null
   extra: Record<string, unknown>
 }
 

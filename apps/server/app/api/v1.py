@@ -124,6 +124,10 @@ def _coerce_agent_index_url(url: str) -> str:
     return str(url or "").strip().rstrip("/")
 
 
+def _coerce_agent_url(url: str) -> str:
+    return str(url or "").strip()
+
+
 def _agent_index_invoke_url(index_url: str) -> str:
     normalized = _coerce_agent_index_url(index_url)
     if not normalized:
@@ -791,8 +795,29 @@ def create_profile(payload: ConfigProfileCreate, db: Session = Depends(get_db)) 
             detail="Legacy target_type is not accepted on write. Use managed_llm_runtime or managed_agent_runtime.",
         )
     target_config = payload.target_config.model_dump()
+    agent_name = str(payload.target_config.agent_name or "").strip()
+    agent_description = str(payload.target_config.agent_description or "").strip()
+    agent_url = _coerce_agent_url(str(payload.target_config.agent_url or ""))
     agent_index_url = _coerce_agent_index_url(str(payload.target_config.agent_index_url or ""))
-    if agent_index_url:
+    if agent_url:
+        normalized_target_type = "agent_http"
+        target_config["agent_url"] = agent_url
+        target_config["endpoint"] = agent_url
+        target_config["base_url"] = None
+        target_config["api_key_ref"] = None
+        target_config["agent_index_url"] = None
+        extra = target_config.get("extra")
+        if not isinstance(extra, dict):
+            extra = {}
+        extra["agent_url"] = agent_url
+        if agent_name:
+            target_config["agent_name"] = agent_name
+            extra["agent_name"] = agent_name
+        if agent_description:
+            target_config["agent_description"] = agent_description
+            extra["agent_description"] = agent_description
+        target_config["extra"] = extra
+    elif agent_index_url:
         normalized_target_type = "agent_http"
         target_config["agent_index_url"] = agent_index_url
         target_config["endpoint"] = _agent_index_invoke_url(agent_index_url)
@@ -802,6 +827,23 @@ def create_profile(payload: ConfigProfileCreate, db: Session = Depends(get_db)) 
         if not isinstance(extra, dict):
             extra = {}
         extra["agent_index_url"] = agent_index_url
+        if agent_name:
+            target_config["agent_name"] = agent_name
+            extra["agent_name"] = agent_name
+        if agent_description:
+            target_config["agent_description"] = agent_description
+            extra["agent_description"] = agent_description
+        target_config["extra"] = extra
+    elif agent_name or agent_description:
+        extra = target_config.get("extra")
+        if not isinstance(extra, dict):
+            extra = {}
+        if agent_name:
+            target_config["agent_name"] = agent_name
+            extra["agent_name"] = agent_name
+        if agent_description:
+            target_config["agent_description"] = agent_description
+            extra["agent_description"] = agent_description
         target_config["extra"] = extra
     target_config["target_type"] = normalized_target_type
 

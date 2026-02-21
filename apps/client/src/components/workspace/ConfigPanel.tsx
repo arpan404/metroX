@@ -96,7 +96,9 @@ export function ConfigPanel() {
 
   // ─── Target ───
   const [model, setModel] = useState('gpt-4.1-mini')
-  const [agentIndexUrl, setAgentIndexUrl] = useState('http://localhost:8000/v1/agent-index')
+  const [agentName, setAgentName] = useState('financial-agent')
+  const [agentDescription, setAgentDescription] = useState('Financial assistant agent under fraud-resilience testing.')
+  const [agentUrl, setAgentUrl] = useState('http://localhost:8000/v1/agent-index/agents/default/invoke')
 
   // ─── Benchmark ───
   const [taxonomy, setTaxonomy] = useState<string[]>(['prompt_injection', 'jailbreak', 'hallucination'])
@@ -199,7 +201,9 @@ export function ConfigPanel() {
     setSessionOwner(t.config.sessionOwner)
     setProfileName(t.config.profileName)
     setModel(t.config.model)
-    setAgentIndexUrl(t.config.agentIndexUrl || 'http://localhost:8000/v1/agent-index')
+    setAgentName(t.config.agentName || 'financial-agent')
+    setAgentDescription(t.config.agentDescription || '')
+    setAgentUrl(t.config.agentUrl || '')
     setTaxonomy(
       t.config.taxonomy
         .split(',')
@@ -250,8 +254,16 @@ export function ConfigPanel() {
 
   /* ─── Provider validation ─── */
   const handleValidate = async () => {
-    if (!agentIndexUrl.trim()) {
-      toast.error('Agent index URL is required')
+    if (!agentName.trim()) {
+      toast.error('Agent name is required')
+      return
+    }
+    if (!agentDescription.trim()) {
+      toast.error('Agent description is required')
+      return
+    }
+    if (!agentUrl.trim()) {
+      toast.error('Agent URL is required')
       return
     }
     toast.success('Agent endpoint looks configured.')
@@ -264,14 +276,21 @@ export function ConfigPanel() {
     orchestration_profile_id: orchestrationProfileId || undefined,
     target_config: {
       target_type: 'agent_http',
-      endpoint: null,
+      endpoint: agentUrl || null,
       auth_headers: {},
       model,
       provider_name: null,
       base_url: null,
       api_key_ref: null,
-      agent_index_url: agentIndexUrl || null,
-      extra: { agent_index_url: agentIndexUrl || null },
+      agent_name: agentName || null,
+      agent_description: agentDescription || null,
+      agent_url: agentUrl || null,
+      agent_index_url: null,
+      extra: {
+        agent_name: agentName || null,
+        agent_description: agentDescription || null,
+        agent_url: agentUrl || null,
+      },
     },
     benchmark_config: {
       dataset_name: 'metrox-core',
@@ -393,7 +412,9 @@ export function ConfigPanel() {
     sessionName.length > 0,
     taxonomy.length > 0,
     budgetUsd > 0,
-    agentIndexUrl.trim().length > 0,
+    agentName.trim().length > 0,
+    agentDescription.trim().length > 0,
+    agentUrl.trim().length > 0,
   ]
   const readinessPercent = (readiness.filter(Boolean).length / readiness.length) * 100
 
@@ -478,22 +499,42 @@ export function ConfigPanel() {
       </PanelSection>
 
       {/* Target */}
-      <PanelSection title="Agent Endpoint" description="Agent service to test" badge={
+      <PanelSection title="Agent Under Test" description="Only required target inputs for orchestration" badge={
         <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={handleValidate} disabled={isValidating}>
           {isValidating ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Check URL'}
         </Button>
       }>
-        <FieldGroup label={helpLabel('Target Type', 'Locked to Agent HTTP mode for indexed financial agents.')}>
+        <FieldGroup label={helpLabel('Target Type', 'Locked to Agent HTTP mode for agentic attack orchestration runs.')}>
           <Input value="Agent HTTP" className="h-7 text-xs font-mono bg-muted/30" readOnly />
         </FieldGroup>
         <FieldGroup
-          label={helpLabel('Agent Index URL', 'Base URL to your indexed agent service. The runner will call the default invoke endpoint for each test case.')}
-          hint="Example: http://localhost:8000/v1/agent-index"
+          label={helpLabel('Agent Name', 'Human-readable name of the production agent being tested.')}
         >
           <Input
-            value={agentIndexUrl}
-            onChange={(e) => setAgentIndexUrl(e.target.value)}
-            placeholder="http://localhost:8000/v1/agent-index"
+            value={agentName}
+            onChange={(e) => setAgentName(e.target.value)}
+            placeholder="refund-agent"
+            className="h-7 text-xs"
+          />
+        </FieldGroup>
+        <FieldGroup
+          label={helpLabel('Agent Description', 'Brief responsibility of the tested agent (used for run context and reporting).')}
+        >
+          <Input
+            value={agentDescription}
+            onChange={(e) => setAgentDescription(e.target.value)}
+            placeholder="Handles refund eligibility and decisions."
+            className="h-7 text-xs"
+          />
+        </FieldGroup>
+        <FieldGroup
+          label={helpLabel('Agent URL', 'HTTP invoke endpoint of the agent under test.')}
+          hint="Example: http://localhost:8000/v1/agent-index/agents/default/invoke"
+        >
+          <Input
+            value={agentUrl}
+            onChange={(e) => setAgentUrl(e.target.value)}
+            placeholder="http://localhost:8000/v1/agent-index/agents/default/invoke"
             className="h-7 text-xs font-mono"
           />
         </FieldGroup>

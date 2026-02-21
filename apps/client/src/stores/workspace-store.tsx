@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { api } from '@/lib/api'
 import { loadState, saveState } from '@/lib/state'
+import { createDefaultStudioMap, resolveStudioRoleModel } from '@/lib/studio-defaults'
 import type {
   RunOut,
   Scorecard,
@@ -230,6 +231,17 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
     case 'SET_BASELINE_RUN_ID':
       return { ...state, baselineRunId: action.runId }
     case 'SET_CANVAS_MODE':
+      if (action.mode === 'studio' && state.studioNodes.length === 0) {
+        const defaults = createDefaultStudioMap()
+        return {
+          ...state,
+          canvasMode: action.mode,
+          selectedNodeId: null,
+          selectedAttackType: null,
+          studioNodes: defaults.nodes,
+          studioEdges: defaults.edges,
+        }
+      }
       return { ...state, canvasMode: action.mode, selectedNodeId: null, selectedAttackType: null }
     case 'SELECT_NODE':
       return { ...state, selectedNodeId: action.nodeId, selectedAttackType: action.attackType ?? null }
@@ -288,12 +300,36 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
     case 'SET_LOADING_ANALYTICS':
       return { ...state, isLoadingAnalytics: action.loading }
     case 'ADD_STUDIO_NODE':
-      return { ...state, studioNodes: [...state.studioNodes, action.node] }
+      return {
+        ...state,
+        studioNodes: [
+          ...state.studioNodes,
+          {
+            ...action.node,
+            data: {
+              ...action.node.data,
+              model: resolveStudioRoleModel(action.node.data.role, action.node.data.model),
+            },
+          },
+        ],
+      }
     case 'UPDATE_STUDIO_NODE':
       return {
         ...state,
         studioNodes: state.studioNodes.map((n) =>
-          n.id === action.nodeId ? { ...n, data: { ...n.data, ...action.data } } : n,
+          n.id === action.nodeId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  ...action.data,
+                  model:
+                    action.data.model !== undefined
+                      ? resolveStudioRoleModel(n.data.role, action.data.model)
+                      : n.data.model,
+                },
+              }
+            : n,
         ),
       }
     case 'REMOVE_STUDIO_NODE':

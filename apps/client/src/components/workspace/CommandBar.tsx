@@ -18,6 +18,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Badge } from '@/components/ui/badge'
 import { useWorkspace, type PanelId, type CanvasMode } from '@/stores/workspace-store'
 import { cn } from '@/lib/utils'
+import { createStudioNodeData } from '@/lib/studio-defaults'
 
 export function CommandBar() {
   const { state, dispatch } = useWorkspace()
@@ -34,7 +35,7 @@ export function CommandBar() {
         id,
         type: 'studioRole',
         position: { x: 200 + Math.random() * 300, y: 200 + Math.random() * 200 },
-        data: { label: `${role.charAt(0).toUpperCase() + role.slice(1)} Node`, role, model: '', description: '' },
+        data: createStudioNodeData(role),
       },
     })
   }

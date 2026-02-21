@@ -35,6 +35,7 @@ import { api } from '@/lib/api'
 import { configTemplates, type ConfigTemplate } from '@/lib/config-templates'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { STUDIO_BASE_MODEL, STUDIO_ROLES, resolveStudioRoleModel } from '@/lib/studio-defaults'
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -187,6 +188,53 @@ export function ConfigPanel() {
     return MODEL_OPTIONS
   }, [providerName, ollamaModels])
 
+  const studioOrchestration = useMemo(() => {
+    const isStudioRole = (value: string): value is (typeof STUDIO_ROLES)[number] =>
+      STUDIO_ROLES.includes(value as (typeof STUDIO_ROLES)[number])
+
+    const baseModel = (agenticModel || model || STUDIO_BASE_MODEL).trim() || STUDIO_BASE_MODEL
+    const roleNodes = state.studioNodes.filter((node) =>
+      STUDIO_ROLES.includes(node.data.role as (typeof STUDIO_ROLES)[number]),
+    )
+
+    const roleByName = new Map<string, (typeof roleNodes)[number]>()
+    for (const node of roleNodes) {
+      if (!roleByName.has(node.data.role)) roleByName.set(node.data.role, node)
+    }
+
+    const roles = STUDIO_ROLES.map((role) => {
+      const node = roleByName.get(role)
+      const resolved = resolveStudioRoleModel(role, node?.data?.model)
+      return {
+        name: role,
+        enabled: true,
+        model: resolved === baseModel ? null : resolved,
+        instruction_file: `${role}.md`,
+      }
+    })
+
+    const graphNodes = roleNodes.length > 0
+      ? STUDIO_ROLES.filter((role) => roleByName.has(role)).map((role) => ({ id: role }))
+      : []
+
+    const validRoleSet = new Set(graphNodes.map((node) => node.id))
+    const graphEdges: Array<{ source: string; target: string }> = []
+    for (const edge of state.studioEdges) {
+      const source = roleNodes.find((node) => node.id === edge.source)?.data.role
+      const target = roleNodes.find((node) => node.id === edge.target)?.data.role
+      if (!source || !target || !isStudioRole(source) || !isStudioRole(target)) continue
+      if (!validRoleSet.has(source) || !validRoleSet.has(target) || source === target) continue
+      graphEdges.push({ source, target })
+    }
+
+    return {
+      baseModel,
+      roles,
+      executionOrder: roles.map((role) => role.name),
+      graph: { nodes: graphNodes, edges: graphEdges },
+    }
+  }, [agenticModel, model, state.studioNodes, state.studioEdges])
+
   /* ─── Template application ─── */
   const applyTemplate = (t: ConfigTemplate) => {
     setSessionName(t.config.sessionName)
@@ -256,8 +304,12 @@ export function ConfigPanel() {
       agentic_provider: agenticProvider,
       agentic_model: agenticModel || null,
       afk_orchestration: {
+        model: studioOrchestration.baseModel,
         join_policy: joinPolicy,
         subagent_router_strategy: routerStrategy,
+        execution_order: studioOrchestration.executionOrder,
+        graph: studioOrchestration.graph,
+        roles: studioOrchestration.roles,
         max_concurrent_subagents: maxSubagents,
         interaction_mode: 'headless',
         fail_safe: {

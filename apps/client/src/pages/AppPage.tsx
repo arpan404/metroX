@@ -16,9 +16,6 @@ import 'reactflow/dist/style.css'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
 import {
-  Activity,
-  Plus,
-  ListCollapse,
   Swords,
   Workflow,
   Rocket,
@@ -48,6 +45,7 @@ import {
   studioNodeTypes,
   type StudioNodeData,
 } from '@/components/canvas/StudioNodes'
+import { BottomActionBar } from '@/components/canvas/BottomActionBar'
 import { CanvasBackground } from '@/components/canvas/CanvasBackground'
 import { FloatingPanel } from '@/components/canvas/FloatingPanel'
 import { FloatingToolbar, type ToolbarMode } from '@/components/canvas/FloatingToolbar'
@@ -320,6 +318,8 @@ export function AppPage() {
       setPanels((p) => ({ ...p, right: p.right === 'analytics' ? null : 'analytics' }))
     } else if (mode === 'settings') {
       setPanels((p) => ({ ...p, right: p.right === 'settings' ? null : 'settings' }))
+    } else if (mode === 'attack-detail') {
+      setPanels((p) => ({ ...p, right: p.right === 'attack-detail' ? null : 'attack-detail' }))
     }
   }, [])
 
@@ -464,8 +464,28 @@ export function AppPage() {
             fitView
           >
             <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
-            <Controls position="bottom-right" />
-            <MiniMap className="hidden sm:block" pannable zoomable />
+            <Controls position="bottom-left" />
+            <MiniMap
+              className="hidden sm:block"
+              pannable
+              zoomable
+              nodeColor={(node) => {
+                if (node.type === 'rootNode') return '#818cf8'
+                if (node.type === 'attackNode') {
+                  const d = node.data as AttackNodeData
+                  return d.successRate > 0.5 ? '#f87171' : '#34d399'
+                }
+                if (node.type === 'analyticsNode') return '#34d399'
+                return '#475569'
+              }}
+              maskColor="rgba(130, 165, 235, 0.10)"
+              style={{
+                background: 'rgba(10, 14, 26, 0.88)',
+                border: '1px solid rgba(171, 187, 214, 0.16)',
+                borderRadius: '10px',
+                overflow: 'hidden',
+              }}
+            />
           </ReactFlow>
         ) : (
           <ReactFlow
@@ -487,8 +507,20 @@ export function AppPage() {
             fitView
           >
             <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
-            <Controls position="bottom-right" />
-            <MiniMap className="hidden sm:block" pannable zoomable />
+            <Controls position="bottom-left" />
+            <MiniMap
+              className="hidden sm:block"
+              pannable
+              zoomable
+              nodeColor={() => '#818cf8'}
+              maskColor="rgba(130, 165, 235, 0.10)"
+              style={{
+                background: 'rgba(10, 14, 26, 0.88)',
+                border: '1px solid rgba(171, 187, 214, 0.16)',
+                borderRadius: '10px',
+                overflow: 'hidden',
+              }}
+            />
           </ReactFlow>
         )}
       </div>
@@ -699,61 +731,17 @@ export function AppPage() {
         </motion.div>
       </FloatingPanel>
 
-      {/* ---- Floating bottom-left: studio actions + events/refresh ---- */}
-      <FloatingPanel position="bottom-left" className="p-1.5">
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-
-          {canvasMode === 'studio' && (
-            <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-              {(['attacker', 'critic', 'verifier', 'analyst'] as const).map((role) => (
-                <button
-                  key={role}
-                  onClick={() => addStudioNode(role)}
-                  title={`Add ${role} node`}
-                  style={ghostBtnStyle}
-                  onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)')}
-                  onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'transparent')}
-                >
-                  <Plus size={11} />
-                  <span style={{ textTransform: 'capitalize' }}>{role}</span>
-                </button>
-              ))}
-              <div style={{ ...sepStyle, width: '1px', height: '18px', margin: '0 4px' }} />
-            </motion.div>
-          )}
-
-          <button
-            onClick={() => setPanels((p) => ({ ...p, bottom: p.bottom === 'events' ? null : 'events' }))}
-            title="Toggle event timeline"
-            style={ghostBtnStyle}
-            onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)')}
-            onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'transparent')}
-          >
-            <ListCollapse size={13} />
-            <span>Events</span>
-            {streaming && (
-              <span style={{
-                width: '7px',
-                height: '7px',
-                borderRadius: '50%',
-                background: 'rgba(99,102,241,0.9)',
-                animation: 'ping 1s cubic-bezier(0,0,0.2,1) infinite',
-                display: 'inline-block',
-              }} />
-            )}
-          </button>
-
-          <button
-            onClick={() => void refreshAll()}
-            title="Refresh data"
-            style={ghostBtnStyle}
-            onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)')}
-            onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'transparent')}
-          >
-            <Activity size={13} />
-          </button>
-        </motion.div>
-      </FloatingPanel>
+      {/* ---- Bottom Action Bar (Excalidraw-style) ---- */}
+      <BottomActionBar
+        activeMode={activeToolbarMode}
+        onModeChange={handleModeChange}
+        canvasMode={canvasMode}
+        streaming={streaming}
+        eventsOpen={panels.bottom === 'events'}
+        onEventsToggle={() => setPanels((p) => ({ ...p, bottom: p.bottom === 'events' ? null : 'events' }))}
+        onRefresh={() => void refreshAll()}
+        onAddStudioNode={canvasMode === 'studio' ? addStudioNode : undefined}
+      />
 
       {/* ---- Left Glass Panel: Config ---- */}
       <GlassPanel
@@ -866,20 +854,6 @@ const sepStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,0.08)',
   height: '1px',
   width: '100%',
-}
-
-const ghostBtnStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '5px',
-  padding: '4px 8px',
-  background: 'transparent',
-  border: 'none',
-  borderRadius: '5px',
-  color: 'rgba(255,255,255,0.55)',
-  fontSize: '11px',
-  cursor: 'pointer',
-  transition: 'background 0.12s',
 }
 
 const ctxItemStyle: React.CSSProperties = {

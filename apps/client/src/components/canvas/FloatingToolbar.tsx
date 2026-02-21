@@ -1,5 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
-import { RefreshCw, Menu, X, Rocket, Activity, BarChart2, Settings, Swords, Workflow } from 'lucide-react'
+import { RefreshCw, Activity, Settings, Swords, Workflow } from 'lucide-react'
 
 /* ToolbarMode is the shared panel/navigation mode type used across the app */
 export type ToolbarMode =
@@ -21,12 +20,6 @@ type FloatingToolbarProps = {
   onCanvasModeChange: (mode: 'attack' | 'studio') => void
 }
 
-const menuItems: { mode: ToolbarMode; label: string; icon: React.ReactNode }[] = [
-  { mode: 'config', label: 'Config', icon: <Rocket size={14} /> },
-  { mode: 'analytics', label: 'Analytics', icon: <BarChart2 size={14} /> },
-  { mode: 'settings', label: 'Settings', icon: <Settings size={14} /> },
-]
-
 export function FloatingToolbar({
   activeMode,
   onModeChange,
@@ -37,19 +30,6 @@ export function FloatingToolbar({
   canvasMode,
   onCanvasModeChange,
 }: FloatingToolbarProps) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false)
-      }
-    }
-    if (menuOpen) document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [menuOpen])
-
   return (
     <div
       style={{
@@ -62,114 +42,41 @@ export function FloatingToolbar({
         display: 'flex',
         alignItems: 'center',
         gap: '10px',
-        padding: '0 14px',
-        background: 'rgba(10,10,14,0.72)',
-        backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        padding: '0 12px',
+        background: 'rgba(7, 10, 18, 0.78)',
+        backdropFilter: 'blur(16px) saturate(1.3)',
+        WebkitBackdropFilter: 'blur(16px) saturate(1.3)',
+        borderBottom: '1px solid rgba(171, 187, 214, 0.12)',
+        boxShadow: '0 1px 0 0 rgba(232, 240, 255, 0.04)',
       }}
     >
-      {/* Hamburger + dropdown */}
-      <div ref={menuRef} style={{ position: 'relative' }}>
-        <button
-          onClick={() => setMenuOpen((o) => !o)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '32px',
-            height: '32px',
-            background: menuOpen ? 'rgba(255,255,255,0.08)' : 'transparent',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '6px',
-            color: 'rgba(255,255,255,0.7)',
-            cursor: 'pointer',
-            transition: 'background 0.15s',
-          }}
-          title="Menu"
-        >
-          {menuOpen ? <X size={16} /> : <Menu size={16} />}
-        </button>
-
-        {menuOpen && (
-          <div
-            style={{
-              position: 'absolute',
-              top: '38px',
-              left: 0,
-              minWidth: '160px',
-              background: 'rgba(14,14,20,0.95)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: '8px',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-              padding: '4px',
-              backdropFilter: 'blur(16px)',
-            }}
-          >
-            {menuItems.map(({ mode, label, icon }) => (
-              <button
-                key={mode}
-                onClick={() => {
-                  onModeChange(mode)
-                  setMenuOpen(false)
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  width: '100%',
-                  padding: '7px 10px',
-                  background: activeMode === mode ? 'rgba(255,255,255,0.08)' : 'transparent',
-                  border: 'none',
-                  borderRadius: '5px',
-                  color: activeMode === mode ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.55)',
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  transition: 'background 0.12s, color 0.12s',
-                }}
-                onMouseEnter={(e) => {
-                  if (activeMode !== mode) {
-                    ;(e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.05)'
-                    ;(e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.8)'
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (activeMode !== mode) {
-                    ;(e.currentTarget as HTMLButtonElement).style.background = 'transparent'
-                    ;(e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.55)'
-                  }
-                }}
-              >
-                {icon}
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* App name */}
+      {/* Brand */}
       <span
         style={{
           fontSize: '13px',
           fontWeight: 700,
-          color: 'rgba(255,255,255,0.85)',
-          letterSpacing: '0.06em',
+          color: 'rgba(238, 241, 248, 0.92)',
+          letterSpacing: '0.07em',
           userSelect: 'none',
+          fontFamily: "'Syne', sans-serif",
+          flexShrink: 0,
         }}
       >
         metroX
       </span>
 
-      {/* Canvas mode toggle */}
+      {/* Canvas mode toggle — centered */}
       <div
         style={{
+          position: 'absolute',
+          left: '50%',
+          transform: 'translateX(-50%)',
           display: 'flex',
           alignItems: 'center',
           gap: '2px',
-          background: 'rgba(255,255,255,0.05)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: '7px',
+          background: 'rgba(13, 20, 33, 0.65)',
+          border: '1px solid rgba(171, 187, 214, 0.14)',
+          borderRadius: '9px',
           padding: '2px',
         }}
       >
@@ -181,15 +88,27 @@ export function FloatingToolbar({
               display: 'flex',
               alignItems: 'center',
               gap: '5px',
-              padding: '4px 10px',
-              background: canvasMode === mode ? 'rgba(255,255,255,0.1)' : 'transparent',
-              border: 'none',
-              borderRadius: '5px',
-              color: canvasMode === mode ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.45)',
+              padding: '4px 12px',
+              background: canvasMode === mode ? 'rgba(130, 165, 235, 0.18)' : 'transparent',
+              border: canvasMode === mode ? '1px solid rgba(130, 165, 235, 0.28)' : '1px solid transparent',
+              borderRadius: '7px',
+              color: canvasMode === mode ? 'rgba(186, 210, 255, 0.95)' : 'rgba(184, 196, 214, 0.5)',
               fontSize: '12px',
               fontWeight: canvasMode === mode ? 600 : 400,
               cursor: 'pointer',
-              transition: 'all 0.12s',
+              transition: 'all 0.15s cubic-bezier(0.22,1,0.36,1)',
+            }}
+            onMouseEnter={(e) => {
+              if (canvasMode !== mode) {
+                ;(e.currentTarget as HTMLButtonElement).style.color = 'rgba(184, 210, 255, 0.78)'
+                ;(e.currentTarget as HTMLButtonElement).style.background = 'rgba(130, 165, 235, 0.08)'
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (canvasMode !== mode) {
+                ;(e.currentTarget as HTMLButtonElement).style.color = 'rgba(184, 196, 214, 0.5)'
+                ;(e.currentTarget as HTMLButtonElement).style.background = 'transparent'
+              }
             }}
           >
             {mode === 'attack' ? <Swords size={12} /> : <Workflow size={12} />}
@@ -201,93 +120,139 @@ export function FloatingToolbar({
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
-      {/* Run ID search bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <div
+      {/* Run ID input */}
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        <Activity
+          size={12}
           style={{
-            position: 'relative',
-            display: 'flex',
-            alignItems: 'center',
+            position: 'absolute',
+            left: '8px',
+            color: 'rgba(111, 125, 147, 0.7)',
+            pointerEvents: 'none',
           }}
-        >
-          <Activity
-            size={13}
-            style={{
-              position: 'absolute',
-              left: '9px',
-              color: 'rgba(255,255,255,0.3)',
-              pointerEvents: 'none',
-            }}
-          />
-          <input
-            value={runId}
-            onChange={(e) => onRunIdChange(e.target.value)}
-            placeholder="Paste run ID..."
-            style={{
-              height: '30px',
-              width: '200px',
-              paddingLeft: '28px',
-              paddingRight: '10px',
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: '6px',
-              color: 'rgba(255,255,255,0.8)',
-              fontSize: '12px',
-              outline: 'none',
-              fontFamily: 'monospace',
-              transition: 'border-color 0.15s',
-            }}
-            onFocus={(e) => ((e.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.25)')}
-            onBlur={(e) => ((e.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.1)')}
-          />
-        </div>
-        <button
-          onClick={onRefresh}
-          title="Refresh run data"
+        />
+        <input
+          value={runId}
+          onChange={(e) => onRunIdChange(e.target.value)}
+          placeholder="Paste run ID…"
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '30px',
             height: '30px',
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '6px',
-            color: 'rgba(255,255,255,0.6)',
-            cursor: 'pointer',
-            transition: 'background 0.12s',
+            width: '190px',
+            paddingLeft: '26px',
+            paddingRight: '10px',
+            background: 'rgba(13, 20, 33, 0.55)',
+            border: '1px solid rgba(171, 187, 214, 0.12)',
+            borderRadius: '7px',
+            color: 'rgba(238, 241, 248, 0.82)',
+            fontSize: '11.5px',
+            outline: 'none',
+            fontFamily: "'IBM Plex Mono', monospace",
+            transition: 'border-color 0.15s',
           }}
-          onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.1)')}
-          onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.05)')}
-        >
-          <RefreshCw size={13} />
-        </button>
+          onFocus={(e) => ((e.target as HTMLInputElement).style.borderColor = 'rgba(130, 165, 235, 0.38)')}
+          onBlur={(e) => ((e.target as HTMLInputElement).style.borderColor = 'rgba(171, 187, 214, 0.12)')}
+        />
       </div>
 
-      {/* Command palette trigger */}
+      {/* Refresh */}
+      <TopBarIconBtn onClick={onRefresh} title="Refresh run data">
+        <RefreshCw size={13} />
+      </TopBarIconBtn>
+
+      {/* Command palette */}
       <button
         onClick={onCommandPalette}
         title="Command palette (⌘K)"
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '5px',
+          gap: '4px',
           height: '30px',
-          padding: '0 10px',
-          background: 'rgba(255,255,255,0.05)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: '6px',
-          color: 'rgba(255,255,255,0.45)',
-          fontSize: '11px',
+          padding: '0 9px',
+          background: 'rgba(13, 20, 33, 0.55)',
+          border: '1px solid rgba(171, 187, 214, 0.12)',
+          borderRadius: '7px',
+          color: 'rgba(111, 125, 147, 0.75)',
+          fontSize: '10px',
           cursor: 'pointer',
           userSelect: 'none',
-          transition: 'background 0.12s',
+          letterSpacing: '0.04em',
+          fontFamily: "'IBM Plex Mono', monospace",
+          transition: 'background 0.15s, border-color 0.15s',
         }}
-        onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.09)')}
-        onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.05)')}
+        onMouseEnter={(e) => {
+          ;(e.currentTarget as HTMLButtonElement).style.background = 'rgba(28, 40, 68, 0.7)'
+          ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(171, 187, 214, 0.2)'
+        }}
+        onMouseLeave={(e) => {
+          ;(e.currentTarget as HTMLButtonElement).style.background = 'rgba(13, 20, 33, 0.55)'
+          ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(171, 187, 214, 0.12)'
+        }}
       >
-        <span style={{ fontFamily: 'monospace', fontSize: '10px' }}>⌘K</span>
+        ⌘K
       </button>
+
+      {/* Settings — top right */}
+      <TopBarIconBtn
+        onClick={() => onModeChange('settings')}
+        title="Settings"
+        active={activeMode === 'settings'}
+      >
+        <Settings size={14} />
+      </TopBarIconBtn>
     </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+
+function TopBarIconBtn({
+  children,
+  onClick,
+  title,
+  active = false,
+}: {
+  children: React.ReactNode
+  onClick: () => void
+  title?: string
+  active?: boolean
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '30px',
+        height: '30px',
+        background: active ? 'rgba(130, 165, 235, 0.18)' : 'rgba(13, 20, 33, 0.55)',
+        border: active
+          ? '1px solid rgba(130, 165, 235, 0.35)'
+          : '1px solid rgba(171, 187, 214, 0.12)',
+        borderRadius: '7px',
+        color: active ? 'rgba(186, 210, 255, 0.95)' : 'rgba(111, 125, 147, 0.75)',
+        cursor: 'pointer',
+        transition: 'background 0.15s, border-color 0.15s, color 0.15s',
+        flexShrink: 0,
+      }}
+      onMouseEnter={(e) => {
+        if (!active) {
+          ;(e.currentTarget as HTMLButtonElement).style.background = 'rgba(28, 40, 68, 0.7)'
+          ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(171, 187, 214, 0.2)'
+          ;(e.currentTarget as HTMLButtonElement).style.color = 'rgba(184, 210, 255, 0.72)'
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!active) {
+          ;(e.currentTarget as HTMLButtonElement).style.background = 'rgba(13, 20, 33, 0.55)'
+          ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(171, 187, 214, 0.12)'
+          ;(e.currentTarget as HTMLButtonElement).style.color = 'rgba(111, 125, 147, 0.75)'
+        }
+      }}
+    >
+      {children}
+    </button>
   )
 }

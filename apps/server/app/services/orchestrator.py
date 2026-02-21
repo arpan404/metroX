@@ -152,6 +152,7 @@ class RunOrchestrator:
             runtime_cfg = profile.runtime_config or {}
             budget_usd = float(runtime_cfg.get("budget_usd", 0.0) or 0.0)
             abort_on_cost_breach = bool(runtime_cfg.get("abort_on_cost_breach", False))
+            batch_size = max(1, int(runtime_cfg.get("batch_size", self.settings.run_batch_size)))
             pricing_profile_id = target_cfg.get("extra", {}).get("pricing_profile_id")
             policy_cfg = resolve_policy_config(target_cfg.get("extra", {}))
             log_event(
@@ -175,9 +176,11 @@ class RunOrchestrator:
             executions: list[Execution] = []
             low_confidence = []
             interrupted_early = False
+            spent_usd = 0.0
             if processed_case_ids:
                 cost_summary = rebuild_run_cost_aggregate(self.db, run.id)
                 run.budget_spent_usd = float(cost_summary["totals"]["effective_cost"])
+                spent_usd = run.budget_spent_usd
                 completion_ratio = len(processed_case_ids) / max(len(attack_cases), 1)
                 run.estimated_final_cost_usd = (
                     run.budget_spent_usd / completion_ratio if completion_ratio > 0 else run.budget_spent_usd
@@ -250,7 +253,7 @@ class RunOrchestrator:
                 self.db.add(label)
                 executions.append(execution)
                 processed_case_ids.add(case.id)
-                compute_execution_cost(
+                cost_row = compute_execution_cost(
                     self.db,
                     run_id=run.id,
                     execution=execution,
@@ -260,8 +263,8 @@ class RunOrchestrator:
                 )
 
                 run.completed_attacks = len(processed_case_ids)
-                cost_summary = rebuild_run_cost_aggregate(self.db, run.id)
-                run.budget_spent_usd = float(cost_summary["totals"]["effective_cost"])
+                spent_usd += float(cost_row.effective_cost_usd)
+                run.budget_spent_usd = spent_usd
                 completion_ratio = run.completed_attacks / max(len(attack_cases), 1)
                 run.estimated_final_cost_usd = (
                     run.budget_spent_usd / completion_ratio if completion_ratio > 0 else run.budget_spent_usd
@@ -288,10 +291,12 @@ class RunOrchestrator:
                             step=2,
                             message=str(event.get("reason") or event.get("tool_name") or event_type),
                             data=event,
+                            auto_commit=False,
                         )
 
-                if run.completed_attacks % 100 == 0 or run.completed_attacks == len(attack_cases):
+                if run.completed_attacks % batch_size == 0 or run.completed_attacks == len(attack_cases):
                     self.db.commit()
+                    rebuild_run_cost_aggregate(self.db, run.id)
                     log_event(
                         self.db,
                         run_id=run.id,
@@ -355,6 +360,8 @@ class RunOrchestrator:
                 )
                 self.db.commit()
                 return
+
+            rebuild_run_cost_aggregate(self.db, run.id)
 
             ensure_feature_definitions(self.db)
             all_executions = self.db.query(Execution).filter(Execution.run_id == run.id).all()

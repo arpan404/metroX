@@ -7,6 +7,7 @@ import type {
   DriftPayload,
   ExecutionSlicesPayload,
   OrchestrationProfile,
+  NodeTelemetryPayload,
   PricingProfilePayload,
   ProviderCredential,
   ProviderCredentialListPayload,
@@ -186,6 +187,10 @@ export const api = {
     return request<RunTelemetryPayload>(`/v1/runs/${runId}/telemetry`)
   },
 
+  getNodeTelemetry(runId: string) {
+    return request<NodeTelemetryPayload>(`/v1/runs/${runId}/node-telemetry`)
+  },
+
   getPolicyEvents(runId: string) {
     return request<{ run_id: string; events: Array<Record<string, unknown>> }>(`/v1/runs/${runId}/policy-events`)
   },
@@ -260,5 +265,48 @@ export const api = {
     }
 
     return () => source.close()
+  },
+
+  streamRunEventsWs(runId: string, onEvent: (event: Record<string, unknown>) => void, onEnd: () => void) {
+    const wsBase = API_BASE.replace(/^http/, 'ws')
+    const socket = new WebSocket(`${wsBase}/v1/runs/${runId}/ws?api_key=${encodeURIComponent(API_KEY)}`)
+    let closed = false
+
+    socket.onmessage = (message) => {
+      try {
+        const payload = JSON.parse(String(message.data)) as Record<string, unknown>
+        if (payload.event_type === 'heartbeat') return
+        if (payload.event_type === 'end') {
+          if (!closed) {
+            closed = true
+            socket.close()
+            onEnd()
+          }
+          return
+        }
+        onEvent(payload)
+      } catch (_error) {
+        // Ignore malformed payloads.
+      }
+    }
+
+    socket.onerror = () => {
+      if (!closed) {
+        closed = true
+        socket.close()
+        onEnd()
+      }
+    }
+    socket.onclose = () => {
+      if (!closed) {
+        closed = true
+        onEnd()
+      }
+    }
+
+    return () => {
+      closed = true
+      socket.close()
+    }
   },
 }

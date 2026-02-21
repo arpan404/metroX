@@ -23,8 +23,17 @@ class Settings(BaseSettings):
     secret_active_key_version: str = Field(default="v1")
     secret_keys_json: str = Field(default="")
     secret_backend: str = Field(default="local")
+    secret_backend_strict: bool = Field(default=False)
     aws_kms_key_id: str = Field(default="")
     aws_region: str = Field(default="us-east-1")
+
+    credential_min_key_length: int = Field(default=8)
+    credential_rotation_max_age_days: int = Field(default=90)
+    credential_rotation_enforced: bool = Field(default=True)
+
+    run_queue_enabled: bool = Field(default=True)
+    run_worker_threads: int = Field(default=1)
+    run_batch_size: int = Field(default=100)
     use_migrations: bool = Field(default=False)
 
 

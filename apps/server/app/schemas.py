@@ -326,6 +326,7 @@ class ProviderCredentialOut(BaseModel):
     provider_type: str
     key_version: str
     status: str
+    last_rotated_at: datetime | None
     created_at: datetime
     last_validated_at: datetime | None
 

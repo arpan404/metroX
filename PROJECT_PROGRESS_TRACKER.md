@@ -15,9 +15,9 @@
 | M3 | DS layers (features, clusters, risk, drift) | DONE |
 | M4 | Frontend wizard + monitor + analytics | DONE |
 | M5 | CI workflows + expanded test matrix | DONE |
-| M6 | AFK-native runtime + provider/cost intelligence | IN_PROGRESS |
-| M7 | Advanced DS math and graph/forecast analytics | IN_PROGRESS |
-| M8 | Runtime hardening + observability + scale tests | IN_PROGRESS |
+| M6 | AFK-native runtime + provider/cost intelligence | DONE |
+| M7 | Advanced DS math and graph/forecast analytics | DONE |
+| M8 | Runtime hardening + observability + scale tests | DONE |
 | M9 | Orchestration studio + security auditability | DONE |
 
 ## Feature Matrix
@@ -39,6 +39,7 @@
 | Mitigation | Experiment effects + recommendations | DONE | Ranked by impact/cost |
 | Dashboard | Wizard (4-step) | DONE | Frontend-first config flow |
 | Dashboard | Live run monitor | DONE | SSE stream support |
+| Dashboard | Live run monitor websocket transport + SSE fallback | DONE | `WS /v1/runs/{id}/ws` + monitor fallback logic |
 | Dashboard | Analytics views | DONE | Scorecards/risk/clusters/drift/compare |
 | Provider Runtime | Provider validation API (synthetic/litellm/openai-compatible) | DONE | `/v1/providers/validate`, encrypted key ref creation |
 | Provider Runtime | Credential CRUD + key rotation APIs | DONE | `/v1/providers/credentials*` |
@@ -54,10 +55,15 @@
 | DS Advanced | Cooccurrence graph + forecast payload | DONE | `/v1/runs/{id}/cooccurrence-graph` + `/forecast` |
 | Analytics | Execution slice API + filtered charted UI | DONE | `/v1/runs/{id}/execution-slices` + interactive filters |
 | Analytics | Monitor telemetry counters + spend projection | DONE | `/v1/runs/{id}/telemetry` + live monitor panel |
+| Analytics | Node-level telemetry for attack paths | DONE | `/v1/runs/{id}/node-telemetry` + monitor table |
 | Analytics | Inference matrix + calibration diagnostics panels | DONE | effect/power + ECE/MCE/Brier views |
 | Reports | Markdown run reports | DONE | API generation endpoint |
 | Governance | AGENTS + project docs | DONE | Root docs created |
 | Observability | Trace ids + structured request logs + SLO endpoint | DONE | `X-Trace-Id` + `/slo` |
+| Runtime Scale | Queue worker execution + queue stats API | DONE | `run_queue` + `/v1/queue/stats` |
+| CI | >10k deep-run load benchmark job | DONE | `pytest -m load` in deterministic CI |
+| Security | Credential rotation policy enforcement | DONE | max-age/min-length/version bump checks |
+| Security | KMS strict backend mode | DONE | `AUTOREDTEAM_SECRET_BACKEND_STRICT` |
 
 ## Test Matrix
 | Category | Status | Scope |
@@ -66,16 +72,16 @@
 | API Contract Tests | DONE | auth/session/profile/run + provider/pricing contracts |
 | Integration Tests | DONE | full run lifecycle with synthetic target + cost/advanced endpoints |
 | Frontend Tests | DONE | wizard and analytics rendering |
-| Load Tests | IN_PROGRESS | 10k cost hot-path test added behind `AUTOREDTEAM_ENABLE_LOAD=1`; further worker-scale tests pending |
+| Load Tests | DONE | 10k cost hot-path test + CI job (`AUTOREDTEAM_ENABLE_LOAD=1`) |
 
 ## Risks and Blockers
 | ID | Risk | Severity | Status | Mitigation |
 |---|---|---|---|---|
-| R-01 | Large deep runs may stress single worker path | High | OPEN | Add queue worker pool + batching optimization |
+| R-01 | Large deep runs may stress single worker path | High | MITIGATED | Queue worker path and orchestrator batching added |
 | R-02 | Detector heuristics may have false positives | Medium | OPEN | Expand adjudication and calibration loops |
-| R-03 | SSE monitor currently basic retry behavior | Medium | OPEN | Add resumable event cursors |
+| R-03 | Stream transport instability on some environments | Medium | MITIGATED | Added websocket primary transport with SSE fallback |
 | R-04 | Multi-tenant auth not in V1 scope | Medium | ACCEPTED | Plan RBAC in V2 |
-| R-05 | Encryption implementation is single-tenant envelope baseline | Medium | OPEN | Replace with managed KMS in V2 |
+| R-05 | Encryption implementation is single-tenant envelope baseline | Medium | IN_PROGRESS | Optional AWS KMS backend added; managed key lifecycle still V2 |
 | R-06 | OpenAI-compatible validation depends on provider `/models` behavior | Low | OPEN | Add tolerant fallback probing strategy |
 
 ## Release Readiness Checklist (V1)
@@ -94,3 +100,4 @@
 - 2026-02-21: Upgraded AFK orchestration to configurable coordinator/subagent mode with join-policy, fail-safe, and runner control surface plus `/v1/afk/capabilities`.
 - 2026-02-21: Added provider credential lifecycle + rotation APIs, AFK-native resume path, policy profile runtime enforcement, execution-slice analytics endpoint/UI filters, load-test scaffolding, and `/slo` observability endpoint with trace-id logging.
 - 2026-02-21: Added orchestration profile APIs and wizard React Flow orchestration studio, live run telemetry endpoint + monitor counters, calibration ECE/MCE diagnostics, and credential access audit trail with provider settings UI audit panel.
+- 2026-02-21: Added websocket run-event streaming + SSE fallback client, node telemetry endpoint/UI, queue worker runtime path + queue stats endpoint, batch run-loop commit optimization, strict credential rotation controls, KMS strict-mode support, and deterministic CI load benchmark job.

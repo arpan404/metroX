@@ -114,6 +114,7 @@ export type ProviderCredential = {
   key_version: string
   status: string
   created_at: string
+  last_rotated_at?: string | null
   last_validated_at?: string | null
 }
 
@@ -199,4 +200,18 @@ export type RunTelemetryPayload = {
   progress: { completed: number; total: number }
   event_counts: Record<string, number>
   cost: { spent_usd: number; projected_final_usd: number }
+}
+
+export type NodeTelemetryPayload = {
+  run_id: string
+  nodes: Array<{
+    attack_type: string
+    total: number
+    success: number
+    failure: number
+    avg_latency_ms: number
+    effective_cost_usd: number
+    tool_events: number
+    policy_events: number
+  }>
 }

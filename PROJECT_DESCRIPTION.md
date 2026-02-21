@@ -51,6 +51,7 @@ It evaluates not only final answers, but full agent contracts:
 ### 4.3 Robustness Dashboard
 - Guided 4-step setup wizard
 - Live run telemetry stream
+- Dual stream transport: SSE + WebSocket (fallback-safe)
 - Post-run analytics:
   - raw metric tables
   - calibrated risk cards
@@ -62,6 +63,10 @@ It evaluates not only final answers, but full agent contracts:
 - Cost intelligence panels:
   - effective/provider/fallback spend
   - run cost burn and projected completion cost
+- Node telemetry panel:
+  - per-attack success/failure counters
+  - average latency
+  - cumulative attack-path cost
 - Advanced DS analytics panels:
   - inference diagnostics (effect sizes + adjusted p-values)
   - calibration payloads
@@ -115,6 +120,9 @@ It evaluates not only final answers, but full agent contracts:
 - `/slo` endpoint for API-level request/error/latency summaries
 - Load-test harness for 10k execution-cost aggregation hot path
 - Secret access audit trail for credential operations
+- Queue-worker runtime path with `GET /v1/queue/stats` for deep-run operations visibility
+- Credential rotation policy enforcement (`max-age`, `min-length`, versioned rotation)
+- Optional KMS secret backend with strict mode fail-fast behavior
 ## 10. Current Scope Boundary
 - Single-tenant API key auth (V1)
 - Raw + redacted data model

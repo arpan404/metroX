@@ -236,3 +236,23 @@ This remains frontend-first: users fully configure targets, scoring, and session
   - MCE
   - Brier decomposition slices.
 - Analytics page now renders inference matrix and calibration diagnostics panels.
+
+## V1.7.1 Delta (Current)
+
+### Real-time run observability
+- Added websocket stream endpoint `WS /v1/runs/{id}/ws` with heartbeat and terminal-state end signal.
+- Monitor now prefers websocket live events with SSE fallback.
+- Added node-level telemetry endpoint `GET /v1/runs/{id}/node-telemetry` and monitor panel for per-attack success/failure, latency, and cost.
+
+### Deep-run performance hardening
+- Added in-process run queue workers (`run_queue`) and queue stats endpoint `GET /v1/queue/stats`.
+- Added orchestrator batch commit path and reduced per-event commit pressure for large runs.
+- Added deterministic CI load benchmark job (`pytest -m load`) with `AUTOREDTEAM_ENABLE_LOAD=1`.
+
+### Security hardening uplift
+- Added strict credential policy controls:
+  - min API key length
+  - enforced rotation window checks on provider validation
+  - key-version advancement on rotation.
+- Added `last_rotated_at` tracking on provider credentials.
+- Added strict KMS fallback behavior (`AUTOREDTEAM_SECRET_BACKEND_STRICT`).

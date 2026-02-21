@@ -28,6 +28,7 @@ def log_event(
     step: int,
     message: str | None = None,
     data: dict[str, Any] | None = None,
+    auto_commit: bool = True,
 ) -> RunEvent:
     event = RunEvent(
         run_id=run_id,
@@ -38,8 +39,11 @@ def log_event(
         created_at=datetime.now(timezone.utc),
     )
     db.add(event)
-    db.commit()
-    db.refresh(event)
+    if auto_commit:
+        db.commit()
+        db.refresh(event)
+    else:
+        db.flush()
     return event
 
 

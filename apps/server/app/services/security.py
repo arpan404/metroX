@@ -131,6 +131,8 @@ class SecretCipher:
             try:
                 self.backend = AwsKmsBackend(settings.aws_kms_key_id, settings.aws_region)
             except Exception:
+                if settings.secret_backend_strict:
+                    raise
                 # Safe fallback for local/dev and test environments.
                 self.backend = LocalEnvelopeBackend()
         else:

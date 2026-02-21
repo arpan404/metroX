@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import json
 import time
+import asyncio
 from datetime import datetime, timezone
+from datetime import timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import auth_dependency
+from app.config import get_settings
 from app.db import SessionLocal, get_db
 from app.models import (
     AFKRunState,
@@ -66,6 +69,7 @@ from app.services.advanced_analytics import calibration_payload, cooccurrence_pa
 from app.services.providers import provider_capabilities, validate_provider
 from app.services.reporting import generate_markdown_report
 from app.services.risk import risk_cards
+from app.services.run_queue import RUN_QUEUE
 from app.services.security import SecretCipher
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(auth_dependency)])
@@ -239,6 +243,20 @@ def get_provider_capabilities() -> dict:
 
 @router.post("/providers/validate")
 def validate_provider_config(payload: ProviderValidateRequest, db: Session = Depends(get_db)) -> dict:
+    settings = get_settings()
+    if payload.credential_id and settings.credential_rotation_enforced:
+        row = db.query(ProviderCredential).filter(ProviderCredential.id == payload.credential_id).one_or_none()
+        if not row:
+            raise HTTPException(status_code=404, detail="Provider credential not found")
+        rotated_at = row.last_rotated_at or row.created_at
+        if row.status != "active":
+            return {"valid": False, "provider_type": payload.provider_type, "error": "credential is not active"}
+        if rotated_at and rotated_at < datetime.now(timezone.utc) - timedelta(days=settings.credential_rotation_max_age_days):
+            return {
+                "valid": False,
+                "provider_type": payload.provider_type,
+                "error": "credential rotation required",
+            }
     api_key = _read_provider_api_key(db, payload)
     check_payload = payload.model_dump()
     check_payload["api_key"] = api_key
@@ -256,12 +274,16 @@ def validate_provider_config(payload: ProviderValidateRequest, db: Session = Dep
 
 @router.post("/providers/credentials", response_model=ProviderCredentialOut)
 def create_provider_credential(payload: ProviderCredentialCreate, db: Session = Depends(get_db)) -> ProviderCredentialOut:
+    settings = get_settings()
+    if len(payload.api_key or "") < settings.credential_min_key_length:
+        raise HTTPException(status_code=400, detail=f"api_key must be at least {settings.credential_min_key_length} chars")
     row = ProviderCredential(
         name=payload.name,
         provider_type=payload.provider_type,
         encrypted_secret=SecretCipher().encrypt(payload.api_key),
         key_version="v1",
         status=payload.status,
+        last_rotated_at=datetime.now(timezone.utc),
     )
     db.add(row)
     db.commit()
@@ -297,15 +319,21 @@ def rotate_provider_credential(
     payload: ProviderCredentialRotate,
     db: Session = Depends(get_db),
 ) -> ProviderCredentialOut:
+    settings = get_settings()
     row = db.query(ProviderCredential).filter(ProviderCredential.id == credential_id).one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="Provider credential not found")
+    if len(payload.api_key or "") < settings.credential_min_key_length:
+        raise HTTPException(status_code=400, detail=f"api_key must be at least {settings.credential_min_key_length} chars")
+    if payload.key_version and payload.key_version == row.key_version:
+        raise HTTPException(status_code=400, detail="key_version must advance on rotation")
 
     row.encrypted_secret = SecretCipher().encrypt(payload.api_key)
     if payload.key_version:
         row.key_version = payload.key_version
     if payload.status:
         row.status = payload.status
+    row.last_rotated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(row)
     _audit_secret_access(
@@ -498,9 +526,26 @@ def create_run(
     db.refresh(run)
 
     if payload.execute_now:
-        background_tasks.add_task(_run_pipeline_background, run.id)
+        settings = get_settings()
+        if settings.run_queue_enabled:
+            RUN_QUEUE.enqueue(run.id)
+            log_event(
+                db,
+                run_id=run.id,
+                event_type="queued",
+                step=0,
+                message="Run queued for worker execution",
+            )
+        else:
+            background_tasks.add_task(_run_pipeline_background, run.id)
 
     return RunOut.model_validate(run, from_attributes=True)
+
+
+@router.get("/queue/stats")
+def queue_stats() -> dict:
+    stats = RUN_QUEUE.stats()
+    return {"pending": stats.pending, "workers": stats.workers, "started": stats.started}
 
 
 @router.get("/runs/{run_id}", response_model=RunOut)
@@ -575,6 +620,51 @@ def stream_run_events(run_id: str, db: Session = Depends(get_db)) -> StreamingRe
             stream_db.close()
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@router.websocket("/runs/{run_id}/ws")
+async def stream_run_events_ws(websocket: WebSocket, run_id: str) -> None:
+    settings = get_settings()
+    api_key = websocket.query_params.get("api_key")
+    if api_key != settings.api_key:
+        await websocket.close(code=4401)
+        return
+    await websocket.accept()
+    last_id = 0
+    terminal_states = {"completed", "failed", "interrupted"}
+    stream_db = SessionLocal()
+    try:
+        while True:
+            events = (
+                stream_db.query(RunEvent)
+                .filter(RunEvent.run_id == run_id, RunEvent.id > last_id)
+                .order_by(RunEvent.id.asc())
+                .all()
+            )
+            for event in events:
+                payload = {
+                    "id": event.id,
+                    "event_type": event.event_type,
+                    "step": event.step,
+                    "message": event.message,
+                    "data": event.data,
+                    "created_at": event.created_at.isoformat(),
+                }
+                last_id = event.id
+                await websocket.send_json(payload)
+
+            current = stream_db.query(Run).filter(Run.id == run_id).one_or_none()
+            if current and current.status in terminal_states:
+                await websocket.send_json({"event_type": "end"})
+                break
+            await websocket.send_json({"event_type": "heartbeat"})
+            await asyncio.sleep(1.0)
+    except WebSocketDisconnect:
+        return
+    except Exception:
+        return
+    finally:
+        stream_db.close()
 
 
 @router.get("/runs/{run_id}/scorecard", response_model=ScoreCardOut)
@@ -657,6 +747,59 @@ def get_attack_summary(run_id: str, db: Session = Depends(get_db)) -> dict:
         ordered.append(row)
 
     return {"run_id": run_id, "attack_types": ordered}
+
+
+@router.get("/runs/{run_id}/node-telemetry")
+def get_node_telemetry(run_id: str, db: Session = Depends(get_db)) -> dict:
+    run = db.query(Run).filter(Run.id == run_id).one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    executions = (
+        db.query(Execution, AttackCase, Detection, ExecutionCost)
+        .join(AttackCase, AttackCase.id == Execution.attack_case_id)
+        .outerjoin(Detection, Detection.execution_id == Execution.id)
+        .outerjoin(ExecutionCost, ExecutionCost.execution_id == Execution.id)
+        .filter(Execution.run_id == run_id)
+        .all()
+    )
+    by_attack: dict[str, dict] = {}
+    for execution, attack_case, detection, cost in executions:
+        attack = str(attack_case.attack_type or "unknown")
+        row = by_attack.setdefault(
+            attack,
+            {
+                "attack_type": attack,
+                "total": 0,
+                "success": 0,
+                "failure": 0,
+                "avg_latency_ms": 0.0,
+                "cost_usd": 0.0,
+                "policy_decisions": 0,
+                "tool_events": 0,
+            },
+        )
+        row["total"] += 1
+        row["avg_latency_ms"] += float(execution.latency_ms or 0.0)
+        row["cost_usd"] += float(cost.effective_cost_usd if cost else 0.0)
+        flags = detection.failure_flags if detection else {}
+        is_success = any(flags.values()) if isinstance(flags, dict) else False
+        if is_success:
+            row["success"] += 1
+        else:
+            row["failure"] += 1
+        for event in execution.tool_events or []:
+            row["tool_events"] += 1
+            if str(event.get("event_type", "")).strip() == "policy_decision":
+                row["policy_decisions"] += 1
+
+    payload = []
+    for attack, row in sorted(by_attack.items(), key=lambda item: item[0]):
+        total = max(1, int(row["total"]))
+        row["avg_latency_ms"] = float(row["avg_latency_ms"]) / total
+        row["success_rate"] = float(row["success"]) / total
+        payload.append(row)
+    return {"run_id": run_id, "nodes": payload}
 
 
 @router.get("/runs/{run_id}/execution-slices")

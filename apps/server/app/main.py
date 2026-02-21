@@ -10,6 +10,7 @@ from starlette.requests import Request
 from app.api.v1 import router as v1_router
 from app.db import init_db
 from app.observability import METRICS, configure_logging, log_request_event
+from app.services.run_queue import RUN_QUEUE
 
 app = FastAPI(
     title="AutoRedTeam DS+ API",
@@ -30,6 +31,7 @@ app.add_middleware(
 def startup_event() -> None:
     configure_logging()
     init_db()
+    RUN_QUEUE.start()
 
 
 @app.get("/health")

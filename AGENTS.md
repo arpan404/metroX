@@ -79,6 +79,9 @@ The product must function as **unit tests for AI behavior**, not as a prompt dem
 - Structured JSON request logs are required in server runtime.
 - Expose SLO snapshot endpoint for error-rate and latency monitoring (`/slo`).
 - Maintain an operational runbook for triage steps when gate regressions or budget breaches occur.
+- Real-time monitoring must support both SSE and WebSocket transports.
+- Node-level telemetry must expose per-attack success/failure/latency/cost to match monitor aggregates.
+- Run scheduling must support queued worker mode for deep runs; queue stats should be exposed for ops debugging.
 
 ## Frontend and DX Rules
 - Full run configuration must be possible from UI (no mandatory CLI edits).
@@ -101,6 +104,8 @@ A PR is incomplete if it does not include:
 3. Tracker status update in `PROJECT_PROGRESS_TRACKER.md`
 4. Migration notes for changed persisted schema
 5. Risk notes for safety-sensitive changes
+6. Queue/performance impact note if run-loop or execution-write path changed
+7. Credential/cost policy impact note if provider/security code changed
 
 ## Definition of Done
 A feature is complete only when:

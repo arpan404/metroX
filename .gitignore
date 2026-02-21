@@ -29,5 +29,4 @@ dist/
 artifacts/
 reports/
 
-plan.md
 *.tsbuildinfo

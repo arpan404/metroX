@@ -18,7 +18,14 @@ import 'reactflow/dist/style.css'
 
 import { api } from '../lib/api'
 import { loadState, saveState } from '../lib/state'
-import type { AttackSummaryPayload, RiskCards, RunOut, RunTelemetryPayload, Scorecard } from '../lib/types'
+import type {
+  AttackSummaryPayload,
+  NodeTelemetryPayload,
+  RiskCards,
+  RunOut,
+  RunTelemetryPayload,
+  Scorecard,
+} from '../lib/types'
 
 type EventRow = {
   id: number
@@ -135,6 +142,7 @@ export default function MonitorPage() {
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [telemetry, setTelemetry] = useState<RunTelemetryPayload | null>(null)
+  const [nodeTelemetry, setNodeTelemetry] = useState<NodeTelemetryPayload | null>(null)
   const [selectedAttackType, setSelectedAttackType] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'attack' | 'studio'>('attack')
 
@@ -293,18 +301,20 @@ export default function MonitorPage() {
   const refreshAll = useCallback(async () => {
     if (!runId) return
     try {
-      const [runRes, scoreRes, summaryRes, riskRes, telemetryRes] = await Promise.all([
+      const [runRes, scoreRes, summaryRes, riskRes, telemetryRes, nodeTelemetryRes] = await Promise.all([
         api.getRun(runId),
         api.getScorecard(runId).catch(() => null),
         api.getAttackSummary(runId).catch(() => null),
         api.getRiskCards(runId).catch(() => null),
         api.getRunTelemetry(runId).catch(() => null),
+        api.getNodeTelemetry(runId).catch(() => null),
       ])
       setRun(runRes)
       setScorecard(scoreRes)
       setAttackSummary(summaryRes)
       setRiskCards(riskRes)
       setTelemetry(telemetryRes)
+      setNodeTelemetry(nodeTelemetryRes)
       saveState({ ...loadState(), currentRunId: runId })
 
       if (!selectedAttackType && summaryRes?.attack_types?.length) {
@@ -320,10 +330,12 @@ export default function MonitorPage() {
     setEvents([])
     setError(null)
     setStreaming(true)
+    let receivedAnyEvent = false
 
-    const stop = api.streamRunEvents(
+    let stop = api.streamRunEventsWs(
       runId,
       (incoming) => {
+        receivedAnyEvent = true
         const row = incoming as unknown as EventRow
         setEvents((current) => {
           if (current.some((item) => item.id === row.id)) return current
@@ -332,12 +344,28 @@ export default function MonitorPage() {
       },
       () => setStreaming(false),
     )
+    const wsFallback = window.setTimeout(() => {
+      if (receivedAnyEvent) return
+      stop()
+      stop = api.streamRunEvents(
+        runId,
+        (incoming) => {
+          const row = incoming as unknown as EventRow
+          setEvents((current) => {
+            if (current.some((item) => item.id === row.id)) return current
+            return [row, ...current].slice(0, 200)
+          })
+        },
+        () => setStreaming(false),
+      )
+    }, 1800)
 
     void refreshAll()
     const interval = window.setInterval(() => void refreshAll(), 2500)
 
     return () => {
       stop()
+      window.clearTimeout(wsFallback)
       window.clearInterval(interval)
     }
   }, [runId, refreshAll])
@@ -492,6 +520,34 @@ export default function MonitorPage() {
                       <tr key={name}>
                         <td>{name}</td>
                         <td>{count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="stack-sm">
+              <h3>Node Telemetry</h3>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Attack</th>
+                      <th>Success</th>
+                      <th>Failure</th>
+                      <th>Avg ms</th>
+                      <th>Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(nodeTelemetry?.nodes ?? []).slice(0, 12).map((row) => (
+                      <tr key={row.attack_type}>
+                        <td>{row.attack_type}</td>
+                        <td>{row.success}</td>
+                        <td>{row.failure}</td>
+                        <td>{row.avg_latency_ms.toFixed(1)}</td>
+                        <td>${row.effective_cost_usd.toFixed(3)}</td>
                       </tr>
                     ))}
                   </tbody>

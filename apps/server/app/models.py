@@ -421,6 +421,7 @@ class ProviderCredential(Base):
     encrypted_secret: Mapped[str] = mapped_column(Text, nullable=False)
     key_version: Mapped[str] = mapped_column(String(40), default="v1")
     status: Mapped[str] = mapped_column(String(40), default="active")
+    last_rotated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_validated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, nullable=False)
 

@@ -13,6 +13,7 @@ import {
   ChevronDown,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
+import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -61,7 +62,7 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
       data-onboarding="toolbar"
     >
       {/* Brand */}
-      <div className="flex items-center gap-2 mr-2 shrink-0">
+      <Link to="/" className="flex items-center gap-2 mr-2 shrink-0">
         <img
           src="/favicon.svg"
           alt="MetroX"
@@ -69,7 +70,7 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
           style={{ height: '24px', width: '24px', objectFit: 'contain' }}
         />
         <span className="text-sm font-display font-semibold tracking-tight hidden sm:block opacity-95 dark:opacity-80">MetroX</span>
-      </div>
+      </Link>
 
       {/* Divider */}
       <div className="h-5 w-px bg-border/40 shrink-0" />

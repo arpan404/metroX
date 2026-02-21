@@ -605,7 +605,9 @@ def queue_stats() -> dict:
     settings = get_settings()
     return {
         "pending": stats.pending,
+        "dlq_pending": stats.dlq_pending,
         "workers": stats.workers,
+        "live_workers": stats.live_workers,
         "started": stats.started,
         "backend": settings.run_queue_backend,
     }

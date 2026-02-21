@@ -34,8 +34,13 @@ class Settings(BaseSettings):
     run_queue_enabled: bool = Field(default=True)
     run_queue_backend: str = Field(default="inprocess")
     run_worker_threads: int = Field(default=1)
+    run_queue_max_retries: int = Field(default=2)
+    run_queue_retry_backoff_s: float = Field(default=0.5)
     run_queue_redis_key: str = Field(default="autoredteam:runs:queue")
+    run_queue_redis_dlq_key: str = Field(default="autoredteam:runs:dlq")
+    run_queue_redis_workers_key: str = Field(default="autoredteam:runs:workers")
     run_queue_redis_block_s: int = Field(default=5)
+    run_queue_worker_heartbeat_ttl_s: int = Field(default=60)
     run_batch_size: int = Field(default=100)
     use_migrations: bool = Field(default=False)
 

@@ -62,6 +62,7 @@
 | Observability | Trace ids + structured request logs + SLO endpoint | DONE | `X-Trace-Id` + `/slo` |
 | Runtime Scale | Queue worker execution + queue stats API | DONE | `run_queue` + `/v1/queue/stats` |
 | Runtime Scale | Redis queue backend + worker entrypoint | DONE | `AUTOREDTEAM_RUN_QUEUE_BACKEND=redis` + `python -m app.worker` |
+| Runtime Scale | Queue retries + DLQ + worker heartbeat telemetry | DONE | attempt envelope, retry/backoff, DLQ, live worker heartbeat |
 | CI | >10k deep-run load benchmark job | DONE | `pytest -m load` in deterministic CI |
 | CI | Postgres 10k+ API scale workflow | DONE | `pytest -m scale_pg` in `postgres-scale.yml` |
 | Security | Credential rotation policy enforcement | DONE | max-age/min-length/version bump checks |
@@ -69,6 +70,8 @@
 | Data Model | Hot-path composite DB indexes + migration | DONE | `run_events(run_id,id)` + `execution_costs(run_id,created_at)` |
 | Orchestration | Graph config validation + immutable lineage snapshots | DONE | profile validation + config hash/version binding |
 | Analytics | Reliability diagram + effect-size matrix + cooccurrence explorer | DONE | interactive DS panels in analytics page |
+| Analytics | Interactive charting layer for cost/reliability | DONE | recharts line/brush + scatter calibration |
+| Orchestration UX | Studio templates + graph validation + diff/version update | DONE | template node insertion + save/update safeguards |
 
 ## Test Matrix
 | Category | Status | Scope |
@@ -108,3 +111,4 @@
 - 2026-02-21: Added orchestration profile APIs and wizard React Flow orchestration studio, live run telemetry endpoint + monitor counters, calibration ECE/MCE diagnostics, and credential access audit trail with provider settings UI audit panel.
 - 2026-02-21: Added websocket run-event streaming + SSE fallback client, node telemetry endpoint/UI, queue worker runtime path + queue stats endpoint, batch run-loop commit optimization, strict credential rotation controls, KMS strict-mode support, and deterministic CI load benchmark job.
 - 2026-02-21: Added DB hot-path index migration + contract tests, redis queue backend with external worker entrypoint, orchestration graph validation and immutable profile hash binding, advanced analytics visuals (reliability/effect-size/cooccurrence explorer), and Postgres 10k+ scale workflow with query-plan and latency assertions.
+- 2026-02-21: Added distributed queue reliability controls (retry/DLQ/heartbeat/idempotency), upgraded orchestration studio with templates and diff/version workflow, and migrated cost/reliability charts to interactive recharts components.

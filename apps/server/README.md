@@ -33,6 +33,12 @@ AUTOREDTEAM_USE_MIGRATIONS=true uv run uvicorn app.main:app --reload
 - `inprocess` (default): web process worker threads
 - `redis`: external queue + dedicated worker process
 
+Redis queue reliability knobs:
+- `AUTOREDTEAM_RUN_QUEUE_MAX_RETRIES`
+- `AUTOREDTEAM_RUN_QUEUE_RETRY_BACKOFF_S`
+- `AUTOREDTEAM_RUN_QUEUE_REDIS_DLQ_KEY`
+- `AUTOREDTEAM_RUN_QUEUE_WORKER_HEARTBEAT_TTL_S`
+
 Run redis worker:
 
 ```bash

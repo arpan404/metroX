@@ -679,6 +679,10 @@ export default function WizardPage() {
                     type="button"
                     className="ghost"
                     onClick={async () => {
+                      if (studioValidationIssues.length > 0) {
+                        setError(`Fix studio issues before saving: ${studioValidationIssues.join('; ')}`)
+                        return
+                      }
                       const created = await api.createOrchestrationProfile({
                         name: orchestrationProfileName,
                         description: 'Created from wizard studio',
@@ -688,7 +692,8 @@ export default function WizardPage() {
                       })
                       setSelectedOrchestrationProfileId(created.id)
                       const payload = await api.listOrchestrationProfiles()
-                      setOrchestrationProfiles(payload.profiles as Array<{ id: string; name: string; config: Record<string, unknown> }>)
+                      setOrchestrationProfiles(payload.profiles)
+                      setError(null)
                     }}
                   >
                     Save Studio Profile
@@ -696,20 +701,30 @@ export default function WizardPage() {
                   <button
                     type="button"
                     className="ghost"
-                    onClick={() => {
-                      const id = `role-${Date.now()}`
-                      setStudioNodes((current) => [
-                        ...current,
-                        {
-                          id,
-                          type: 'studioNode',
-                          position: { x: 220 + Math.random() * 520, y: 80 + Math.random() * 260 },
-                          data: { label: 'Custom Role', role: 'custom', model: model || 'gpt-4.1-mini' },
-                        },
-                      ])
+                    onClick={addNodeFromTemplate}
+                  >
+                    Add Template Node
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost"
+                    disabled={!selectedOrchestrationProfileId}
+                    onClick={async () => {
+                      if (!selectedOrchestrationProfileId) return
+                      if (studioValidationIssues.length > 0) {
+                        setError(`Fix studio issues before updating: ${studioValidationIssues.join('; ')}`)
+                        return
+                      }
+                      await api.updateOrchestrationProfile(selectedOrchestrationProfileId, {
+                        version: profileVersionNext || undefined,
+                        config: studioConfig,
+                      })
+                      const payload = await api.listOrchestrationProfiles()
+                      setOrchestrationProfiles(payload.profiles)
+                      setError(null)
                     }}
                   >
-                    Add Role Node
+                    Update Profile Version
                   </button>
                 </div>
               </div>
@@ -727,22 +742,40 @@ export default function WizardPage() {
                       setSelectedOrchestrationProfileId(nextId)
                       const item = orchestrationProfiles.find((profile) => profile.id === nextId)
                       if (!item) return
-                      const cfg = item.config || {}
+                      const cfg = (item.config || {}) as Record<string, unknown>
                       const maybeNodes = (cfg.graph as Record<string, unknown> | undefined)?.nodes
                       const maybeEdges = (cfg.graph as Record<string, unknown> | undefined)?.edges
                       if (Array.isArray(maybeNodes)) setStudioNodes(maybeNodes as Node<StudioNodeData>[])
                       if (Array.isArray(maybeEdges)) setStudioEdges(maybeEdges as Edge[])
                       if (typeof cfg.join_policy === 'string') setJoinPolicy(cfg.join_policy)
                       if (typeof cfg.subagent_router_strategy === 'string') setRouterStrategy(cfg.subagent_router_strategy)
+                      if (typeof item.version === 'string' && item.version.startsWith('v')) {
+                        const n = Number(item.version.slice(1))
+                        if (Number.isFinite(n) && n > 0) setProfileVersionNext(`v${n + 1}`)
+                      }
                     }}
                   >
                     <option value="">none</option>
                     {orchestrationProfiles.map((profile) => (
                       <option key={profile.id} value={profile.id}>
-                        {profile.name}
+                        {profile.name} ({profile.version})
                       </option>
                     ))}
                   </select>
+                </label>
+                <label>
+                  Node Template
+                  <select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>
+                    {NODE_TEMPLATES.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Next Profile Version
+                  <input value={profileVersionNext} onChange={(event) => setProfileVersionNext(event.target.value)} />
                 </label>
                 <label>
                   Join Policy
@@ -785,6 +818,37 @@ export default function WizardPage() {
                 <summary>Studio JSON</summary>
                 <pre className="json">{JSON.stringify(studioConfig, null, 2)}</pre>
               </details>
+              <div className="panel stack-sm">
+                <h3>Studio Validation</h3>
+                {studioValidationIssues.length === 0 ? (
+                  <p className="success">No graph issues detected.</p>
+                ) : (
+                  <ul className="studio-list">
+                    {studioValidationIssues.map((issue) => (
+                      <li key={issue}>{issue}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              {selectedOrchestrationProfile && (
+                <div className="panel stack-sm">
+                  <h3>Profile Diff Preview</h3>
+                  <p className="caption">
+                    Comparing current graph with saved profile <strong>{selectedOrchestrationProfile.name}</strong>
+                  </p>
+                  {studioDiff.length === 0 ? (
+                    <p className="caption">No structural differences.</p>
+                  ) : (
+                    <ul className="studio-list">
+                      {studioDiff.map((row) => (
+                        <li key={row.label}>
+                          <strong>{row.label}:</strong> {row.value}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}

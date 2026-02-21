@@ -272,6 +272,7 @@ This remains frontend-first: users fully configure targets, scoring, and session
   - `redis` (external queue + dedicated worker process)
 - Added worker entrypoint: `python -m app.worker` (`make server-worker`).
 - Resume API now follows queue backend policy (not direct background bypass).
+- Added retry + DLQ controls and worker heartbeat reporting for Redis queue mode.
 
 ### Orchestration profile immutability + validation
 - Added orchestration graph/config validation:
@@ -285,8 +286,25 @@ This remains frontend-first: users fully configure targets, scoring, and session
 ### DS UX upgrades
 - Analytics now includes:
   - effect-size matrix (adjusted p + power in-cell)
-  - reliability diagram (confidence vs accuracy)
+  - reliability diagram (confidence vs accuracy) with interactive scatter chart
   - interactive co-occurrence explorer with weight threshold and node drill-in.
+- Cost trend now uses interactive line chart with brush/tooltip.
+
+## V1.9 Delta (Current)
+
+### Distributed queue reliability pass
+- Redis queue payload upgraded to typed envelope (`run_id`, `attempt`).
+- Added retry budget + backoff and DLQ sink:
+  - `run_queue_max_retries`
+  - `run_queue_retry_backoff_s`
+  - `run_queue_redis_dlq_key`
+- Added worker liveness heartbeats in Redis and surfaced in queue stats.
+- Added idempotency guardrails to skip terminal/already-running runs.
+
+### Orchestration Studio UX pass
+- Added role template catalog (attacker/critic/verifier/analyst/tool-auditor/cost-optimizer).
+- Added client-side graph validation (coordinator required, unique roles, edge integrity, no self loops).
+- Added saved-profile diff preview and profile version update workflow from studio.
 
 ### Scale CI
 - Added Postgres 10k+ scale workflow:

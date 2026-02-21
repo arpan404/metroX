@@ -64,6 +64,7 @@ The product must function as **unit tests for AI behavior**, not as a prompt dem
 - Orchestration must be profile-driven: reusable orchestration profiles should be first-class API entities and selectable from frontend configuration.
 - Orchestration profile configs must pass graph-schema validation before persistence (role uniqueness, edge integrity, supported join/router values).
 - Config/run snapshotting must include immutable orchestration lineage metadata (profile version + config hash).
+- Wizard UX must surface orchestration validation and profile-diff context before save/update.
 
 ## Provider and Cost Intelligence Requirements
 - Support `litellm` and `openai_compatible` provider configuration from frontend.
@@ -85,6 +86,7 @@ The product must function as **unit tests for AI behavior**, not as a prompt dem
 - Node-level telemetry must expose per-attack success/failure/latency/cost to match monitor aggregates.
 - Run scheduling must support queued worker mode for deep runs; queue stats should be exposed for ops debugging.
 - Queue runtime must support both `inprocess` and `redis` backends without changing API contracts.
+- Redis queue mode must support retry budgets, DLQ routing, and worker heartbeat telemetry.
 
 ## Frontend and DX Rules
 - Full run configuration must be possible from UI (no mandatory CLI edits).

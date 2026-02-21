@@ -72,6 +72,7 @@ It evaluates not only final answers, but full agent contracts:
   - calibration payloads
   - cooccurrence graph payloads
   - forecast payloads
+  - interactive charts for cost trend and calibration reliability
 
 ## 5. Data Science Layers
 1. Feature store with versioned definitions
@@ -92,6 +93,7 @@ It evaluates not only final answers, but full agent contracts:
 - Queue runtime:
   - `inprocess` worker threads for local/dev
   - `redis` external queue + dedicated worker process for production
+  - retry/backoff, DLQ, and worker heartbeat telemetry in redis mode
 
 ## 7. API Surface (V1)
 - Sessions and config profiles

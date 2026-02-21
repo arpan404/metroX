@@ -1,4 +1,17 @@
 import { useMemo, useState } from 'react'
+import {
+  Brush,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Scatter,
+  ScatterChart,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 
 import { api } from '../lib/api'
 import { loadState } from '../lib/state'
@@ -12,69 +25,70 @@ import type {
   Scorecard,
 } from '../lib/types'
 
-function AxisLine({ points, color = '#17a2b8' }: { points: number[]; color?: string }) {
+function CostTrendChart({
+  points,
+}: {
+  points: Array<{ step: number; cumulative_cost_usd: number; cost_usd: number }>
+}) {
   if (!points.length) return <p className="caption">No chart data.</p>
-  const width = 420
-  const height = 140
-  const min = Math.min(...points)
-  const max = Math.max(...points)
-  const span = max - min || 1
-  const line = points
-    .map((value, idx) => {
-      const x = (idx / Math.max(points.length - 1, 1)) * width
-      const y = height - ((value - min) / span) * height
-      return `${x},${y}`
-    })
-    .join(' ')
   return (
-    <svg width={width} height={height + 24} className="chart-svg" role="img" aria-label="line chart with axis">
-      <line x1="0" y1={height} x2={width} y2={height} stroke="#2f3d52" />
-      <line x1="0" y1="0" x2="0" y2={height} stroke="#2f3d52" />
-      <polyline fill="none" stroke={color} strokeWidth="2" points={line} />
-      <text x="0" y={height + 16} fill="#8fa0b3" fontSize="10">step 1</text>
-      <text x={width - 48} y={height + 16} fill="#8fa0b3" fontSize="10">latest</text>
-    </svg>
+    <div className="chart-box" role="img" aria-label="cost trend chart">
+      <ResponsiveContainer width="100%" height={220}>
+        <LineChart data={points} margin={{ top: 12, right: 10, left: 8, bottom: 12 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+          <XAxis dataKey="step" tick={{ fill: '#8fa0b3', fontSize: 11 }} />
+          <YAxis tick={{ fill: '#8fa0b3', fontSize: 11 }} />
+          <Tooltip
+            contentStyle={{ background: '#0c141f', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8 }}
+            formatter={(value: number) => [`$${Number(value).toFixed(4)}`, 'cumulative']}
+          />
+          <Line type="monotone" dataKey="cumulative_cost_usd" stroke="#17a2b8" strokeWidth={2} dot={false} />
+          <Brush dataKey="step" height={18} stroke="#f8cb52" travellerWidth={8} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   )
 }
 
 function ReliabilityDiagram({ bins }: { bins: Array<Record<string, unknown>> }) {
-  const width = 360
-  const height = 220
   const points = bins
     .map((row) => ({
-      x: Number(row.avg_confidence ?? 0),
-      y: Number(row.avg_accuracy ?? 0),
-      n: Number(row.count ?? 0),
-      failure: String(row.failure_type ?? 'unknown'),
+      confidence: Number(row.avg_confidence ?? 0),
+      accuracy: Number(row.avg_accuracy ?? 0),
+      count: Number(row.count ?? 0),
+      failure_type: String(row.failure_type ?? 'unknown'),
     }))
-    .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
+    .filter((p) => Number.isFinite(p.confidence) && Number.isFinite(p.accuracy))
   if (!points.length) return <p className="caption">No reliability bins.</p>
 
   return (
-    <svg width={width} height={height} className="chart-svg" role="img" aria-label="reliability diagram">
-      <rect x="0" y="0" width={width} height={height} fill="rgba(6,10,16,0.45)" />
-      <line x1="26" y1={height - 20} x2={width - 12} y2="12" stroke="#6b7f99" strokeDasharray="4 4" />
-      <line x1="26" y1={height - 20} x2={width - 12} y2={height - 20} stroke="#3c4d63" />
-      <line x1="26" y1={height - 20} x2="26" y2="12" stroke="#3c4d63" />
-      {points.map((point, idx) => {
-        const cx = 26 + point.x * (width - 38)
-        const cy = (height - 20) - point.y * (height - 32)
-        const radius = Math.max(4, Math.min(12, Math.sqrt(point.n)))
-        return (
-          <circle
-            key={`${point.failure}-${idx}`}
-            cx={cx}
-            cy={cy}
-            r={radius}
-            fill="rgba(0,179,164,0.65)"
-            stroke="rgba(248,203,82,0.7)"
-            strokeWidth="1"
+    <div className="chart-box" role="img" aria-label="reliability diagram">
+      <ResponsiveContainer width="100%" height={240}>
+        <ScatterChart margin={{ top: 16, right: 14, left: 8, bottom: 12 }}>
+          <CartesianGrid stroke="rgba(255,255,255,0.1)" />
+          <XAxis
+            type="number"
+            dataKey="confidence"
+            domain={[0, 1]}
+            tick={{ fill: '#8fa0b3', fontSize: 11 }}
+            name="Confidence"
           />
-        )
-      })}
-      <text x="30" y="18" fill="#8fa0b3" fontSize="10">accuracy</text>
-      <text x={width - 78} y={height - 6} fill="#8fa0b3" fontSize="10">confidence</text>
-    </svg>
+          <YAxis
+            type="number"
+            dataKey="accuracy"
+            domain={[0, 1]}
+            tick={{ fill: '#8fa0b3', fontSize: 11 }}
+            name="Accuracy"
+          />
+          <Tooltip
+            cursor={{ strokeDasharray: '4 4' }}
+            contentStyle={{ background: '#0c141f', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8 }}
+          />
+          <ReferenceLine segment={[{ x: 0, y: 0 }, { x: 1, y: 1 }]} stroke="#f8cb52" strokeDasharray="4 4" />
+          <Scatter name="Calibration bins" data={points} fill="rgba(0,179,164,0.8)" />
+        </ScatterChart>
+      </ResponsiveContainer>
+    </div>
   )
 }
 
@@ -372,7 +386,13 @@ export default function AnalyticsPage() {
               <p>Estimated: ${costSummary.totals.estimated_cost.toFixed(4)}</p>
             </>
           ) : <p className="caption">No cost summary loaded.</p>}
-          <AxisLine points={(costTimeseries?.points ?? []).map((point) => point.cumulative_cost_usd)} />
+          <CostTrendChart
+            points={(costTimeseries?.points ?? []).map((point, idx) => ({
+              step: idx + 1,
+              cumulative_cost_usd: point.cumulative_cost_usd,
+              cost_usd: point.cost_usd,
+            }))}
+          />
         </div>
       </div>
 

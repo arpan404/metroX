@@ -160,14 +160,14 @@ class AFKLLMRuntimeAdapter(TargetAdapter):
 
 
 class AFKManagedAgentRuntimeAdapter(TargetAdapter):
-    """Adapter for AFK-based managed agent execution."""
+    """Adapter for runtime-based managed agent execution."""
 
     def invoke(self, request: TargetRequest) -> TargetResponse:
         try:
             from afk.agents import Agent  # type: ignore
             from afk.core import Runner  # type: ignore
         except ImportError as exc:  # pragma: no cover
-            raise RuntimeError("AFK SDK is not installed") from exc
+            raise RuntimeError("Runtime SDK is not installed") from exc
 
         start = perf_counter()
         prompts_dir_default = str(Path(__file__).resolve().parents[2] / "prompts" / "target")
@@ -452,4 +452,4 @@ def _runner_sync_with_timeout(
         try:
             return future.result(timeout=max(float(timeout_s), 1.0))
         except FuturesTimeoutError as exc:
-            raise TimeoutError(f"AFK sync run timed out after {timeout_s}s") from exc
+            raise TimeoutError(f"Runtime sync run timed out after {timeout_s}s") from exc

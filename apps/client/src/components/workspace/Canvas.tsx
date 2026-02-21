@@ -191,9 +191,11 @@ export function Canvas() {
       // Auto-open attack detail for attack nodes
       if (attackType) {
         dispatch({ type: 'OPEN_PANEL', panel: 'attack-detail' })
+      } else if (state.canvasMode === 'studio' && node.type === 'studioRole') {
+        dispatch({ type: 'OPEN_PANEL', panel: 'studio-inspector' })
       }
     },
-    [dispatch],
+    [dispatch, state.canvasMode],
   )
 
   const onPaneClick = useCallback(() => {
@@ -466,7 +468,20 @@ function NodeContextMenu({
 }) {
   const { state, dispatch, actions } = useWorkspace()
   const isStudioNode = state.canvasMode === 'studio' && node.type === 'studioRole'
-  const nodeData = node.data as { label?: string; role?: string; model?: string; description?: string } | undefined
+  const nodeData = node.data as {
+    label?: string
+    role?: string
+    model?: string
+    description?: string
+    enabled?: boolean
+    runtime_provider?: string
+    api_key_ref?: string
+    base_url?: string
+    instruction_file?: string
+    instructions?: string
+    auth_headers?: Record<string, string>
+    extra?: Record<string, unknown>
+  } | undefined
   const runStatus = state.runData?.status
   const canResume = runStatus === 'failed' || runStatus === 'interrupted'
   const canRerun = Boolean(state.runData)
@@ -486,6 +501,14 @@ function NodeContextMenu({
           label: `${nodeData.label} Copy`,
           model: nodeData.model,
           description: nodeData.description,
+          enabled: nodeData.enabled ?? true,
+          runtime_provider: nodeData.runtime_provider,
+          api_key_ref: nodeData.api_key_ref,
+          base_url: nodeData.base_url,
+          instruction_file: nodeData.instruction_file,
+          instructions: nodeData.instructions,
+          auth_headers: nodeData.auth_headers,
+          extra: nodeData.extra,
         },
       },
     })
@@ -636,6 +659,21 @@ function NodeInfoDialog({
   if (typeof nodeData.label === 'string' && nodeData.label.trim()) rows.push({ label: 'Name', value: nodeData.label })
   if (typeof nodeData.role === 'string' && nodeData.role.trim()) rows.push({ label: 'Agent', value: nodeData.role })
   if (typeof nodeData.model === 'string' && nodeData.model.trim()) rows.push({ label: 'Model', value: nodeData.model })
+  if (typeof nodeData.runtime_provider === 'string' && nodeData.runtime_provider.trim()) {
+    rows.push({ label: 'Runtime Provider', value: nodeData.runtime_provider })
+  }
+  if (typeof nodeData.api_key_ref === 'string' && nodeData.api_key_ref.trim()) {
+    rows.push({ label: 'API Key Ref', value: nodeData.api_key_ref })
+  }
+  if (typeof nodeData.base_url === 'string' && nodeData.base_url.trim()) {
+    rows.push({ label: 'Base URL', value: nodeData.base_url })
+  }
+  if (typeof nodeData.instruction_file === 'string' && nodeData.instruction_file.trim()) {
+    rows.push({ label: 'Instruction File', value: nodeData.instruction_file })
+  }
+  if (typeof nodeData.instructions === 'string' && nodeData.instructions.trim()) {
+    rows.push({ label: 'Custom Instructions', value: nodeData.instructions })
+  }
   if (typeof nodeData.attackType === 'string' && nodeData.attackType.trim()) rows.push({ label: 'Attack Type', value: nodeData.attackType })
   if (typeof nodeData.status === 'string' && nodeData.status.trim()) rows.push({ label: 'Status', value: nodeData.status })
   if (typeof nodeData.total === 'number') rows.push({ label: 'Total Samples', value: String(nodeData.total) })

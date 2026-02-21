@@ -55,7 +55,34 @@ class TargetConfig(BaseModel):
     provider_name: str | None = None
     base_url: str | None = None
     api_key_ref: str | None = None
+    agent_index_url: str | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentIndexAgentCreate(BaseModel):
+    name: str
+    model: str = "gpt-4.1-mini"
+    instructions: str | None = None
+    instruction_file: str | None = None
+    prompts_dir: str | None = None
+    context: dict[str, Any] = Field(default_factory=dict)
+    status: str = "active"
+
+
+class AgentIndexAgentOut(BaseModel):
+    id: str
+    name: str
+    model: str
+    status: str
+    created_at: datetime
+
+
+class AgentIndexInvoke(BaseModel):
+    message: str | None = None
+    prompt: str | None = None
+    thread_id: str | None = None
+    run_id: str | None = None
+    telemetry: str | None = None
 
 
 class AFKRoleConfig(BaseModel):
@@ -66,6 +93,11 @@ class AFKRoleConfig(BaseModel):
     model: str | None = None
     instruction_file: str | None = None
     instructions: str | None = None
+    runtime_provider: str | None = None
+    api_key_ref: str | None = None
+    base_url: str | None = None
+    auth_headers: dict[str, str] = Field(default_factory=dict)
+    extra: dict[str, Any] = Field(default_factory=dict)
 
 
 class AFKGraphNode(BaseModel):
@@ -139,6 +171,7 @@ class AFKOrchestrationConfig(BaseModel):
             AFKRoleConfig(name="critic", enabled=True, instruction_file="critic.md"),
             AFKRoleConfig(name="verifier", enabled=True, instruction_file="verifier.md"),
             AFKRoleConfig(name="analyst", enabled=True, instruction_file="analyst.md"),
+            AFKRoleConfig(name="fraud_analyst", enabled=True, instruction_file="fraud_analyst.md"),
         ]
     )
 

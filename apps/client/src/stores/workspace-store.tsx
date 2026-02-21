@@ -35,7 +35,7 @@ import type {
 /*  Types                                                             */
 /* ------------------------------------------------------------------ */
 
-export type PanelId = 'config' | 'analytics' | 'settings' | 'attack-detail'
+export type PanelId = 'config' | 'analytics' | 'settings' | 'attack-detail' | 'studio-inspector'
 export type CanvasMode = 'evaluate' | 'studio'
 
 export type RunEvent = {
@@ -97,7 +97,20 @@ export type WorkspaceState = {
     id: string
     type: string
     position: { x: number; y: number }
-    data: { label: string; role: string; model?: string; description?: string }
+    data: {
+      label: string
+      role: string
+      model?: string
+      description?: string
+      enabled?: boolean
+      runtime_provider?: string
+      api_key_ref?: string
+      base_url?: string
+      instruction_file?: string
+      instructions?: string
+      auth_headers?: Record<string, string>
+      extra?: Record<string, unknown>
+    }
   }>
   studioEdges: Array<{
     id: string
@@ -149,6 +162,7 @@ export type WorkspaceAction =
   | { type: 'UPDATE_STUDIO_NODE_POSITION'; nodeId: string; position: { x: number; y: number } }
   | { type: 'REMOVE_STUDIO_NODE'; nodeId: string }
   | { type: 'SET_STUDIO_EDGES'; edges: WorkspaceState['studioEdges'] }
+  | { type: 'SET_STUDIO_GRAPH'; nodes: WorkspaceState['studioNodes']; edges: WorkspaceState['studioEdges'] }
   | { type: 'APPLY_TEMPLATE'; template: { name: string; config: Record<string, unknown> } }
   | { type: 'RESET' }
 
@@ -353,6 +367,8 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
       }
     case 'SET_STUDIO_EDGES':
       return { ...state, studioEdges: action.edges }
+    case 'SET_STUDIO_GRAPH':
+      return { ...state, studioNodes: action.nodes, studioEdges: action.edges, selectedNodeId: null, selectedAttackType: null }
     case 'APPLY_TEMPLATE':
       // Template data stored in activePanel config via side-effect; just open config panel
       return { ...state, activePanel: 'config' }

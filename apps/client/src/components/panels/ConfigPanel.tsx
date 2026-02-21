@@ -138,6 +138,11 @@ const TOOL_CHIPS = [
 const iconMap: Record<string, typeof Zap> = { Zap, Shield, Microscope, GitBranch, Moon }
 const stagger = (i: number) => ({ duration: 0.4, delay: i * 0.06 })
 
+function displayTag(tag: string): string {
+  if (tag === 'afk_judge') return 'runtime judge'
+  return tag
+}
+
 /* ------------------------------------------------------------------ */
 /*  ComboField — Select with "Custom..." escape hatch                  */
 /* ------------------------------------------------------------------ */
@@ -275,7 +280,7 @@ function TagPicker({
                 : 'bg-card border-border text-muted-foreground hover:border-primary/60 hover:text-foreground',
             )}
           >
-            {tag}
+            {displayTag(tag)}
           </button>
         ))}
       </div>
@@ -970,7 +975,7 @@ export function ConfigPanel({ onRunLaunched }: { onRunLaunched: (runId: string) 
                 <Input value={targetAgentName} onChange={(e) => setTargetAgentName(e.target.value)} className="h-8 text-xs" />
               </div>
               <div className="space-y-2">
-                <Label className="text-xs">AFK Timeout (s)</Label>
+                <Label className="text-xs">Runtime Timeout (s)</Label>
                 <Input
                   type="number"
                   min={1}
@@ -980,7 +985,7 @@ export function ConfigPanel({ onRunLaunched }: { onRunLaunched: (runId: string) 
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-xs">AFK Resume Run ID</Label>
+                <Label className="text-xs">Resume Run ID</Label>
                 <Input
                   value={afkRunId}
                   onChange={(e) => setAfkRunId(e.target.value)}
@@ -991,11 +996,11 @@ export function ConfigPanel({ onRunLaunched }: { onRunLaunched: (runId: string) 
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-2 rounded-md border border-border px-2 py-2">
-                <Label className="text-xs">AFK Stream</Label>
+                <Label className="text-xs">Runtime Stream</Label>
                 <Switch checked={afkStream} onCheckedChange={setAfkStream} />
               </div>
               <div className="space-y-2 rounded-md border border-border px-2 py-2">
-                <Label className="text-xs">AFK Resume</Label>
+                <Label className="text-xs">Runtime Resume</Label>
                 <Switch checked={afkResume} onCheckedChange={setAfkResume} />
               </div>
             </div>
@@ -1051,7 +1056,7 @@ export function ConfigPanel({ onRunLaunched }: { onRunLaunched: (runId: string) 
                   <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="auto" className="text-xs">auto</SelectItem>
-                    <SelectItem value="afk_live" className="text-xs">afk_live</SelectItem>
+                    <SelectItem value="afk_live" className="text-xs">Live Runtime</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

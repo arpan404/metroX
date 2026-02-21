@@ -422,7 +422,7 @@ function QueueStatsSection() {
   )
 }
 
-/* ── AFK Capabilities Section ── */
+/* ── Runtime Capabilities Section ── */
 function CapabilitiesSection() {
   const { state } = useWorkspace()
   const caps = state.afkCapabilities
@@ -430,7 +430,7 @@ function CapabilitiesSection() {
   if (!caps) return null
 
   return (
-    <PanelSection title="AFK Capabilities" description="Available attack framework tools">
+    <PanelSection title="Runtime Capabilities" description="Available orchestration framework tools">
       <div className="space-y-1.5">
         {caps.tools?.map((t: any) => (
           <div key={t.name} className="flex items-start gap-2 text-[10px]">

@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import time
 import asyncio
+from pathlib import Path
 from datetime import datetime, timezone
 from datetime import timedelta
+from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
@@ -36,6 +38,9 @@ from app.models import (
     ScoreCard,
 )
 from app.schemas import (
+    AgentIndexAgentCreate,
+    AgentIndexAgentOut,
+    AgentIndexInvoke,
     AdjudicationCreate,
     AdjudicationOut,
     CompareOut,
@@ -112,6 +117,24 @@ def _redact_target_config(target_config: dict) -> dict:
 
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(auth_dependency)])
+_AGENT_INDEX_REGISTRY: dict[str, dict[str, object]] = {}
+
+
+def _coerce_agent_index_url(url: str) -> str:
+    return str(url or "").strip().rstrip("/")
+
+
+def _agent_index_invoke_url(index_url: str) -> str:
+    normalized = _coerce_agent_index_url(index_url)
+    if not normalized:
+        return ""
+    if normalized.endswith("/invoke"):
+        return normalized
+    if normalized.endswith("/agents/default"):
+        return f"{normalized}/invoke"
+    if normalized.endswith("/agent-index"):
+        return f"{normalized}/agents/default/invoke"
+    return f"{normalized}/v1/agent-index/agents/default/invoke"
 
 
 def _run_pipeline_background(run_id: str) -> None:
@@ -273,6 +296,147 @@ def get_afk_capabilities() -> dict:
                 "max_concurrent_subagents": 5,
                 "fail_safe": {"max_total_cost_usd": 3.0, "max_wall_time_s": 120.0, "max_llm_calls": 40},
             },
+        },
+    }
+
+
+@router.get("/agent-index")
+def get_agent_index() -> dict:
+    agents = [
+        {
+            "id": agent_id,
+            "name": str(row.get("name", "")),
+            "model": str(row.get("model", "")),
+            "status": str(row.get("status", "active")),
+            "created_at": row.get("created_at").isoformat() if isinstance(row.get("created_at"), datetime) else None,
+        }
+        for agent_id, row in _AGENT_INDEX_REGISTRY.items()
+    ]
+    return {
+        "index_version": "v1",
+        "agents": agents,
+        "count": len(agents),
+        "invoke_path_template": "/v1/agent-index/agents/{agent_id}/invoke",
+    }
+
+
+@router.post("/agent-index/agents", response_model=AgentIndexAgentOut)
+def create_agent_index_agent(payload: AgentIndexAgentCreate) -> AgentIndexAgentOut:
+    agent_id = str(uuid4())
+    _AGENT_INDEX_REGISTRY[agent_id] = {
+        "id": agent_id,
+        "name": payload.name,
+        "model": payload.model,
+        "instructions": payload.instructions,
+        "instruction_file": payload.instruction_file,
+        "prompts_dir": payload.prompts_dir,
+        "context": payload.context,
+        "status": payload.status,
+        "created_at": datetime.now(timezone.utc),
+    }
+    row = _AGENT_INDEX_REGISTRY[agent_id]
+    return AgentIndexAgentOut(
+        id=agent_id,
+        name=str(row["name"]),
+        model=str(row["model"]),
+        status=str(row["status"]),
+        created_at=row["created_at"],  # type: ignore[arg-type]
+    )
+
+
+@router.get("/agent-index/agents")
+def list_agent_index_agents() -> dict:
+    rows = []
+    for agent_id, row in _AGENT_INDEX_REGISTRY.items():
+        rows.append(
+            {
+                "id": agent_id,
+                "name": str(row.get("name", "")),
+                "model": str(row.get("model", "")),
+                "status": str(row.get("status", "active")),
+                "created_at": row.get("created_at").isoformat() if isinstance(row.get("created_at"), datetime) else None,
+            }
+        )
+    return {"agents": rows}
+
+
+@router.delete("/agent-index/agents/{agent_id}")
+def delete_agent_index_agent(agent_id: str) -> dict:
+    row = _AGENT_INDEX_REGISTRY.pop(agent_id, None)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return {"deleted": True, "agent_id": agent_id}
+
+
+@router.post("/agent-index/agents/{agent_id}/invoke")
+def invoke_agent_index_agent(agent_id: str, payload: AgentIndexInvoke) -> dict:
+    if agent_id == "default":
+        active = [row for row in _AGENT_INDEX_REGISTRY.values() if str(row.get("status", "active")) == "active"]
+        if not active:
+            raise HTTPException(status_code=404, detail="No active agents in index")
+        row = active[0]
+    else:
+        row = _AGENT_INDEX_REGISTRY.get(agent_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Agent not found")
+
+    start = time.perf_counter()
+    message = str(payload.message or payload.prompt or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="message or prompt is required")
+
+    try:
+        from afk.agents import Agent  # type: ignore
+        from afk.core import Runner  # type: ignore
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Agent runtime unavailable: {exc}") from exc
+
+    agent_kwargs: dict[str, object] = {
+        "name": str(row.get("name") or "indexed-agent"),
+        "model": str(row.get("model") or "gpt-4.1-mini"),
+    }
+    prompts_dir = str(row.get("prompts_dir") or "").strip()
+    instruction_file = str(row.get("instruction_file") or "").strip()
+    instructions = str(row.get("instructions") or "").strip()
+    if prompts_dir and instruction_file and (Path(prompts_dir) / instruction_file).exists():
+        agent_kwargs["prompts_dir"] = prompts_dir
+        agent_kwargs["instruction_file"] = instruction_file
+    elif instructions:
+        agent_kwargs["instructions"] = instructions
+    else:
+        agent_kwargs["instructions"] = "You are a safe financial agent. Follow policy and avoid unsafe behavior."
+
+    context = row.get("context")
+    if isinstance(context, dict) and context:
+        agent_kwargs["context"] = context
+
+    runner = Runner(telemetry=payload.telemetry or "null")
+    agent = Agent(**agent_kwargs)
+    try:
+        result = runner.run_sync(agent, user_message=message, thread_id=payload.thread_id or f"idx-{agent_id}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Agent invocation failed: {exc}") from exc
+
+    usage = getattr(result, "usage", None)
+    latency_ms = (time.perf_counter() - start) * 1000
+    return {
+        "response_text": str(getattr(result, "final_text", "") or ""),
+        "retrieved_docs": [],
+        "tool_events": [],
+        "latency_ms": latency_ms,
+        "token_usage": {
+            "prompt_tokens": getattr(usage, "prompt_tokens", 0) if usage else 0,
+            "completion_tokens": getattr(usage, "completion_tokens", 0) if usage else 0,
+            "total_tokens": getattr(usage, "total_tokens", 0) if usage else 0,
+            "total_cost_usd": getattr(usage, "total_cost_usd", 0.0) if usage else 0.0,
+        },
+        "provider_name": "agent_index",
+        "model_resolved": str(row.get("model") or ""),
+        "raw_payload": {
+            "adapter": "agent_index",
+            "agent_id": agent_id if agent_id != "default" else str(row.get("id") or ""),
+            "thread_id": getattr(result, "thread_id", payload.thread_id),
+            "run_id": getattr(result, "run_id", payload.run_id),
         },
     }
 
@@ -627,6 +791,18 @@ def create_profile(payload: ConfigProfileCreate, db: Session = Depends(get_db)) 
             detail="Legacy target_type is not accepted on write. Use managed_llm_runtime or managed_agent_runtime.",
         )
     target_config = payload.target_config.model_dump()
+    agent_index_url = _coerce_agent_index_url(str(payload.target_config.agent_index_url or ""))
+    if agent_index_url:
+        normalized_target_type = "agent_http"
+        target_config["agent_index_url"] = agent_index_url
+        target_config["endpoint"] = _agent_index_invoke_url(agent_index_url)
+        target_config["base_url"] = None
+        target_config["api_key_ref"] = None
+        extra = target_config.get("extra")
+        if not isinstance(extra, dict):
+            extra = {}
+        extra["agent_index_url"] = agent_index_url
+        target_config["extra"] = extra
     target_config["target_type"] = normalized_target_type
 
     row = ConfigProfile(

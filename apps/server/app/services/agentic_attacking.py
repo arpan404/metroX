@@ -199,15 +199,31 @@ class MultiAgentAttackOrchestrator:
             fail_safe=fail_safe,
         )
 
+        raw_orchestration_payload = (
+            self.config.get("afk_orchestration", {})
+            if isinstance(self.config.get("afk_orchestration", {}), dict)
+            else {}
+        )
+        orchestration_context = _build_orchestration_context(self.orchestration, raw_orchestration_payload)
+        campaign_context = _build_campaign_context(raw_orchestration_payload)
+        coordinator_request = {
+            "task": "generate_attack_case",
+            "seed": {
+                "attack_type": seed.attack_type,
+                "family": seed.family,
+                "target_behavior": seed.target_behavior,
+                "seed_prompt": seed.base_prompt,
+                "variant": seed.variant,
+            },
+            "orchestration_context": orchestration_context,
+            "campaign_context": campaign_context,
+        }
+
         coordinator_out = _safe_json(
             _runner_text(
                 runner,
                 coordinator,
-                (
-                    "Generate one attack-case orchestration output. "
-                    f"attack_type={seed.attack_type}; family={seed.family}; behavior={seed.target_behavior}; "
-                    f"seed_prompt={seed.base_prompt}; variant={seed.variant}"
-                ),
+                json.dumps(coordinator_request, ensure_ascii=False),
             )
         )
 
@@ -216,9 +232,17 @@ class MultiAgentAttackOrchestrator:
         verifier_out = _to_dict(coordinator_out.get("verifier"))
         analyst_out = _to_dict(coordinator_out.get("analyst"))
 
-        attacker_input = (
-            f"attack_type={seed.attack_type}; family={seed.family}; behavior={seed.target_behavior}; "
-            f"seed_prompt={seed.base_prompt}; variant={seed.variant}"
+        attacker_input = json.dumps(
+            {
+                "attack_type": seed.attack_type,
+                "family": seed.family,
+                "target_behavior": seed.target_behavior,
+                "seed_prompt": seed.base_prompt,
+                "variant": seed.variant,
+                "orchestration_context": orchestration_context,
+                "campaign_context": campaign_context,
+            },
+            ensure_ascii=False,
         )
         if not attacker_out and "attacker" in role_agents:
             attacker_out = _safe_json(_runner_text(runner, role_agents["attacker"], attacker_input))
@@ -234,7 +258,15 @@ class MultiAgentAttackOrchestrator:
                 _runner_text(
                     runner,
                     role_agents["critic"],
-                    f"attack_type={seed.attack_type}; prompt={prompt}",
+                    json.dumps(
+                        {
+                            "attack_type": seed.attack_type,
+                            "prompt": prompt,
+                            "orchestration_context": orchestration_context,
+                            "campaign_context": campaign_context,
+                        },
+                        ensure_ascii=False,
+                    ),
                 )
             )
 
@@ -247,7 +279,16 @@ class MultiAgentAttackOrchestrator:
                 _runner_text(
                     runner,
                     role_agents["verifier"],
-                    f"attack_type={seed.attack_type}; prompt={prompt}",
+                    json.dumps(
+                        {
+                            "attack_type": seed.attack_type,
+                            "target_behavior": seed.target_behavior,
+                            "prompt": prompt,
+                            "orchestration_context": orchestration_context,
+                            "campaign_context": campaign_context,
+                        },
+                        ensure_ascii=False,
+                    ),
                 )
             )
 
@@ -256,7 +297,16 @@ class MultiAgentAttackOrchestrator:
                 _runner_text(
                     runner,
                     role_agents["analyst"],
-                    f"attack_type={seed.attack_type}; family={seed.family}; prompt={prompt}",
+                    json.dumps(
+                        {
+                            "attack_type": seed.attack_type,
+                            "family": seed.family,
+                            "prompt": prompt,
+                            "orchestration_context": orchestration_context,
+                            "campaign_context": campaign_context,
+                        },
+                        ensure_ascii=False,
+                    ),
                 )
             )
 
@@ -445,6 +495,57 @@ def _instruction_kwargs(
         if instruction_path.exists():
             return {"prompts_dir": prompts_dir, "instruction_file": instruction_file}
     return {"instructions": inline_instructions}
+
+
+def _build_orchestration_context(config: OrchestrationConfig, raw_payload: dict[str, Any]) -> dict[str, Any]:
+    enabled_roles = [role.name for role in config.roles if role.enabled]
+    disabled_roles = [role.name for role in config.roles if not role.enabled]
+    return {
+        "enabled_roles": enabled_roles,
+        "disabled_roles": disabled_roles,
+        "join_policy": config.join_policy,
+        "subagent_router_strategy": config.subagent_router_strategy,
+        "max_concurrent_subagents": config.max_concurrent_subagents,
+        "interaction_mode": config.interaction_mode,
+        "approval_fallback": config.approval_fallback,
+        "input_fallback": config.input_fallback,
+        "threading": config.threading,
+        "telemetry": config.telemetry,
+        "model": config.model,
+        "target_type": str(raw_payload.get("target_type", "")) or None,
+    }
+
+
+def _build_campaign_context(raw_payload: dict[str, Any]) -> dict[str, Any]:
+    max_iterations_raw = raw_payload.get("max_iterations", 3)
+    try:
+        max_iterations = max(1, min(int(max_iterations_raw), 20))
+    except (TypeError, ValueError):
+        max_iterations = 3
+
+    exploitation_enabled_raw = raw_payload.get("exploitation_enabled", True)
+    if isinstance(exploitation_enabled_raw, str):
+        exploitation_enabled = exploitation_enabled_raw.strip().lower() in {"1", "true", "yes", "on"}
+    else:
+        exploitation_enabled = bool(exploitation_enabled_raw)
+
+    prior_run_context = str(raw_payload.get("prior_run_context", "") or "")
+    user_conditions = _to_str_list(raw_payload.get("user_conditions"), max_items=32)
+    known_vulnerabilities = _to_str_list(raw_payload.get("known_vulnerabilities"), max_items=32)
+
+    return {
+        "max_iterations": max_iterations,
+        "exploitation_enabled": exploitation_enabled,
+        "user_conditions": user_conditions,
+        "prior_run_context": prior_run_context,
+        "known_vulnerabilities": known_vulnerabilities,
+    }
+
+
+def _to_str_list(value: Any, *, max_items: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value[:max_items] if str(item).strip()]
 
 
 def _mock_attacker(seed: AttackSeed, variant: int) -> str:

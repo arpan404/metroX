@@ -14,7 +14,7 @@ import {
 } from 'recharts'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
-import { FileText } from 'lucide-react'
+import { FileText, FlaskConical, Play } from 'lucide-react'
 
 import { api } from '@/lib/api'
 import { getChartColors } from '@/lib/chart-theme'
@@ -22,8 +22,13 @@ import type {
   ClusterPayload,
   CostSummaryPayload,
   CostTimeseriesPayload,
+  DetectorVote,
   DriftPayload,
   ExecutionSlicesPayload,
+  FeaturePayload,
+  ForecastPayload,
+  MitigationExperimentOut,
+  PolicyEvent,
   RiskCards,
   Scorecard,
 } from '@/lib/types'
@@ -258,11 +263,21 @@ export function AnalyticsPanel({ runId }: { runId: string }) {
   const [calibration, setCalibration] = useState<{ bins?: Array<Record<string, unknown>>; summaries?: Array<Record<string, unknown>> } | null>(null)
   const [cooccurrence, setCooccurrence] = useState<{ nodes?: Array<Record<string, unknown>>; edges?: Array<Record<string, unknown>> } | null>(null)
   const [comparison, setComparison] = useState<Record<string, unknown> | null>(null)
+  const [detectorVotes, setDetectorVotes] = useState<DetectorVote[]>([])
+  const [features, setFeatures] = useState<FeaturePayload | null>(null)
+  const [forecast, setForecast] = useState<ForecastPayload | null>(null)
+  const [policyEvents, setPolicyEvents] = useState<PolicyEvent[]>([])
   const [baselineRunId, setBaselineRunId] = useState('')
   const [filterAttack, setFilterAttack] = useState('all')
   const [filterProvider, setFilterProvider] = useState('all')
   const [filterModel, setFilterModel] = useState('all')
   const [loading, setLoading] = useState(false)
+
+  /* Mitigation experiment state */
+  const [mitigationName, setMitigationName] = useState('')
+  const [mitigationBaseline, setMitigationBaseline] = useState('')
+  const [mitigationResult, setMitigationResult] = useState<MitigationExperimentOut | null>(null)
+  const [mitigationBusy, setMitigationBusy] = useState(false)
 
   const sliceOptions = useMemo(() => {
     const rows = executionSlices?.slices ?? []
@@ -296,8 +311,12 @@ export function AnalyticsPanel({ runId }: { runId: string }) {
       api.getInference(runId).catch(() => ({ tests: [] })),
       api.getCalibration(runId).catch(() => ({ bins: [], summaries: [] })),
       api.getCooccurrence(runId).catch(() => ({ nodes: [], edges: [] })),
+      api.getDetectorVotes(runId).catch(() => ({ votes: [] })),
+      api.getFeatures(runId).catch(() => null),
+      api.getForecast(runId).catch(() => null),
+      api.getPolicyEvents(runId).catch(() => ({ events: [] })),
     ])
-      .then(([sc, risks, cl, dr, cost, series, slices, inf, cal, co]) => {
+      .then(([sc, risks, cl, dr, cost, series, slices, inf, cal, co, dv, feat, fc, pe]) => {
         setScorecard(sc)
         setRiskCards(risks)
         setClusters(cl)
@@ -308,6 +327,10 @@ export function AnalyticsPanel({ runId }: { runId: string }) {
         setInference(inf)
         setCalibration(cal)
         setCooccurrence(co)
+        setDetectorVotes((dv as { votes: DetectorVote[] } | null)?.votes ?? [])
+        setFeatures(feat as FeaturePayload | null)
+        setForecast(fc as ForecastPayload | null)
+        setPolicyEvents((pe as { events: PolicyEvent[] } | null)?.events ?? [])
       })
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load analytics'))
       .finally(() => setLoading(false))
@@ -330,6 +353,24 @@ export function AnalyticsPanel({ runId }: { runId: string }) {
       toast.success(`Report generated: ${payload.path}`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Report generation failed')
+    }
+  }
+
+  async function createMitigation() {
+    if (!mitigationName || !mitigationBaseline || !runId) return
+    setMitigationBusy(true)
+    try {
+      const result = await api.createMitigationExperiment({
+        name: mitigationName,
+        baseline_run_id: mitigationBaseline,
+        candidate_run_id: runId,
+      })
+      setMitigationResult(result)
+      toast.success(`Experiment "${result.name}" created`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create experiment')
+    } finally {
+      setMitigationBusy(false)
     }
   }
 
@@ -450,9 +491,138 @@ export function AnalyticsPanel({ runId }: { runId: string }) {
           </motion.div>
         )}
 
+        {/* Detector Votes */}
+        {detectorVotes.length > 0 && (
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={stagger(3.5)}>
+            <Card className="bg-card/60">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs">Detector Votes</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-[10px]">Detector</TableHead>
+                        <TableHead className="text-[10px]">Execution</TableHead>
+                        <TableHead className="text-[10px] text-right">Confidence</TableHead>
+                        <TableHead className="text-[10px] text-right">Latency</TableHead>
+                        <TableHead className="text-[10px]">Flags</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {detectorVotes.slice(0, 50).map((vote) => (
+                        <TableRow key={vote.id}>
+                          <TableCell className="text-[10px] font-mono">{vote.detector_name}</TableCell>
+                          <TableCell className="text-[10px] font-mono truncate max-w-[80px]">{vote.execution_id}</TableCell>
+                          <TableCell className="text-[10px] font-mono text-right">{vote.confidence.toFixed(3)}</TableCell>
+                          <TableCell className="text-[10px] font-mono text-right">{vote.latency_ms.toFixed(0)}ms</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-0.5">
+                              {Object.entries(vote.failure_flags)
+                                .filter(([, v]) => v)
+                                .map(([flag]) => (
+                                  <Badge key={flag} variant="destructive" className="text-[8px]">{flag}</Badge>
+                                ))}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Policy Events */}
+        {policyEvents.length > 0 && (
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={stagger(3.7)}>
+            <Card className="bg-card/60">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs">Policy Events</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1.5">
+                {policyEvents.slice(0, 30).map((evt) => (
+                  <div key={evt.id} className="flex items-start gap-2 rounded-md border px-2.5 py-1.5">
+                    <Badge variant={evt.event_type === 'run_paused' ? 'destructive' : evt.event_type === 'run_resumed' ? 'default' : 'secondary'} className="text-[9px] shrink-0 mt-0.5">
+                      {evt.event_type}
+                    </Badge>
+                    <span className="text-[10px] text-muted-foreground font-mono shrink-0">step {evt.step}</span>
+                    <span className="text-[10px] text-muted-foreground truncate">{evt.message}</span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Features */}
+        {features && features.features.length > 0 && (
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={stagger(3.9)}>
+            <Card className="bg-card/60">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs">Features</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        {Object.keys(features.features[0] ?? {}).slice(0, 6).map((key) => (
+                          <TableHead key={key} className="text-[10px]">{key}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {features.features.slice(0, 20).map((row, idx) => (
+                        <TableRow key={idx}>
+                          {Object.values(row).slice(0, 6).map((val, ci) => (
+                            <TableCell key={ci} className="text-[10px] font-mono">
+                              {typeof val === 'number' ? val.toFixed(4) : String(val)}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Forecast */}
+        {forecast && forecast.forecasts.length > 0 && (
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={stagger(4)}>
+            <Card className="bg-card/60">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs">Forecast</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {forecast.forecasts.slice(0, 10).map((fc, idx) => (
+                    <div key={idx} className="rounded-md border bg-muted/30 p-2">
+                      <div className="grid grid-cols-2 gap-1">
+                        {Object.entries(fc).map(([key, value]) => (
+                          <div key={key}>
+                            <p className="text-[9px] text-muted-foreground">{key}</p>
+                            <p className="text-[10px] font-mono">{typeof value === 'number' ? value.toFixed(4) : String(value)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
         {/* Clusters */}
         {clusters && clusters.clusters.length > 0 && (
-          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={stagger(4)}>
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={stagger(4.5)}>
             <Card className="bg-card/60">
               <CardHeader className="pb-2">
                 <CardTitle className="text-xs">Clusters</CardTitle>
@@ -583,7 +753,7 @@ export function AnalyticsPanel({ runId }: { runId: string }) {
           </motion.div>
         )}
 
-        {/* Effect Size + Reliability side by side */}
+        {/* Effect Size + Reliability */}
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={stagger(7)}>
           <Card className="bg-card/60">
             <CardHeader className="pb-2">
@@ -658,6 +828,61 @@ export function AnalyticsPanel({ runId }: { runId: string }) {
                 <pre className="rounded-md border bg-muted/30 p-2 text-[10px] font-mono overflow-x-auto max-h-48 overflow-y-auto">
                   {JSON.stringify(comparison, null, 2)}
                 </pre>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Mitigation Experiment */}
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={stagger(11)}>
+          <Card className="bg-card/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs flex items-center gap-1.5">
+                <FlaskConical className="size-3" /> Mitigation Experiment
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-[10px] text-muted-foreground">Compare this run against a baseline to generate mitigation recommendations.</p>
+              <div className="space-y-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Experiment Name</Label>
+                  <Input value={mitigationName} onChange={(e) => setMitigationName(e.target.value)} className="h-7 text-xs" placeholder="e.g. v2-vs-v1 mitigation" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px]">Baseline Run ID</Label>
+                  <Input value={mitigationBaseline} onChange={(e) => setMitigationBaseline(e.target.value)} className="h-7 text-xs" />
+                </div>
+              </div>
+              <Button size="sm" className="h-7 text-xs gap-1" onClick={createMitigation} disabled={mitigationBusy || !mitigationName || !mitigationBaseline}>
+                <Play className="size-3" /> {mitigationBusy ? 'Creating...' : 'Create Experiment'}
+              </Button>
+              {mitigationResult && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-[9px]">{mitigationResult.status}</Badge>
+                    <span className="text-[10px] font-mono text-muted-foreground">{mitigationResult.id}</span>
+                  </div>
+                  {mitigationResult.effects.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-semibold text-muted-foreground">Effects</p>
+                      {mitigationResult.effects.map((effect, idx) => (
+                        <pre key={idx} className="rounded-md border bg-muted/30 p-1.5 text-[9px] font-mono overflow-x-auto">
+                          {JSON.stringify(effect, null, 2)}
+                        </pre>
+                      ))}
+                    </div>
+                  )}
+                  {mitigationResult.recommendations.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-semibold text-muted-foreground">Recommendations</p>
+                      {mitigationResult.recommendations.map((rec, idx) => (
+                        <pre key={idx} className="rounded-md border bg-muted/30 p-1.5 text-[9px] font-mono overflow-x-auto">
+                          {JSON.stringify(rec, null, 2)}
+                        </pre>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </CardContent>
           </Card>

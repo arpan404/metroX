@@ -1,17 +1,28 @@
 import type {
+  AdjudicationCreate,
+  AdjudicationOut,
+  AfkCapabilities,
   AttackSummaryPayload,
   ClusterPayload,
   ConfigProfileOut,
   CostSummaryPayload,
   CostTimeseriesPayload,
+  DetectorVote,
   DriftPayload,
   ExecutionSlicesPayload,
+  FeaturePayload,
+  ForecastPayload,
+  MitigationExperimentCreate,
+  MitigationExperimentOut,
   OrchestrationProfile,
   NodeTelemetryPayload,
+  PolicyEvent,
   PricingProfilePayload,
   ProviderCredential,
   ProviderCredentialListPayload,
   ProviderValidation,
+  QueueStats,
+  SecretAccessAudit,
   SecretKey,
   SecretKeyEvent,
   RiskCards,
@@ -46,6 +57,10 @@ export const api = {
   apiKey: API_KEY,
   apiBase: API_BASE,
 
+  /* ---------------------------------------------------------------- */
+  /*  Sessions                                                        */
+  /* ---------------------------------------------------------------- */
+
   createSession(payload: { name: string; description?: string; owner?: string }) {
     return request<SessionOut>('/v1/sessions', {
       method: 'POST',
@@ -57,12 +72,24 @@ export const api = {
     return request<SessionOut>(`/v1/sessions/${sessionId}`)
   },
 
+  /* ---------------------------------------------------------------- */
+  /*  Config Profiles                                                 */
+  /* ---------------------------------------------------------------- */
+
   createConfigProfile(payload: Record<string, unknown>) {
     return request<ConfigProfileOut>('/v1/config-profiles', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
   },
+
+  getConfigProfile(profileId: string) {
+    return request<ConfigProfileOut>(`/v1/config-profiles/${profileId}`)
+  },
+
+  /* ---------------------------------------------------------------- */
+  /*  Providers                                                       */
+  /* ---------------------------------------------------------------- */
 
   validateProvider(payload: Record<string, unknown>) {
     return request<ProviderValidation>('/v1/providers/validate', {
@@ -91,7 +118,7 @@ export const api = {
   },
 
   getProviderCredentialAudits(credentialId: string) {
-    return request<{ credential_id: string; audits: Array<Record<string, unknown>> }>(
+    return request<{ credential_id: string; audits: SecretAccessAudit[] }>(
       `/v1/providers/credentials/${credentialId}/audits`,
     )
   },
@@ -102,6 +129,10 @@ export const api = {
       body: JSON.stringify(payload),
     })
   },
+
+  /* ---------------------------------------------------------------- */
+  /*  Security Keys                                                   */
+  /* ---------------------------------------------------------------- */
 
   createSecurityKey(payload: { version: string; key_material: string; actor?: string }) {
     return request<SecretKey>('/v1/security/keys', {
@@ -137,6 +168,10 @@ export const api = {
     return request<{ events: SecretKeyEvent[] }>('/v1/security/keys/events')
   },
 
+  /* ---------------------------------------------------------------- */
+  /*  Orchestration Profiles                                          */
+  /* ---------------------------------------------------------------- */
+
   createOrchestrationProfile(payload: {
     name: string
     description?: string
@@ -154,12 +189,20 @@ export const api = {
     return request<{ profiles: OrchestrationProfile[] }>('/v1/orchestration-profiles')
   },
 
+  getOrchestrationProfile(profileId: string) {
+    return request<OrchestrationProfile>(`/v1/orchestration-profiles/${profileId}`)
+  },
+
   updateOrchestrationProfile(profileId: string, payload: Record<string, unknown>) {
     return request<OrchestrationProfile>(`/v1/orchestration-profiles/${profileId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })
   },
+
+  /* ---------------------------------------------------------------- */
+  /*  Pricing Profiles                                                */
+  /* ---------------------------------------------------------------- */
 
   createPricingProfile(payload: Record<string, unknown>) {
     return request<PricingProfilePayload>('/v1/pricing-profiles', {
@@ -172,9 +215,9 @@ export const api = {
     return request<PricingProfilePayload>(`/v1/pricing-profiles/${profileId}`)
   },
 
-  getConfigProfile(profileId: string) {
-    return request<ConfigProfileOut>(`/v1/config-profiles/${profileId}`)
-  },
+  /* ---------------------------------------------------------------- */
+  /*  Runs                                                            */
+  /* ---------------------------------------------------------------- */
 
   createRun(payload: Record<string, unknown>) {
     return request<RunOut>('/v1/runs', {
@@ -186,6 +229,14 @@ export const api = {
   getRun(runId: string) {
     return request<RunOut>(`/v1/runs/${runId}`)
   },
+
+  resumeRun(runId: string) {
+    return request<RunOut>(`/v1/runs/${runId}/resume`, { method: 'POST' })
+  },
+
+  /* ---------------------------------------------------------------- */
+  /*  Run Analytics                                                   */
+  /* ---------------------------------------------------------------- */
 
   getScorecard(runId: string) {
     return request<Scorecard>(`/v1/runs/${runId}/scorecard`)
@@ -227,8 +278,20 @@ export const api = {
     return request<NodeTelemetryPayload>(`/v1/runs/${runId}/node-telemetry`)
   },
 
+  getDetectorVotes(runId: string) {
+    return request<{ run_id: string; votes: DetectorVote[] }>(`/v1/runs/${runId}/detector-votes`)
+  },
+
+  getFeatures(runId: string) {
+    return request<FeaturePayload>(`/v1/runs/${runId}/features`)
+  },
+
+  getForecast(runId: string) {
+    return request<ForecastPayload>(`/v1/runs/${runId}/forecast`)
+  },
+
   getPolicyEvents(runId: string) {
-    return request<{ run_id: string; events: Array<Record<string, unknown>> }>(`/v1/runs/${runId}/policy-events`)
+    return request<{ run_id: string; events: PolicyEvent[] }>(`/v1/runs/${runId}/policy-events`)
   },
 
   getCalibration(runId: string) {
@@ -243,46 +306,70 @@ export const api = {
     return request<{ run_id: string; nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> }>(`/v1/runs/${runId}/cooccurrence-graph`)
   },
 
-  getForecast(runId: string) {
-    return request<{ run_id: string; forecasts: Array<Record<string, unknown>> }>(`/v1/runs/${runId}/forecast`)
-  },
-
-  resumeRun(runId: string) {
-    return request<RunOut>(`/v1/runs/${runId}/resume`, { method: 'POST' })
-  },
-
-  getFeatures(runId: string) {
-    return request<{ run_id: string; features: Array<Record<string, number | string>> }>(`/v1/runs/${runId}/features`)
-  },
-
-  getDetectorVotes(runId: string) {
-    return request<{ run_id: string; votes: Array<Record<string, unknown>> }>(`/v1/runs/${runId}/detector-votes`)
-  },
+  /* ---------------------------------------------------------------- */
+  /*  Comparison                                                      */
+  /* ---------------------------------------------------------------- */
 
   compareRuns(baselineRunId: string, candidateRunId: string) {
     const params = new URLSearchParams({ baseline_run_id: baselineRunId, candidate_run_id: candidateRunId })
     return request<{ baseline_run_id: string; candidate_run_id: string; summary: Record<string, unknown>; tests: Record<string, unknown> }>(`/v1/compare?${params.toString()}`)
   },
 
-  createAdjudication(payload: Record<string, unknown>) {
-    return request('/v1/adjudications', {
+  /* ---------------------------------------------------------------- */
+  /*  Adjudications                                                   */
+  /* ---------------------------------------------------------------- */
+
+  createAdjudication(payload: AdjudicationCreate) {
+    return request<AdjudicationOut>('/v1/adjudications', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
   },
 
-  createMitigationExperiment(payload: Record<string, unknown>) {
-    return request('/v1/mitigation-experiments', {
+  /* ---------------------------------------------------------------- */
+  /*  Mitigation Experiments                                          */
+  /* ---------------------------------------------------------------- */
+
+  createMitigationExperiment(payload: MitigationExperimentCreate) {
+    return request<MitigationExperimentOut>('/v1/mitigation-experiments', {
       method: 'POST',
       body: JSON.stringify(payload),
     })
   },
+
+  getMitigationExperiment(experimentId: string) {
+    return request<MitigationExperimentOut>(`/v1/mitigation-experiments/${experimentId}`)
+  },
+
+  /* ---------------------------------------------------------------- */
+  /*  Queue                                                           */
+  /* ---------------------------------------------------------------- */
+
+  getQueueStats() {
+    return request<QueueStats>('/v1/queue/stats')
+  },
+
+  /* ---------------------------------------------------------------- */
+  /*  AFK Capabilities                                                */
+  /* ---------------------------------------------------------------- */
+
+  getCapabilities() {
+    return request<AfkCapabilities>('/v1/afk/capabilities')
+  },
+
+  /* ---------------------------------------------------------------- */
+  /*  Reports                                                         */
+  /* ---------------------------------------------------------------- */
 
   generateReport(runId: string) {
     return request<{ run_id: string; markdown: string; path: string }>(`/v1/reports/${runId}/generate`, {
       method: 'POST',
     })
   },
+
+  /* ---------------------------------------------------------------- */
+  /*  Streaming                                                       */
+  /* ---------------------------------------------------------------- */
 
   streamRunEvents(runId: string, onEvent: (event: Record<string, unknown>) => void, onEnd: () => void) {
     const url = `${API_BASE}/v1/runs/${runId}/events?api_key=${encodeURIComponent(API_KEY)}`

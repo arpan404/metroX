@@ -115,10 +115,13 @@ export default function App() {
   /* ---- onboarding ---- */
   const onboarding = useOnboardingContext()
   useEffect(() => {
-    if (!onboarding.completed) {
-      const timer = setTimeout(() => onboarding.start(), 800)
-      return () => clearTimeout(timer)
-    }
+    if (onboarding.completed) return
+    /* Wait for canvas to fully mount, then verify a target element exists */
+    const timer = setTimeout(() => {
+      const firstTarget = document.querySelector('[data-onboarding]')
+      if (firstTarget) onboarding.start()
+    }, 1500)
+    return () => clearTimeout(timer)
   }, [onboarding.completed])
 
   /* ---- persisted & core state ---- */
@@ -762,6 +765,15 @@ export default function App() {
           selectedAttack={selectedAttack}
           telemetry={telemetry}
           nodeTelemetry={nodeTelemetry}
+          runId={runId || undefined}
+          onResumeRun={runId ? () => {
+            api.resumeRun(runId)
+              .then((res) => {
+                setRun(res)
+                toast.success('Run resumed')
+              })
+              .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to resume run'))
+          } : undefined}
         />
       </GlassPanel>
 

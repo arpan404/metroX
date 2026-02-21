@@ -238,3 +238,196 @@ export type NodeTelemetryPayload = {
     policy_events: number
   }>
 }
+
+/* ------------------------------------------------------------------ */
+/*  Gate Thresholds & Scoring Weights (mirrors backend schemas)       */
+/* ------------------------------------------------------------------ */
+
+export type GateThresholds = {
+  asr_max: number
+  hallucination_max: number
+  toxicity_max: number
+  tool_misuse_max: number
+  composite_min: number
+  max_regression_delta: number
+  cost_max_usd: number
+  max_cost_regression_delta: number
+  min_effect_size_for_regression: number
+  max_adjusted_p_for_regression: number
+}
+
+export type ScoringWeights = {
+  asr: number
+  hallucination: number
+  toxicity: number
+  tool_misuse: number
+}
+
+export type ScoringConfig = {
+  strictness_mode: string
+  gate_thresholds: GateThresholds
+  weights: ScoringWeights
+  weak_supervision: boolean
+  active_adjudication: boolean
+  detectors: {
+    enabled: string[]
+    weights: Record<string, number>
+  }
+  fusion: {
+    disagreement_threshold: number
+    uncertainty_threshold: number
+  }
+}
+
+export type RuntimeConfig = {
+  preset: 'quick' | 'standard' | 'deep'
+  max_concurrency: number
+  budget_usd: number
+  cost_tracking_enabled: boolean
+  cost_gate_usd: number | null
+  abort_on_cost_breach: boolean
+  deterministic_seed: number
+  live_mode: boolean
+}
+
+export type TargetConfig = {
+  target_type: 'managed_llm_runtime' | 'managed_agent_runtime' | 'http' | 'openai_compatible' | 'agent_http'
+  endpoint: string | null
+  auth_headers: Record<string, string>
+  model: string
+  provider_name: string | null
+  base_url: string | null
+  api_key_ref: string | null
+  extra: Record<string, unknown>
+}
+
+export type BenchmarkConfig = {
+  dataset_name: string
+  taxonomy: string[]
+  curated_ratio: number
+  generated_ratio: number
+  seed: number
+  slices: string[]
+  agentic_attacking: boolean
+  agentic_provider: 'auto' | 'mock' | 'afk_live'
+  agentic_model: string | null
+  afk_orchestration: Record<string, unknown>
+}
+
+/* ------------------------------------------------------------------ */
+/*  Adjudication                                                      */
+/* ------------------------------------------------------------------ */
+
+export type AdjudicationCreate = {
+  run_id: string
+  execution_id: string
+  reviewer: string
+  decision: 'hallucination' | 'jailbreak_success' | 'prompt_injection_success' | 'tool_misuse' | 'toxicity' | 'none'
+  rationale?: string
+}
+
+export type AdjudicationOut = {
+  id: string
+  run_id: string
+  execution_id: string
+  reviewer: string
+  decision: string
+  rationale: string | null
+  created_at: string
+}
+
+/* ------------------------------------------------------------------ */
+/*  Mitigation Experiments                                            */
+/* ------------------------------------------------------------------ */
+
+export type MitigationExperimentCreate = {
+  name: string
+  baseline_run_id: string
+  candidate_run_id: string
+  config?: Record<string, unknown>
+}
+
+export type MitigationExperimentOut = {
+  id: string
+  name: string
+  baseline_run_id: string
+  candidate_run_id: string
+  status: string
+  created_at: string
+  effects: Array<Record<string, unknown>>
+  recommendations: Array<Record<string, unknown>>
+}
+
+/* ------------------------------------------------------------------ */
+/*  Queue Stats                                                       */
+/* ------------------------------------------------------------------ */
+
+export type QueueStats = {
+  pending: number
+  dlq_pending: number
+  workers: number
+  live_workers: number
+  started: number
+  backend: string
+}
+
+/* ------------------------------------------------------------------ */
+/*  AFK Capabilities                                                  */
+/* ------------------------------------------------------------------ */
+
+export type AfkCapabilities = {
+  version: string
+  interaction_mode_default: string
+  supported_interaction_modes: string[]
+  subagent_router_strategies: string[]
+  policy_profiles: string[]
+  memory: Record<string, unknown>
+  high_impact_features: Array<Record<string, unknown>>
+  recommended_profiles: Record<string, unknown>
+}
+
+/* ------------------------------------------------------------------ */
+/*  Detector Votes                                                    */
+/* ------------------------------------------------------------------ */
+
+export type DetectorVote = {
+  id: string
+  execution_id: string
+  detector_name: string
+  failure_flags: Record<string, boolean>
+  confidence: number
+  evidence: string
+  latency_ms: number
+  created_at: string
+}
+
+/* ------------------------------------------------------------------ */
+/*  Policy Events                                                     */
+/* ------------------------------------------------------------------ */
+
+export type PolicyEvent = {
+  id: number
+  event_type: string
+  step: number
+  message: string
+  data: Record<string, unknown>
+  created_at: string
+}
+
+/* ------------------------------------------------------------------ */
+/*  Features                                                          */
+/* ------------------------------------------------------------------ */
+
+export type FeaturePayload = {
+  run_id: string
+  features: Array<Record<string, number | string>>
+}
+
+/* ------------------------------------------------------------------ */
+/*  Forecast                                                          */
+/* ------------------------------------------------------------------ */
+
+export type ForecastPayload = {
+  run_id: string
+  forecasts: Array<Record<string, unknown>>
+}

@@ -19,7 +19,7 @@ def generate_markdown_report(db: Session, run_id: str) -> tuple[str, str]:
 
     risks = risk_cards(db, run_id)
     lines = [
-        f"# AutoRedTeam Run Report: {run_id}",
+        f"# MetroX Run Report: {run_id}",
         "",
         "## Summary",
         f"- Status: {run.status}",

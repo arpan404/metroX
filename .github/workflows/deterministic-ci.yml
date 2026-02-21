@@ -22,14 +22,14 @@ jobs:
           uv sync --dev --frozen
       - name: Migration smoke check
         env:
-          AUTOREDTEAM_DATABASE_URL: sqlite:///./ci.db
+          METROX_DATABASE_URL: sqlite:///./ci.db
         run: |
           cd apps/server
           uv run alembic upgrade head
       - name: Run deterministic backend tests
         env:
-          AUTOREDTEAM_DATABASE_URL: sqlite:///./ci.db
-          AUTOREDTEAM_API_KEY: ci-key
+          METROX_DATABASE_URL: sqlite:///./ci.db
+          METROX_API_KEY: ci-key
         run: |
           cd apps/server
           uv run pytest -q
@@ -50,9 +50,9 @@ jobs:
           uv sync --dev --frozen
       - name: Run deep-run load benchmark fixture
         env:
-          AUTOREDTEAM_DATABASE_URL: sqlite:///./ci-load.db
-          AUTOREDTEAM_API_KEY: ci-key
-          AUTOREDTEAM_ENABLE_LOAD: "1"
+          METROX_DATABASE_URL: sqlite:///./ci-load.db
+          METROX_API_KEY: ci-key
+          METROX_ENABLE_LOAD: "1"
         run: |
           cd apps/server
           uv run pytest -q -m load

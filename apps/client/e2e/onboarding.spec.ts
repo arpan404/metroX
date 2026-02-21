@@ -4,14 +4,14 @@ import { test, expect } from '@playwright/test'
  * Helper: clear localStorage so onboarding is treated as a fresh visit.
  */
 async function clearOnboardingState(page: import('@playwright/test').Page) {
-  await page.evaluate(() => window.localStorage.removeItem('autoredteam-onboarding-v2'))
+  await page.evaluate(() => window.localStorage.removeItem('metrox-onboarding-v2'))
 }
 
 /*
  * Helper: mark onboarding as completed so it won't auto-start.
  */
 async function markOnboardingDone(page: import('@playwright/test').Page) {
-  await page.evaluate(() => window.localStorage.setItem('autoredteam-onboarding-v2', 'true'))
+  await page.evaluate(() => window.localStorage.setItem('metrox-onboarding-v2', 'true'))
 }
 
 /*
@@ -34,9 +34,9 @@ test.describe('Onboarding — first visit', () => {
     await expect(page.getByTestId('onboarding-tooltip')).toBeVisible()
   })
 
-  test('first step shows "Welcome to AutoRedTeam"', async ({ page }) => {
+  test('first step shows "Welcome to MetroX"', async ({ page }) => {
     await freshVisitWithOnboarding(page)
-    await expect(page.getByTestId('onboarding-tooltip')).toContainText('Welcome to AutoRedTeam')
+    await expect(page.getByTestId('onboarding-tooltip')).toContainText('Welcome to MetroX')
   })
 
   test('progress dots are visible with correct count', async ({ page }) => {
@@ -94,7 +94,7 @@ test.describe('Onboarding — step navigation', () => {
     const tooltip = page.getByTestId('onboarding-tooltip')
 
     /* Step 1: Welcome */
-    await expect(tooltip).toContainText('Welcome to AutoRedTeam')
+    await expect(tooltip).toContainText('Welcome to MetroX')
 
     /* Click Next */
     await page.getByTestId('onboarding-next').click({ force: true })
@@ -116,7 +116,7 @@ test.describe('Onboarding — step navigation', () => {
     await prevBtn.click({ force: true })
 
     /* Back to step 1 */
-    await expect(page.getByTestId('onboarding-tooltip')).toContainText('Welcome to AutoRedTeam', { timeout: 3000 })
+    await expect(page.getByTestId('onboarding-tooltip')).toContainText('Welcome to MetroX', { timeout: 3000 })
   })
 
   test('Prev button is not shown on the first step', async ({ page }) => {
@@ -183,7 +183,7 @@ test.describe('Onboarding — keyboard controls', () => {
   test('ArrowRight key advances to next step', async ({ page }) => {
     await freshVisitWithOnboarding(page)
     const tooltip = page.getByTestId('onboarding-tooltip')
-    await expect(tooltip).toContainText('Welcome to AutoRedTeam')
+    await expect(tooltip).toContainText('Welcome to MetroX')
 
     await page.keyboard.press('ArrowRight')
     await expect(tooltip).toContainText('Mode Toolbar', { timeout: 3000 })
@@ -198,13 +198,13 @@ test.describe('Onboarding — keyboard controls', () => {
 
     /* Then go back */
     await page.keyboard.press('ArrowLeft')
-    await expect(page.getByTestId('onboarding-tooltip')).toContainText('Welcome to AutoRedTeam', { timeout: 3000 })
+    await expect(page.getByTestId('onboarding-tooltip')).toContainText('Welcome to MetroX', { timeout: 3000 })
   })
 
   test('Enter key advances to next step', async ({ page }) => {
     await freshVisitWithOnboarding(page)
     const tooltip = page.getByTestId('onboarding-tooltip')
-    await expect(tooltip).toContainText('Welcome to AutoRedTeam')
+    await expect(tooltip).toContainText('Welcome to MetroX')
 
     await page.keyboard.press('Enter')
     await expect(tooltip).toContainText('Mode Toolbar', { timeout: 3000 })
@@ -235,7 +235,7 @@ test.describe('Onboarding — persistence', () => {
 
     /* Check localStorage */
     const value = await page.evaluate(
-      () => window.localStorage.getItem('autoredteam-onboarding-v2'),
+      () => window.localStorage.getItem('metrox-onboarding-v2'),
     )
     expect(value).toBe('true')
   })
@@ -277,7 +277,7 @@ test.describe('Onboarding — replay tour', () => {
       await replayOption.click()
       /* Onboarding should restart */
       await expect(page.getByTestId('onboarding-tooltip')).toBeVisible({ timeout: 5000 })
-      await expect(page.getByTestId('onboarding-tooltip')).toContainText('Welcome to AutoRedTeam')
+      await expect(page.getByTestId('onboarding-tooltip')).toContainText('Welcome to MetroX')
     }
   })
 })

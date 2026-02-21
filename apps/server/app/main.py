@@ -13,7 +13,7 @@ from app.observability import METRICS, configure_logging, log_request_event
 from app.services.run_queue import RUN_QUEUE
 
 app = FastAPI(
-    title="AutoRedTeam DS+ API",
+    title="MetroX API",
     version="0.1.0",
     description="Data-driven reliability evaluation for LLMs and AI agents",
 )

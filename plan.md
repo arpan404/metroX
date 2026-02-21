@@ -1,4 +1,4 @@
-# AutoRedTeam V1.11 Plan (Implemented)
+# MetroX V1.11 Plan (Implemented)
 
 ## Locked Decisions
 1. AFK-only runtime abstraction for managed LLM and managed agent targets.

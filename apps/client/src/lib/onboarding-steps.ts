@@ -3,7 +3,7 @@ import type { OnboardingStep } from '@/hooks/useOnboarding'
 export const onboardingSteps: OnboardingStep[] = [
   {
     id: 'canvas',
-    title: 'Welcome to AutoRedTeam',
+    title: 'Welcome to MetroX',
     description:
       'This is your single-page canvas workspace. Attack flows, configuration, analytics, and settings all open as glass panels over this canvas.',
     targetSelector: '[data-onboarding="canvas"]',

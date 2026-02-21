@@ -1,6 +1,6 @@
-# AutoRedTeam Client
+# MetroX Client
 
-Vite React frontend for AutoRedTeam V1.11.
+Vite React frontend for MetroX V1.11.
 
 ## UI Architecture
 - First-run onboarding page (animated checklist).

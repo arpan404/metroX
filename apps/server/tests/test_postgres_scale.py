@@ -34,11 +34,11 @@ def _headers() -> dict[str, str]:
 
 @pytest.mark.scale_pg
 def test_postgres_10k_api_query_paths() -> None:
-    if os.getenv("AUTOREDTEAM_ENABLE_PG_SCALE") != "1":
-        pytest.skip("Set AUTOREDTEAM_ENABLE_PG_SCALE=1 to run postgres scale tests")
-    database_url = os.getenv("AUTOREDTEAM_POSTGRES_SCALE_URL")
+    if os.getenv("METROX_ENABLE_PG_SCALE") != "1":
+        pytest.skip("Set METROX_ENABLE_PG_SCALE=1 to run postgres scale tests")
+    database_url = os.getenv("METROX_POSTGRES_SCALE_URL")
     if not database_url:
-        pytest.skip("AUTOREDTEAM_POSTGRES_SCALE_URL is required for postgres scale tests")
+        pytest.skip("METROX_POSTGRES_SCALE_URL is required for postgres scale tests")
 
     engine = create_engine(database_url, future=True, pool_pre_ping=True)
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, class_=Session)

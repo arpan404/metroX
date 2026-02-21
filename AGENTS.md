@@ -1,4 +1,4 @@
-# AGENTS.md - AutoRedTeam Development Rules
+# AGENTS.md - MetroX Development Rules
 
 ## Runtime Policy (V1.11)
 - Managed runtime calls must use AFK abstractions only.

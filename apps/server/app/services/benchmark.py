@@ -86,7 +86,7 @@ def create_benchmark(
 
     snapshot = BenchmarkSnapshot(
         run_id=run_id,
-        name=benchmark_config.get("dataset_name", "autoredteam-core"),
+        name=benchmark_config.get("dataset_name", "metrox-core"),
         version="v1",
         source_mix={"curated_ratio": curated_ratio, "generated_ratio": 1 - curated_ratio},
         meta={"taxonomy": taxonomy, "seed": seed, "attack_count": attack_count},

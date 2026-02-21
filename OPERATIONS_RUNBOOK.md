@@ -1,4 +1,4 @@
-# AutoRedTeam Operations Runbook
+# MetroX Operations Runbook
 
 ## Scope
 Runtime triage for API incidents, failing CI gates, and evaluation-budget breaches.
@@ -49,7 +49,7 @@ Runtime triage for API incidents, failing CI gates, and evaluation-budget breach
 
 ## Load Test Procedure
 1. Enable load marker:
-   - `AUTOREDTEAM_ENABLE_LOAD=1`
+   - `METROX_ENABLE_LOAD=1`
 2. Run:
    - `uv run --project apps/server pytest -m load`
 3. Target:

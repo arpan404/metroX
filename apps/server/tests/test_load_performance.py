@@ -14,8 +14,8 @@ from app.services.costing import rebuild_run_cost_aggregate
 
 @pytest.mark.load
 def test_cost_aggregate_hot_path_10k(tmp_path) -> None:
-    if os.getenv("AUTOREDTEAM_ENABLE_LOAD") != "1":
-        pytest.skip("Set AUTOREDTEAM_ENABLE_LOAD=1 to run load tests")
+    if os.getenv("METROX_ENABLE_LOAD") != "1":
+        pytest.skip("Set METROX_ENABLE_LOAD=1 to run load tests")
 
     db_path = tmp_path / "load_hot_path.db"
     engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False}, future=True)

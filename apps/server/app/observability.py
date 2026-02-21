@@ -7,7 +7,7 @@ from collections import defaultdict
 from threading import Lock
 from typing import Any
 
-logger = logging.getLogger("autoredteam.api")
+logger = logging.getLogger("metrox.api")
 
 
 class SLAMetrics:

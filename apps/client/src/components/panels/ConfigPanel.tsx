@@ -363,7 +363,7 @@ export function ConfigPanel({ onRunLaunched }: { onRunLaunched: (runId: string) 
   const [maxTokens, setMaxTokens] = useState(256)
   const [targetPromptsDir, setTargetPromptsDir] = useState('')
   const [targetInstructionFile, setTargetInstructionFile] = useState('')
-  const [targetAgentName, setTargetAgentName] = useState('autoredteam-target')
+  const [targetAgentName, setTargetAgentName] = useState('metrox-target')
   const [afkTimeoutS, setAfkTimeoutS] = useState(45)
   const [afkStream, setAfkStream] = useState(true)
   const [afkResume, setAfkResume] = useState(false)
@@ -502,7 +502,7 @@ export function ConfigPanel({ onRunLaunched }: { onRunLaunched: (runId: string) 
     setMaxTokens(256)
     setTargetPromptsDir('')
     setTargetInstructionFile('')
-    setTargetAgentName('autoredteam-target')
+    setTargetAgentName('metrox-target')
     setAfkTimeoutS(45)
     setAfkStream(true)
     setAfkResume(false)
@@ -592,7 +592,7 @@ export function ConfigPanel({ onRunLaunched }: { onRunLaunched: (runId: string) 
         extra: Object.fromEntries(Object.entries(targetExtraMerged).filter(([, value]) => value !== undefined)),
       },
       benchmark_config: {
-        dataset_name: 'autoredteam-core',
+        dataset_name: 'metrox-core',
         taxonomy: taxonomyList,
         curated_ratio: curatedRatio,
         generated_ratio: generatedRatio,

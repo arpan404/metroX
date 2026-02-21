@@ -45,7 +45,7 @@ def test_redis_backend_queue_enqueues_and_reports_stats() -> None:
     previous_dlq = settings.run_queue_redis_dlq_key
     settings.run_queue_backend = "redis"
     settings.run_queue_enabled = True
-    settings.run_queue_redis_dlq_key = "autoredteam:runs:dlq"
+    settings.run_queue_redis_dlq_key = "metrox:runs:dlq"
     queue = RunQueue()
     queue._redis_client = _FakeRedis()  # type: ignore[assignment]
     queue.enqueue("run-1", 1)
@@ -72,7 +72,7 @@ def test_redis_dlq_when_retry_budget_exhausted() -> None:
     settings.run_queue_backend = "redis"
     settings.run_queue_enabled = True
     settings.run_queue_max_retries = 0
-    settings.run_queue_redis_dlq_key = "autoredteam:runs:dlq"
+    settings.run_queue_redis_dlq_key = "metrox:runs:dlq"
     queue = RunQueue()
     queue._redis_client = _FakeRedis()  # type: ignore[assignment]
     queue._enqueue_retry_or_dlq("run-err", 0, "boom")

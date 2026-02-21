@@ -69,7 +69,7 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
                 "extra": {},
             },
             "benchmark_config": {
-                "dataset_name": "autoredteam-core",
+                "dataset_name": "metrox-core",
                 "taxonomy": [
                     "prompt_injection",
                     "jailbreak",
@@ -227,7 +227,7 @@ def test_resume_continues_from_checkpoint_without_duplicate_executions(integrate
                 "extra": {},
             },
             "benchmark_config": {
-                "dataset_name": "autoredteam-core",
+                "dataset_name": "metrox-core",
                 "taxonomy": ["prompt_injection", "hallucination", "tool_misuse"],
                 "curated_ratio": 0.5,
                 "generated_ratio": 0.5,
@@ -324,9 +324,9 @@ def test_nightly_live_placeholder() -> None:
     """Live eval placeholder for nightly pipeline; skips when provider key is missing."""
     import os
 
-    key = os.getenv("AUTOREDTEAM_LIVE_PROVIDER_KEY")
+    key = os.getenv("METROX_LIVE_PROVIDER_KEY")
     if not key:
-        pytest.skip("AUTOREDTEAM_LIVE_PROVIDER_KEY is not configured")
+        pytest.skip("METROX_LIVE_PROVIDER_KEY is not configured")
     assert len(key) >= 8
 
 
@@ -334,12 +334,12 @@ def test_nightly_live_placeholder() -> None:
 def test_nightly_multi_provider_smoke_matrix() -> None:
     import os
 
-    provider = os.getenv("AUTOREDTEAM_NIGHTLY_PROVIDER", "managed_llm_runtime")
+    provider = os.getenv("METROX_NIGHTLY_PROVIDER", "managed_llm_runtime")
     if provider == "managed_llm_runtime":
-        key = os.getenv("AUTOREDTEAM_LIVE_PROVIDER_KEY")
-        model = os.getenv("AUTOREDTEAM_NIGHTLY_MODEL", "gpt-4.1-mini")
+        key = os.getenv("METROX_LIVE_PROVIDER_KEY")
+        model = os.getenv("METROX_NIGHTLY_MODEL", "gpt-4.1-mini")
         if not key:
-            pytest.skip("AUTOREDTEAM_LIVE_PROVIDER_KEY missing for litellm smoke")
+            pytest.skip("METROX_LIVE_PROVIDER_KEY missing for litellm smoke")
         from app.services.providers import validate_provider
 
         out = validate_provider(
@@ -353,8 +353,8 @@ def test_nightly_multi_provider_smoke_matrix() -> None:
         return
 
     if provider == "openai_compatible":
-        base_url = os.getenv("AUTOREDTEAM_OPENAI_COMPAT_BASE_URL")
-        key = os.getenv("AUTOREDTEAM_OPENAI_COMPAT_API_KEY")
+        base_url = os.getenv("METROX_OPENAI_COMPAT_BASE_URL")
+        key = os.getenv("METROX_OPENAI_COMPAT_API_KEY")
         if not base_url or not key:
             pytest.skip("OpenAI-compatible credentials are not configured")
         from app.services.providers import validate_provider
@@ -364,7 +364,7 @@ def test_nightly_multi_provider_smoke_matrix() -> None:
                 "provider_type": "openai_compatible",
                 "base_url": base_url,
                 "api_key": key,
-                "model": os.getenv("AUTOREDTEAM_NIGHTLY_MODEL", "gpt-4.1-mini"),
+                "model": os.getenv("METROX_NIGHTLY_MODEL", "gpt-4.1-mini"),
             }
         )
         assert out["valid"] is True

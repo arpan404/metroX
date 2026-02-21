@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-const ONBOARDING_KEY = 'autoredteam-onboarding-v2'
+const ONBOARDING_KEY = 'metrox-onboarding-v2'
 
 export type OnboardingStep = {
   id: string

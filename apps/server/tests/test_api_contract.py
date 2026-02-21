@@ -67,7 +67,7 @@ def _create_session_and_profile(client: TestClient) -> tuple[str, str]:
                 "extra": {},
             },
             "benchmark_config": {
-                "dataset_name": "autoredteam-core",
+                "dataset_name": "metrox-core",
                 "taxonomy": ["prompt_injection", "hallucination", "tool_misuse"],
                 "curated_ratio": 0.6,
                 "generated_ratio": 0.4,

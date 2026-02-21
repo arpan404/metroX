@@ -184,7 +184,7 @@ export default function WizardPage() {
           },
         },
         benchmark_config: {
-          dataset_name: 'autoredteam-core',
+          dataset_name: 'metrox-core',
           taxonomy: taxonomy
             .split(',')
             .map((item) => item.trim())

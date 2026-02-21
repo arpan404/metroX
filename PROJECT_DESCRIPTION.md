@@ -1,7 +1,7 @@
-# AutoRedTeam DS+ - Project Description (V1.11)
+# MetroX - Project Description (V1.11)
 
 ## Product
-AutoRedTeam is a data-driven reliability and safety test framework for LLM systems and full agent contracts.
+MetroX is a data-driven reliability and safety test framework for LLM systems and full agent contracts.
 
 ## Core Identity
 - Unit-test-like reliability gates for AI systems.

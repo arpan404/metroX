@@ -8,18 +8,18 @@ import httpx
 
 def live_test_config() -> dict[str, str]:
     return {
-        "ollama_base_url": os.getenv("AUTOREDTEAM_LIVE_OLLAMA_BASE_URL", "http://localhost:11434"),
+        "ollama_base_url": os.getenv("METROX_LIVE_OLLAMA_BASE_URL", "http://localhost:11434"),
         "openai_compat_base_url": os.getenv(
-            "AUTOREDTEAM_LIVE_OPENAI_COMPAT_BASE_URL", "http://localhost:11434/v1"
+            "METROX_LIVE_OPENAI_COMPAT_BASE_URL", "http://localhost:11434/v1"
         ),
-        "managed_model": os.getenv("AUTOREDTEAM_LIVE_MANAGED_MODEL", "ollama_chat/gpt-oss:20b"),
-        "openai_model": os.getenv("AUTOREDTEAM_LIVE_OPENAI_MODEL", "gpt-oss:20b"),
-        "api_key": os.getenv("AUTOREDTEAM_LIVE_API_KEY", "ollama"),
+        "managed_model": os.getenv("METROX_LIVE_MANAGED_MODEL", "ollama_chat/gpt-oss:20b"),
+        "openai_model": os.getenv("METROX_LIVE_OPENAI_MODEL", "gpt-oss:20b"),
+        "api_key": os.getenv("METROX_LIVE_API_KEY", "ollama"),
     }
 
 
 def live_tests_enabled() -> bool:
-    return os.getenv("AUTOREDTEAM_ENABLE_LIVE_MODEL_TESTS", "0") == "1"
+    return os.getenv("METROX_ENABLE_LIVE_MODEL_TESTS", "0") == "1"
 
 
 def require_live_preflight(cfg: dict[str, str]) -> None:

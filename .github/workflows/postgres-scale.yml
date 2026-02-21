@@ -12,13 +12,13 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: autoredteam
-          POSTGRES_PASSWORD: autoredteam
-          POSTGRES_DB: autoredteam_scale
+          POSTGRES_USER: metrox
+          POSTGRES_PASSWORD: metrox
+          POSTGRES_DB: metrox_scale
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U autoredteam -d autoredteam_scale"
+          --health-cmd="pg_isready -U metrox -d metrox_scale"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -36,9 +36,9 @@ jobs:
           uv sync --dev --frozen
       - name: Run Postgres 10k+ scale tests
         env:
-          AUTOREDTEAM_API_KEY: local-dev-key
-          AUTOREDTEAM_ENABLE_PG_SCALE: "1"
-          AUTOREDTEAM_POSTGRES_SCALE_URL: postgresql+psycopg://autoredteam:autoredteam@localhost:5432/autoredteam_scale
+          METROX_API_KEY: local-dev-key
+          METROX_ENABLE_PG_SCALE: "1"
+          METROX_POSTGRES_SCALE_URL: postgresql+psycopg://metrox:metrox@localhost:5432/metrox_scale
         run: |
           cd apps/server
           uv run pytest -q -m scale_pg

@@ -100,7 +100,7 @@ def _create_session_and_profile(
                 },
             },
             "benchmark_config": {
-                "dataset_name": "autoredteam-core",
+                "dataset_name": "metrox-core",
                 "taxonomy": ["prompt_injection", "hallucination", "tool_misuse"],
                 "curated_ratio": 0.6,
                 "generated_ratio": 0.4,
@@ -132,7 +132,7 @@ def _create_session_and_profile(
 @pytest.mark.live_model
 def test_live_provider_validation_matrix_ollama() -> None:
     if not live_tests_enabled():
-        pytest.skip("Set AUTOREDTEAM_ENABLE_LIVE_MODEL_TESTS=1 to run live model tests")
+        pytest.skip("Set METROX_ENABLE_LIVE_MODEL_TESTS=1 to run live model tests")
 
     cfg = live_test_config()
     require_live_preflight(cfg)
@@ -163,7 +163,7 @@ def test_live_provider_validation_matrix_ollama() -> None:
 @pytest.mark.live_model
 def test_live_managed_llm_runtime_end_to_end(live_client) -> None:
     if not live_tests_enabled():
-        pytest.skip("Set AUTOREDTEAM_ENABLE_LIVE_MODEL_TESTS=1 to run live model tests")
+        pytest.skip("Set METROX_ENABLE_LIVE_MODEL_TESTS=1 to run live model tests")
 
     cfg = live_test_config()
     require_live_preflight(cfg)
@@ -223,7 +223,7 @@ def test_live_managed_llm_runtime_end_to_end(live_client) -> None:
 @pytest.mark.live_model
 def test_live_managed_agent_runtime_end_to_end(live_client) -> None:
     if not live_tests_enabled():
-        pytest.skip("Set AUTOREDTEAM_ENABLE_LIVE_MODEL_TESTS=1 to run live model tests")
+        pytest.skip("Set METROX_ENABLE_LIVE_MODEL_TESTS=1 to run live model tests")
 
     cfg = live_test_config()
     require_live_preflight(cfg)

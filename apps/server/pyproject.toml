@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "autoredteam-server"
+name = "metrox-server"
 version = "0.1.0"
-description = "AutoRedTeam DS+ backend"
+description = "MetroX backend"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

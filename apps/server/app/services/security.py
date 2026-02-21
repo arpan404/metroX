@@ -142,13 +142,13 @@ def _log_key_event(db: Session, *, key_id: str, action: str, actor: str, meta: d
 
 
 def _wrap_material(material: bytes) -> str:
-    master = hashlib.sha256((os.getenv("AUTOREDTEAM_MASTER_WRAP_KEY") or "autoredteam-dev-wrap").encode("utf-8")).digest()
+    master = hashlib.sha256((os.getenv("METROX_MASTER_WRAP_KEY") or "metrox-dev-wrap").encode("utf-8")).digest()
     wrapped = _xor_encrypt(material, master)
     return base64.urlsafe_b64encode(wrapped).decode("utf-8")
 
 
 def _unwrap_material(encrypted_material: str) -> bytes:
-    master = hashlib.sha256((os.getenv("AUTOREDTEAM_MASTER_WRAP_KEY") or "autoredteam-dev-wrap").encode("utf-8")).digest()
+    master = hashlib.sha256((os.getenv("METROX_MASTER_WRAP_KEY") or "metrox-dev-wrap").encode("utf-8")).digest()
     wrapped = base64.urlsafe_b64decode(encrypted_material.encode("utf-8"))
     return _xor_encrypt(wrapped, master)
 

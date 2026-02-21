@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "autoredteam-client",
+      "name": "metrox-client",
       "dependencies": {
         "@hookform/resolvers": "^5.2.2",
         "@tailwindcss/vite": "^4.2.0",

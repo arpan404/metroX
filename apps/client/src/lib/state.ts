@@ -5,7 +5,7 @@ export type AppState = {
   baselineRunId?: string
 }
 
-const KEY = 'autoredteam-state-v1'
+const KEY = 'metrox-state-v1'
 
 export function loadState(): AppState {
   try {

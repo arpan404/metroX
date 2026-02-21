@@ -1,6 +1,6 @@
-# AutoRedTeam Server
+# MetroX Server
 
-FastAPI backend for AutoRedTeam V1.11.
+FastAPI backend for MetroX V1.11.
 
 ## Runtime Contract (Breaking)
 `target_type` write values:
@@ -36,7 +36,7 @@ curl -X POST http://localhost:8000/v1/security/keys \
 ```
 
 ## Queue Backends
-`AUTOREDTEAM_RUN_QUEUE_BACKEND`:
+`METROX_RUN_QUEUE_BACKEND`:
 - `inprocess` (default)
 - `redis` (external worker)
 
@@ -53,12 +53,12 @@ uv run pytest -q
 
 Live Ollama suite (AFK managed runtime + managed agent runtime):
 ```bash
-export AUTOREDTEAM_ENABLE_LIVE_MODEL_TESTS=1
-export AUTOREDTEAM_LIVE_OLLAMA_BASE_URL=http://localhost:11434
-export AUTOREDTEAM_LIVE_OPENAI_COMPAT_BASE_URL=http://localhost:11434/v1
-export AUTOREDTEAM_LIVE_MANAGED_MODEL=ollama_chat/gpt-oss:20b
-export AUTOREDTEAM_LIVE_OPENAI_MODEL=gpt-oss:20b
-export AUTOREDTEAM_LIVE_API_KEY=ollama
+export METROX_ENABLE_LIVE_MODEL_TESTS=1
+export METROX_LIVE_OLLAMA_BASE_URL=http://localhost:11434
+export METROX_LIVE_OPENAI_COMPAT_BASE_URL=http://localhost:11434/v1
+export METROX_LIVE_MANAGED_MODEL=ollama_chat/gpt-oss:20b
+export METROX_LIVE_OPENAI_MODEL=gpt-oss:20b
+export METROX_LIVE_API_KEY=ollama
 uv run pytest -q -m live_model
 ```
 

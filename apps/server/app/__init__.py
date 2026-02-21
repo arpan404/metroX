@@ -1,1 +1,1 @@
-"""AutoRedTeam backend package."""
+"""MetroX backend package."""

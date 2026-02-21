@@ -1,4 +1,4 @@
-# AutoRedTeam DS+ (V1.11)
+# MetroX (V1.11)
 
 Data-driven reliability testing platform for LLMs and agent systems.
 

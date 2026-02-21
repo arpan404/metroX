@@ -5,10 +5,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="AUTOREDTEAM_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="METROX_", extra="ignore")
 
     database_url: str = Field(
-        default="postgresql+psycopg://autoredteam:autoredteam@localhost:5432/autoredteam"
+        default="postgresql+psycopg://metrox:metrox@localhost:5432/metrox"
     )
     api_key: str = Field(default="local-dev-key")
     redis_url: str = Field(default="redis://localhost:6379/0")
@@ -34,9 +34,9 @@ class Settings(BaseSettings):
     run_worker_threads: int = Field(default=1)
     run_queue_max_retries: int = Field(default=2)
     run_queue_retry_backoff_s: float = Field(default=0.5)
-    run_queue_redis_key: str = Field(default="autoredteam:runs:queue")
-    run_queue_redis_dlq_key: str = Field(default="autoredteam:runs:dlq")
-    run_queue_redis_workers_key: str = Field(default="autoredteam:runs:workers")
+    run_queue_redis_key: str = Field(default="metrox:runs:queue")
+    run_queue_redis_dlq_key: str = Field(default="metrox:runs:dlq")
+    run_queue_redis_workers_key: str = Field(default="metrox:runs:workers")
     run_queue_redis_block_s: int = Field(default=5)
     run_queue_worker_heartbeat_ttl_s: int = Field(default=60)
     run_batch_size: int = Field(default=100)

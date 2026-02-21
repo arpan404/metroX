@@ -4,9 +4,9 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_USER: autoredteam
-      POSTGRES_PASSWORD: autoredteam
-      POSTGRES_DB: autoredteam
+      POSTGRES_USER: metrox
+      POSTGRES_PASSWORD: metrox
+      POSTGRES_DB: metrox
     ports:
       - "5432:5432"
     volumes:
@@ -21,10 +21,10 @@ services:
     build:
       context: ./apps/server
     environment:
-      AUTOREDTEAM_DATABASE_URL: postgresql+psycopg://autoredteam:autoredteam@postgres:5432/autoredteam
-      AUTOREDTEAM_API_KEY: local-dev-key
-      AUTOREDTEAM_REDIS_URL: redis://redis:6379/0
-      AUTOREDTEAM_ALLOW_SYNTHETIC_TARGETS: "true"
+      METROX_DATABASE_URL: postgresql+psycopg://metrox:metrox@postgres:5432/metrox
+      METROX_API_KEY: local-dev-key
+      METROX_REDIS_URL: redis://redis:6379/0
+      METROX_ALLOW_SYNTHETIC_TARGETS: "true"
     depends_on:
       - postgres
       - redis

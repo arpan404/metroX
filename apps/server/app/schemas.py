@@ -59,7 +59,7 @@ class TargetConfig(BaseModel):
 
 
 class BenchmarkConfig(BaseModel):
-    dataset_name: str = "autoredteam-core"
+    dataset_name: str = "metrox-core"
     taxonomy: list[str] = Field(
         default_factory=lambda: [
             "prompt_injection",

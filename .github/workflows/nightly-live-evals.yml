@@ -26,13 +26,13 @@ jobs:
           uv sync --dev --frozen
       - name: Run nightly live suite
         env:
-          AUTOREDTEAM_DATABASE_URL: sqlite:///./nightly.db
-          AUTOREDTEAM_API_KEY: ${{ secrets.AUTOREDTEAM_API_KEY }}
-          AUTOREDTEAM_LIVE_PROVIDER_KEY: ${{ secrets.AUTOREDTEAM_LIVE_PROVIDER_KEY }}
-          AUTOREDTEAM_NIGHTLY_PROVIDER: ${{ matrix.provider }}
-          AUTOREDTEAM_OPENAI_COMPAT_BASE_URL: ${{ secrets.AUTOREDTEAM_OPENAI_COMPAT_BASE_URL }}
-          AUTOREDTEAM_OPENAI_COMPAT_API_KEY: ${{ secrets.AUTOREDTEAM_OPENAI_COMPAT_API_KEY }}
-          AUTOREDTEAM_NIGHTLY_MODEL: ${{ secrets.AUTOREDTEAM_NIGHTLY_MODEL }}
+          METROX_DATABASE_URL: sqlite:///./nightly.db
+          METROX_API_KEY: ${{ secrets.METROX_API_KEY }}
+          METROX_LIVE_PROVIDER_KEY: ${{ secrets.METROX_LIVE_PROVIDER_KEY }}
+          METROX_NIGHTLY_PROVIDER: ${{ matrix.provider }}
+          METROX_OPENAI_COMPAT_BASE_URL: ${{ secrets.METROX_OPENAI_COMPAT_BASE_URL }}
+          METROX_OPENAI_COMPAT_API_KEY: ${{ secrets.METROX_OPENAI_COMPAT_API_KEY }}
+          METROX_NIGHTLY_MODEL: ${{ secrets.METROX_NIGHTLY_MODEL }}
         run: |
           cd apps/server
           uv run pytest -q -m nightly

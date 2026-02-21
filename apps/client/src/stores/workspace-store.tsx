@@ -406,6 +406,58 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
     })
   }
 
+  const fetchRunDataInternal = async (runId: string) => {
+    const [runData, attackSummary, recentEvents] = await Promise.all([
+      api.getRun(runId),
+      api.getAttackSummary(runId).catch(() => null),
+      api.getRunEventsRecent(runId, 300).catch(() => null),
+    ])
+    dispatch({ type: 'SET_RUN_DATA', data: runData })
+    if (attackSummary) dispatch({ type: 'SET_ATTACK_SUMMARY', data: attackSummary })
+    if (recentEvents?.events) {
+      const merged = mergeEvents(
+        stateRef.current.events,
+        recentEvents.events as RunEvent[],
+      )
+      dispatch({ type: 'SET_EVENTS', events: merged })
+    }
+    return runData
+  }
+
+  const startStreamingForRun = (runId: string) => {
+    streamCleanupRef.current?.()
+    dispatch({ type: 'SET_STREAMING', active: true })
+
+    let settled = false
+    const wsCleanup = api.streamRunEventsWs(
+      runId,
+      (evt) => {
+        settled = true
+        dispatch({ type: 'ADD_EVENT', event: evt as RunEvent })
+      },
+      () => {
+        dispatch({ type: 'SET_STREAMING', active: false })
+      },
+    )
+
+    const fallbackTimer = setTimeout(() => {
+      if (!settled) {
+        wsCleanup()
+        const sseCleanup = api.streamRunEvents(
+          runId,
+          (evt) => dispatch({ type: 'ADD_EVENT', event: evt as RunEvent }),
+          () => dispatch({ type: 'SET_STREAMING', active: false }),
+        )
+        streamCleanupRef.current = sseCleanup
+      }
+    }, 2000)
+
+    streamCleanupRef.current = () => {
+      clearTimeout(fallbackTimer)
+      wsCleanup()
+    }
+  }
+
   return {
     setRunId(runId: string | null) {
       dispatch({ type: 'SET_RUN_ID', runId })
@@ -433,21 +485,18 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
       fetchingRun = true
       dispatch({ type: 'SET_LOADING_RUN', loading: true })
       try {
-        const [runData, attackSummary, recentEvents] = await Promise.all([
-          api.getRun(runId),
-          api.getAttackSummary(runId).catch(() => null),
-          api.getRunEventsRecent(runId, 300).catch(() => null),
-        ])
-        dispatch({ type: 'SET_RUN_DATA', data: runData })
-        if (attackSummary) dispatch({ type: 'SET_ATTACK_SUMMARY', data: attackSummary })
-        if (recentEvents?.events) {
-          const merged = mergeEvents(
-            stateRef.current.events,
-            recentEvents.events as RunEvent[],
-          )
-          dispatch({ type: 'SET_EVENTS', events: merged })
-        }
-      } catch {
+        await fetchRunDataInternal(runId)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to fetch run data'
+        dispatch({
+          type: 'ADD_EVENT',
+          event: {
+            event_type: 'error',
+            message: `Run fetch failed: ${message}`,
+            created_at: new Date().toISOString(),
+            data: { run_id: runId },
+          },
+        })
         dispatch({ type: 'SET_LOADING_RUN', loading: false })
       } finally {
         fetchingRun = false
@@ -527,40 +576,7 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
     startStreaming() {
       const runId = stateRef.current.currentRunId
       if (!runId) return
-      // Stop any existing stream
-      streamCleanupRef.current?.()
-      dispatch({ type: 'SET_STREAMING', active: true })
-
-      // Try WebSocket first, fall back to SSE
-      let settled = false
-      const wsCleanup = api.streamRunEventsWs(
-        runId,
-        (evt) => {
-          settled = true
-          dispatch({ type: 'ADD_EVENT', event: evt as RunEvent })
-        },
-        () => {
-          dispatch({ type: 'SET_STREAMING', active: false })
-        },
-      )
-
-      // If WS doesn't fire within 2s, add SSE fallback
-      const fallbackTimer = setTimeout(() => {
-        if (!settled) {
-          wsCleanup()
-          const sseCleanup = api.streamRunEvents(
-            runId,
-            (evt) => dispatch({ type: 'ADD_EVENT', event: evt as RunEvent }),
-            () => dispatch({ type: 'SET_STREAMING', active: false }),
-          )
-          streamCleanupRef.current = sseCleanup
-        }
-      }, 2000)
-
-      streamCleanupRef.current = () => {
-        clearTimeout(fallbackTimer)
-        wsCleanup()
-      }
+      startStreamingForRun(runId)
     },
 
     stopStreaming() {
@@ -571,11 +587,43 @@ function createActions(dispatch: Dispatch<WorkspaceAction>, stateRef: React.Muta
 
     async resumeRun() {
       const runId = stateRef.current.currentRunId
-      if (!runId) return
+      if (!runId) return false
       try {
         const data = await api.resumeRun(runId)
         dispatch({ type: 'SET_RUN_DATA', data })
-      } catch { /* handled by caller */ }
+        dispatch({
+          type: 'ADD_EVENT',
+          event: {
+            event_type: 'run_resumed',
+            message: `Run ${runId.slice(0, 8)} resumed`,
+            created_at: new Date().toISOString(),
+            data: { run_id: runId },
+          },
+        })
+        if (['queued', 'running'].includes(data.status)) {
+          dispatch({ type: 'SET_STREAMING', active: false })
+          streamCleanupRef.current?.()
+          streamCleanupRef.current = null
+          startStreamingForRun(runId)
+        }
+        await fetchRunDataInternal(runId)
+        setTimeout(() => {
+          fetchRunDataInternal(runId).catch(() => {})
+        }, 1500)
+        return true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to resume run'
+        dispatch({
+          type: 'ADD_EVENT',
+          event: {
+            event_type: 'error',
+            message: `Resume failed: ${message}`,
+            created_at: new Date().toISOString(),
+            data: { run_id: runId },
+          },
+        })
+        return false
+      }
     },
 
     async generateReport() {

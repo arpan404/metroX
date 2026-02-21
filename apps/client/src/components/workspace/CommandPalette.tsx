@@ -133,8 +133,9 @@ export function CommandPalette() {
           <CommandItem
             onSelect={() => runAction(async () => {
               if (state.currentRunId) {
-                await actions.resumeRun()
-                toast.success('Run resumed')
+                const resumed = await actions.resumeRun()
+                if (resumed) toast.success('Run resumed')
+                else toast.error('Failed to resume run')
               }
             })}
             disabled={!state.currentRunId}

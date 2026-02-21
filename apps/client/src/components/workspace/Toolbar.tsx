@@ -42,6 +42,7 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
   }, [actions])
 
   const runStatus = state.runData?.status
+  const canResumeRun = runStatus === 'interrupted' || runStatus === 'failed'
   const progress = state.runData
     ? state.runData.total_attacks > 0
       ? Math.round((state.runData.completed_attacks / state.runData.total_attacks) * 100)
@@ -162,7 +163,7 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
         </Tooltip>
 
         {/* Resume run */}
-        {state.runData?.status === 'interrupted' && (
+        {canResumeRun && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

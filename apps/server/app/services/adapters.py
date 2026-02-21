@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
 from typing import Any
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 import httpx
 
@@ -172,7 +173,7 @@ class AFKManagedAgentRuntimeAdapter(TargetAdapter):
         agent_name = request.extra.get("agent_name", "autoredteam-target")
         settings = get_settings()
 
-        runner_kwargs: dict[str, Any] = {"telemetry": request.extra.get("telemetry", "json")}
+        runner_kwargs: dict[str, Any] = {"telemetry": request.extra.get("telemetry", "null")}
         memory_mode = str(request.extra.get("afk_memory_backend", "auto"))
         if memory_mode in {"auto", "postgres"} and settings.database_url.startswith("postgres"):
             try:
@@ -205,8 +206,10 @@ class AFKManagedAgentRuntimeAdapter(TargetAdapter):
             agent,
             request.prompt,
             thread_id,
+            stream=bool(request.extra.get("afk_stream", True)),
             resume=resume_enabled,
             run_id=resume_run_id,
+            timeout_s=float(request.extra.get("afk_timeout_s", 45.0)),
         )
 
         usage = getattr(result, "usage", None)
@@ -342,17 +345,35 @@ def _run_afk_stream_sync(
     prompt: str,
     thread_id: Any,
     *,
+    stream: bool = True,
     resume: bool = False,
     run_id: str | None = None,
+    timeout_s: float = 45.0,
 ) -> tuple[Any, list[dict[str, Any]]]:
     try:
         from afk.llms.utils import run_sync as afk_run_sync  # type: ignore
     except Exception:
         if resume and run_id:
-            return runner.run_sync(agent, user_message=prompt, thread_id=thread_id), [
+            return _runner_sync_with_timeout(
+                runner, agent, prompt=prompt, thread_id=thread_id, timeout_s=timeout_s
+            ), [
                 {"type": "run_resumed", "run_id": run_id, "thread_id": thread_id, "degraded": True}
             ]
-        return runner.run_sync(agent, user_message=prompt, thread_id=thread_id), []
+        if not stream:
+            return _runner_sync_with_timeout(
+                runner, agent, prompt=prompt, thread_id=thread_id, timeout_s=timeout_s
+            ), [
+                {"type": "run_completed", "thread_id": thread_id, "degraded": True}
+            ]
+        return _runner_sync_with_timeout(
+            runner, agent, prompt=prompt, thread_id=thread_id, timeout_s=timeout_s
+        ), []
+
+    if not stream and not resume:
+        result = _runner_sync_with_timeout(
+            runner, agent, prompt=prompt, thread_id=thread_id, timeout_s=timeout_s
+        )
+        return result, [{"type": "run_completed", "thread_id": thread_id}]
 
     async def _collect() -> tuple[Any, list[dict[str, Any]]]:
         if resume and run_id:
@@ -370,4 +391,25 @@ def _run_afk_stream_sync(
             events.append(payload)
         return handle.result, events
 
-    return afk_run_sync(_collect())
+    async def _collect_with_timeout() -> tuple[Any, list[dict[str, Any]]]:
+        import asyncio
+
+        return await asyncio.wait_for(_collect(), timeout=max(float(timeout_s), 1.0))
+
+    return afk_run_sync(_collect_with_timeout())
+
+
+def _runner_sync_with_timeout(
+    runner: Any,
+    agent: Any,
+    *,
+    prompt: str,
+    thread_id: Any,
+    timeout_s: float,
+) -> Any:
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="afk-run-sync") as executor:
+        future = executor.submit(runner.run_sync, agent, user_message=prompt, thread_id=thread_id)
+        try:
+            return future.result(timeout=max(float(timeout_s), 1.0))
+        except FuturesTimeoutError as exc:
+            raise TimeoutError(f"AFK sync run timed out after {timeout_s}s") from exc

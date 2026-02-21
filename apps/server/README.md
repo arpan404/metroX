@@ -44,3 +44,25 @@ Run redis worker:
 ```bash
 make server-worker
 ```
+
+## Backend Test Matrix
+Deterministic suite:
+```bash
+uv run pytest -q
+```
+
+Live Ollama suite (AFK managed runtime + managed agent runtime):
+```bash
+export AUTOREDTEAM_ENABLE_LIVE_MODEL_TESTS=1
+export AUTOREDTEAM_LIVE_OLLAMA_BASE_URL=http://localhost:11434
+export AUTOREDTEAM_LIVE_OPENAI_COMPAT_BASE_URL=http://localhost:11434/v1
+export AUTOREDTEAM_LIVE_MANAGED_MODEL=ollama_chat/gpt-oss:20b
+export AUTOREDTEAM_LIVE_OPENAI_MODEL=gpt-oss:20b
+export AUTOREDTEAM_LIVE_API_KEY=ollama
+uv run pytest -q -m live_model
+```
+
+Nightly live suite:
+```bash
+uv run pytest -q -m nightly_live_model
+```

@@ -47,4 +47,6 @@ markers = [
   "nightly: marks tests that are intended for nightly/live pipelines",
   "load: marks heavyweight performance/load tests",
   "scale_pg: marks Postgres-specific 10k+ scale tests",
+  "live_model: marks opt-in live model tests against local/runtime providers",
+  "nightly_live_model: marks nightly live model end-to-end runs",
 ]

@@ -139,6 +139,7 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
     scorecard = client.get(f"/v1/runs/{run_id}/scorecard", headers=_headers())
     risk = client.get(f"/v1/runs/{run_id}/risk-cards", headers=_headers())
     features = client.get(f"/v1/runs/{run_id}/features", headers=_headers())
+    detector_votes = client.get(f"/v1/runs/{run_id}/detector-votes", headers=_headers())
     clusters = client.get(f"/v1/runs/{run_id}/clusters", headers=_headers())
     attack_summary = client.get(f"/v1/runs/{run_id}/attack-summary", headers=_headers())
     execution_slices = client.get(f"/v1/runs/{run_id}/execution-slices", headers=_headers())
@@ -165,6 +166,10 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
     assert features.status_code == 200
     assert len(features.json()["features"]) >= 1
 
+    assert detector_votes.status_code == 200
+    assert isinstance(detector_votes.json()["votes"], list)
+    assert len(detector_votes.json()["votes"]) >= run_out.json()["completed_attacks"]
+
     assert clusters.status_code == 200
     assert "clusters" in clusters.json()
 
@@ -175,6 +180,7 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
     assert isinstance(execution_slices.json()["slices"], list)
     assert telemetry.status_code == 200
     assert "event_counts" in telemetry.json()
+    assert "detector_summary" in telemetry.json()
 
     assert drift.status_code == 200
     assert "drift_signals" in drift.json()

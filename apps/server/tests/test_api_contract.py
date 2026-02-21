@@ -238,6 +238,35 @@ def test_provider_credential_lifecycle(api_client) -> None:
     assert audits.status_code == 200
     assert isinstance(audits.json()["audits"], list)
 
+    keys = client.get("/v1/security/keys", headers=_headers())
+    assert keys.status_code == 200
+    key_id = keys.json()["keys"][0]["id"]
+
+    activated = client.post(f"/v1/security/keys/{key_id}/activate", headers=_headers())
+    assert activated.status_code == 200
+    assert activated.json()["status"] == "active"
+
+    reencrypted = client.post(f"/v1/security/keys/{key_id}/reencrypt-credentials", headers=_headers())
+    assert reencrypted.status_code == 200
+    assert reencrypted.json()["updated"] >= 1
+
+    key2 = client.post(
+        "/v1/security/keys",
+        json={"version": "v2", "key_material": "contract-key-material-v2", "actor": "test"},
+        headers=_headers(),
+    )
+    assert key2.status_code == 200
+    key2_id = key2.json()["id"]
+    activated2 = client.post(f"/v1/security/keys/{key2_id}/activate", headers=_headers())
+    assert activated2.status_code == 200
+    retired = client.post(f"/v1/security/keys/{key_id}/retire", headers=_headers())
+    assert retired.status_code == 200
+    assert retired.json()["status"] == "retired"
+
+    events = client.get("/v1/security/keys/events", headers=_headers())
+    assert events.status_code == 200
+    assert isinstance(events.json()["events"], list)
+
 
 def test_orchestration_profile_contract(api_client) -> None:
     client, _ = api_client
@@ -338,3 +367,25 @@ def test_config_profile_binds_orchestration_snapshot(api_client) -> None:
     assert snapshot["profile_id"] == orchestration_id
     assert snapshot["profile_version"] == "v5"
     assert snapshot["config_hash"]
+
+
+def test_config_profile_rejects_legacy_target_type(api_client) -> None:
+    client, _ = api_client
+    session = client.post("/v1/sessions", json={"name": "legacy-target-suite"}, headers=_headers())
+    assert session.status_code == 200
+    session_id = session.json()["id"]
+
+    profile = client.post(
+        "/v1/config-profiles",
+        json={
+            "session_id": session_id,
+            "name": "legacy-target-profile",
+            "target_config": {"target_type": "synthetic", "model": "gpt-4.1-mini", "extra": {}},
+            "benchmark_config": {"taxonomy": ["prompt_injection"]},
+            "scoring_config": {"strictness_mode": "balanced"},
+            "runtime_config": {"preset": "quick"},
+        },
+        headers=_headers(),
+    )
+    assert profile.status_code == 422
+    assert "target_type" in profile.text

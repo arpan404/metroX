@@ -96,13 +96,6 @@
   .workspace-canvas[data-canvas-mode="studio"] .react-flow__edge.flow-edge .react-flow__edge-interaction {
     stroke-width: 18 !important;
   }
-  .workspace-canvas[data-canvas-mode="studio"] .react-flow__arrowhead {
-    fill: #67e8f9 !important;
-    stroke: #22d3ee !important;
-    stroke-width: 1 !important;
-    filter: drop-shadow(0 0 6px rgba(34, 211, 238, 0.7));
-  }
-
   /* ─── ReactFlow handles & selection ────────────────────────── */
   .react-flow__handle {
     background: var(--foreground) !important;

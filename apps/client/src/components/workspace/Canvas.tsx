@@ -11,7 +11,6 @@ import ReactFlow, {
   type Edge,
   BackgroundVariant,
   Panel,
-  MarkerType,
   Position,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
@@ -153,12 +152,6 @@ export function Canvas() {
           stroke: '#22d3ee',
           strokeWidth: 2.8,
         },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: '#22d3ee',
-          width: 28,
-          height: 28,
-        },
       })),
     }
   }, [state.canvasMode, state.runData, state.attackSummary, state.scorecard, state.riskCards, state.studioNodes, state.studioEdges])
@@ -254,6 +247,15 @@ export function Canvas() {
           nodeColor={(node) => {
             if (node.type === 'target') return 'var(--primary)'
             if (node.type === 'metrics') return 'var(--chart-2)'
+            if (node.type === 'studioRole') {
+              const role = (node.data as { role?: string } | undefined)?.role
+              if (role === 'attacker') return '#ef4444'
+              if (role === 'critic') return '#f59e0b'
+              if (role === 'verifier') return '#3b82f6'
+              if (role === 'analyst') return '#10b981'
+              if (role === 'entrypoint') return '#22d3ee'
+              if (role === 'coordinator') return '#a855f7'
+            }
             return 'var(--muted-foreground)'
           }}
         />

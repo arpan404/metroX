@@ -20,7 +20,9 @@ from app.models import (
     EvaluationSession,
     Execution,
     ExecutionCost,
+    OrchestrationProfile,
     ProviderCredential,
+    SecretAccessAudit,
     RunCostAggregate,
     Run,
     RunEvent,
@@ -36,6 +38,9 @@ from app.schemas import (
     FeatureOut,
     MitigationExperimentCreate,
     MitigationExperimentOut,
+    OrchestrationProfileCreate,
+    OrchestrationProfileOut,
+    OrchestrationProfileUpdate,
     PricingProfileCreate,
     ProviderCredentialCreate,
     ProviderCredentialOut,
@@ -45,6 +50,7 @@ from app.schemas import (
     RunCreate,
     RunOut,
     RunReportOut,
+    SecretAccessAuditOut,
     ScoreCardOut,
     SessionCreate,
     SessionOut,
@@ -99,6 +105,27 @@ def _provider_key_ref(db: Session, provider_type: str, api_key: str) -> str:
     return row.id
 
 
+def _audit_secret_access(
+    db: Session,
+    *,
+    provider_credential_id: str,
+    action: str,
+    success: bool,
+    actor: str = "api",
+    error: str | None = None,
+) -> None:
+    db.add(
+        SecretAccessAudit(
+            provider_credential_id=provider_credential_id,
+            action=action,
+            actor=actor,
+            success=success,
+            error=error,
+        )
+    )
+    db.commit()
+
+
 def _read_provider_api_key(db: Session, payload: ProviderValidateRequest) -> str:
     key = str(payload.api_key or "").strip()
     if key:
@@ -109,8 +136,22 @@ def _read_provider_api_key(db: Session, payload: ProviderValidateRequest) -> str
     if not row:
         return ""
     try:
-        return SecretCipher().decrypt(row.encrypted_secret)
-    except Exception:
+        key = SecretCipher().decrypt(row.encrypted_secret)
+        _audit_secret_access(
+            db,
+            provider_credential_id=row.id,
+            action="decrypt_for_validation",
+            success=True,
+        )
+        return key
+    except Exception as exc:
+        _audit_secret_access(
+            db,
+            provider_credential_id=row.id,
+            action="decrypt_for_validation",
+            success=False,
+            error=str(exc),
+        )
         return ""
 
 
@@ -225,6 +266,12 @@ def create_provider_credential(payload: ProviderCredentialCreate, db: Session = 
     db.add(row)
     db.commit()
     db.refresh(row)
+    _audit_secret_access(
+        db,
+        provider_credential_id=row.id,
+        action="create",
+        success=True,
+    )
     return ProviderCredentialOut.model_validate(row, from_attributes=True)
 
 
@@ -261,7 +308,87 @@ def rotate_provider_credential(
         row.status = payload.status
     db.commit()
     db.refresh(row)
+    _audit_secret_access(
+        db,
+        provider_credential_id=row.id,
+        action="rotate",
+        success=True,
+    )
     return ProviderCredentialOut.model_validate(row, from_attributes=True)
+
+
+@router.get("/providers/credentials/{credential_id}/audits")
+def list_provider_credential_audits(credential_id: str, db: Session = Depends(get_db)) -> dict:
+    row = db.query(ProviderCredential).filter(ProviderCredential.id == credential_id).one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Provider credential not found")
+    audits = (
+        db.query(SecretAccessAudit)
+        .filter(SecretAccessAudit.provider_credential_id == credential_id)
+        .order_by(SecretAccessAudit.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    return {
+        "credential_id": credential_id,
+        "audits": [SecretAccessAuditOut.model_validate(item, from_attributes=True).model_dump() for item in audits],
+    }
+
+
+@router.post("/orchestration-profiles", response_model=OrchestrationProfileOut)
+def create_orchestration_profile(
+    payload: OrchestrationProfileCreate,
+    db: Session = Depends(get_db),
+) -> OrchestrationProfileOut:
+    row = OrchestrationProfile(
+        name=payload.name,
+        description=payload.description,
+        version=payload.version,
+        status=payload.status,
+        config=payload.config,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return OrchestrationProfileOut.model_validate(row, from_attributes=True)
+
+
+@router.get("/orchestration-profiles")
+def list_orchestration_profiles(db: Session = Depends(get_db)) -> dict:
+    rows = db.query(OrchestrationProfile).order_by(OrchestrationProfile.created_at.desc()).all()
+    return {
+        "profiles": [OrchestrationProfileOut.model_validate(item, from_attributes=True).model_dump() for item in rows]
+    }
+
+
+@router.get("/orchestration-profiles/{profile_id}", response_model=OrchestrationProfileOut)
+def get_orchestration_profile(profile_id: str, db: Session = Depends(get_db)) -> OrchestrationProfileOut:
+    row = db.query(OrchestrationProfile).filter(OrchestrationProfile.id == profile_id).one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Orchestration profile not found")
+    return OrchestrationProfileOut.model_validate(row, from_attributes=True)
+
+
+@router.patch("/orchestration-profiles/{profile_id}", response_model=OrchestrationProfileOut)
+def update_orchestration_profile(
+    profile_id: str,
+    payload: OrchestrationProfileUpdate,
+    db: Session = Depends(get_db),
+) -> OrchestrationProfileOut:
+    row = db.query(OrchestrationProfile).filter(OrchestrationProfile.id == profile_id).one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Orchestration profile not found")
+    if payload.description is not None:
+        row.description = payload.description
+    if payload.version is not None:
+        row.version = payload.version
+    if payload.status is not None:
+        row.status = payload.status
+    if payload.config is not None:
+        row.config = payload.config
+    db.commit()
+    db.refresh(row)
+    return OrchestrationProfileOut.model_validate(row, from_attributes=True)
 
 
 @router.post("/pricing-profiles")
@@ -308,12 +435,24 @@ def create_profile(payload: ConfigProfileCreate, db: Session = Depends(get_db)) 
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    orchestration_cfg = payload.benchmark_config.afk_orchestration
+    if payload.orchestration_profile_id:
+        orchestration_profile = (
+            db.query(OrchestrationProfile)
+            .filter(OrchestrationProfile.id == payload.orchestration_profile_id)
+            .one_or_none()
+        )
+        if not orchestration_profile:
+            raise HTTPException(status_code=404, detail="Orchestration profile not found")
+        orchestration_cfg = {**(orchestration_profile.config or {}), **(orchestration_cfg or {})}
+
     row = ConfigProfile(
         session_id=payload.session_id,
         name=payload.name,
         strictness_mode=payload.scoring_config.strictness_mode,
+        orchestration_profile_id=payload.orchestration_profile_id,
         target_config=payload.target_config.model_dump(),
-        benchmark_config=payload.benchmark_config.model_dump(),
+        benchmark_config={**payload.benchmark_config.model_dump(), "afk_orchestration": orchestration_cfg},
         scoring_config=payload.scoring_config.model_dump(),
         runtime_config=payload.runtime_config.model_dump(),
     )
@@ -606,6 +745,29 @@ def get_policy_events(run_id: str, db: Session = Depends(get_db)) -> dict:
             }
             for row in rows
         ],
+    }
+
+
+@router.get("/runs/{run_id}/telemetry")
+def get_run_telemetry(run_id: str, db: Session = Depends(get_db)) -> dict:
+    run = db.query(Run).filter(Run.id == run_id).one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    rows = (
+        db.query(RunEvent.event_type, func.count(RunEvent.id))
+        .filter(RunEvent.run_id == run_id)
+        .group_by(RunEvent.event_type)
+        .all()
+    )
+    return {
+        "run_id": run_id,
+        "status": run.status,
+        "progress": {"completed": run.completed_attacks, "total": run.total_attacks},
+        "event_counts": {event_type: int(count) for event_type, count in rows},
+        "cost": {
+            "spent_usd": float(run.budget_spent_usd or 0.0),
+            "projected_final_usd": float(run.estimated_final_cost_usd or 0.0),
+        },
     }
 
 

@@ -21,6 +21,7 @@ export default function ProvidersPage() {
   const [baseUrl, setBaseUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const [validation, setValidation] = useState<ProviderValidation | null>(null)
+  const [audits, setAudits] = useState<Array<Record<string, unknown>>>([])
   const [error, setError] = useState<string | null>(null)
 
   const selected = useMemo(
@@ -47,6 +48,21 @@ export default function ProvidersPage() {
   useEffect(() => {
     void loadCredentials()
   }, [])
+
+  useEffect(() => {
+    if (!selectedId) {
+      setAudits([])
+      return
+    }
+    void (async () => {
+      try {
+        const payload = await api.getProviderCredentialAudits(selectedId)
+        setAudits(payload.audits)
+      } catch {
+        setAudits([])
+      }
+    })()
+  }, [selectedId])
 
   async function createCredential() {
     if (!apiKey) {
@@ -233,6 +249,41 @@ export default function ProvidersPage() {
           ) : (
             <p className="caption">Validation report appears here.</p>
           )}
+        </div>
+      </div>
+
+      <div className="panel stack-md">
+        <h2>Credential Audit Trail</h2>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Action</th>
+                <th>Actor</th>
+                <th>Success</th>
+                <th>Error</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {audits.map((row, idx) => (
+                <tr key={`${String(row.id)}-${idx}`}>
+                  <td>{String(row.action ?? 'unknown')}</td>
+                  <td>{String(row.actor ?? 'system')}</td>
+                  <td>{Boolean(row.success) ? 'yes' : 'no'}</td>
+                  <td>{String(row.error ?? '')}</td>
+                  <td>{formatTime(String(row.created_at ?? ''))}</td>
+                </tr>
+              ))}
+              {audits.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="caption">
+                    No audit records for selected credential.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
         </div>
       </div>
 

@@ -100,6 +100,30 @@ def build_inference_and_calibration(db: Session, run_id: str) -> None:
 def calibration_payload(db: Session, run_id: str) -> dict[str, Any]:
     reports = db.query(CalibrationReport).filter(CalibrationReport.run_id == run_id).all()
     bins = db.query(CalibrationBin).filter(CalibrationBin.run_id == run_id).order_by(CalibrationBin.failure_type.asc(), CalibrationBin.bin_index.asc()).all()
+    by_failure: dict[str, list[CalibrationBin]] = {}
+    for row in bins:
+        by_failure.setdefault(row.failure_type, []).append(row)
+
+    summaries = []
+    for failure_type, rows in by_failure.items():
+        total = max(sum(item.count for item in rows), 1)
+        ece = sum(abs(item.avg_accuracy - item.avg_confidence) * (item.count / total) for item in rows)
+        mce = max(abs(item.avg_accuracy - item.avg_confidence) for item in rows) if rows else 0.0
+        brier_reliability = sum(((item.avg_confidence - item.avg_accuracy) ** 2) * (item.count / total) for item in rows)
+        brier_resolution = float(np.var([item.avg_accuracy for item in rows])) if rows else 0.0
+        summaries.append(
+            {
+                "failure_type": failure_type,
+                "ece": float(ece),
+                "mce": float(mce),
+                "brier_decomposition": {
+                    "reliability": float(brier_reliability),
+                    "resolution": float(brier_resolution),
+                    "uncertainty": float(np.mean([item.avg_accuracy for item in rows])) if rows else 0.0,
+                },
+            }
+        )
+
     return {
         "run_id": run_id,
         "reports": [
@@ -122,6 +146,7 @@ def calibration_payload(db: Session, run_id: str) -> dict[str, Any]:
             }
             for row in bins
         ],
+        "summaries": summaries,
     }
 
 

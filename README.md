@@ -72,6 +72,9 @@ make dev client
 - `POST /v1/adjudications`
 - `POST /v1/mitigation-experiments`
 - `GET /v1/compare`
+- `POST /v1/orchestration-profiles`
+- `GET /v1/runs/{id}/telemetry`
+- `GET /v1/providers/credentials/{id}/audits`
 
 ## Frontend Pages
 - `/` Setup Wizard

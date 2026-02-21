@@ -1,7 +1,22 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api'
 import { loadState, saveState } from '../lib/state'
 import type { ProviderCredential } from '../lib/types'
+import ReactFlow, {
+  addEdge,
+  Background,
+  Connection,
+  Controls,
+  Edge,
+  Handle,
+  MarkerType,
+  Node,
+  NodeProps,
+  Position,
+  useEdgesState,
+  useNodesState,
+} from 'reactflow'
+import 'reactflow/dist/style.css'
 
 const TAXONOMY = [
   'prompt_injection',
@@ -10,6 +25,28 @@ const TAXONOMY = [
   'tool_misuse',
   'unsafe_output',
 ] as const
+
+type StudioNodeData = {
+  label: string
+  role: string
+  model: string
+}
+
+function StudioNode({ data }: NodeProps<StudioNodeData>) {
+  return (
+    <div className="flow-node studio-node">
+      <Handle type="target" position={Position.Left} />
+      <div className="node-title">{data.label}</div>
+      <div className="node-sub">Role: {data.role}</div>
+      <small>{data.model}</small>
+      <Handle type="source" position={Position.Right} />
+    </div>
+  )
+}
+
+const studioNodeTypes = {
+  studioNode: StudioNode,
+}
 
 export default function WizardPage() {
   const persisted = useMemo(() => loadState(), [])
@@ -40,6 +77,35 @@ export default function WizardPage() {
   const [credentialName, setCredentialName] = useState('default-provider-key')
   const [credentialKeyVersion, setCredentialKeyVersion] = useState('v1')
   const [credentialsBusy, setCredentialsBusy] = useState(false)
+  const [orchestrationProfiles, setOrchestrationProfiles] = useState<Array<{ id: string; name: string; config: Record<string, unknown> }>>([])
+  const [orchestrationProfileName, setOrchestrationProfileName] = useState('default-afk-studio')
+  const [selectedOrchestrationProfileId, setSelectedOrchestrationProfileId] = useState('')
+  const [joinPolicy, setJoinPolicy] = useState('all_required')
+  const [routerStrategy, setRouterStrategy] = useState('taxonomy')
+  const [maxSubagents, setMaxSubagents] = useState(3)
+
+  const initialStudioNodes = useMemo<Node<StudioNodeData>[]>(
+    () => [
+      { id: 'coordinator', type: 'studioNode', position: { x: 80, y: 180 }, data: { label: 'Coordinator', role: 'coordinator', model: 'gpt-4.1-mini' } },
+      { id: 'attacker', type: 'studioNode', position: { x: 340, y: 60 }, data: { label: 'Attacker', role: 'attacker', model: 'gpt-4.1-mini' } },
+      { id: 'critic', type: 'studioNode', position: { x: 340, y: 280 }, data: { label: 'Critic', role: 'critic', model: 'gpt-4.1-mini' } },
+      { id: 'verifier', type: 'studioNode', position: { x: 620, y: 120 }, data: { label: 'Verifier', role: 'verifier', model: 'gpt-4.1-mini' } },
+      { id: 'analyst', type: 'studioNode', position: { x: 620, y: 300 }, data: { label: 'Analyst', role: 'analyst', model: 'gpt-4.1-mini' } },
+    ],
+    [],
+  )
+  const initialStudioEdges = useMemo<Edge[]>(
+    () => [
+      { id: 'e1', source: 'coordinator', target: 'attacker', markerEnd: { type: MarkerType.ArrowClosed } },
+      { id: 'e2', source: 'coordinator', target: 'critic', markerEnd: { type: MarkerType.ArrowClosed } },
+      { id: 'e3', source: 'attacker', target: 'verifier', markerEnd: { type: MarkerType.ArrowClosed } },
+      { id: 'e4', source: 'critic', target: 'verifier', markerEnd: { type: MarkerType.ArrowClosed } },
+      { id: 'e5', source: 'verifier', target: 'analyst', markerEnd: { type: MarkerType.ArrowClosed } },
+    ],
+    [],
+  )
+  const [studioNodes, setStudioNodes, onStudioNodesChange] = useNodesState(initialStudioNodes)
+  const [studioEdges, setStudioEdges, onStudioEdgesChange] = useEdgesState(initialStudioEdges)
 
   const [taxonomy, setTaxonomy] = useState<string[]>([...TAXONOMY])
   const [seed, setSeed] = useState(42)
@@ -61,6 +127,28 @@ export default function WizardPage() {
   const [budgetUsd, setBudgetUsd] = useState(5)
   const [baselineRunId, setBaselineRunId] = useState(persisted.baselineRunId ?? '')
 
+  const studioConfig = useMemo(() => {
+    const roleNodes = studioNodes.filter((node) => node.id !== 'coordinator')
+    return {
+      join_policy: joinPolicy,
+      subagent_router_strategy: routerStrategy,
+      max_concurrent_subagents: maxSubagents,
+      roles: roleNodes.map((node) => ({
+        name: node.data.role,
+        enabled: true,
+        model: node.data.model,
+        instruction_file: `${node.data.role}.md`,
+      })),
+      graph: {
+        nodes: studioNodes,
+        edges: studioEdges,
+      },
+    }
+  }, [joinPolicy, maxSubagents, routerStrategy, studioEdges, studioNodes])
+
+  const onStudioConnect = (params: Connection) =>
+    setStudioEdges((current) => addEdge({ ...params, markerEnd: { type: MarkerType.ArrowClosed } }, current))
+
   async function onSubmit(event: FormEvent) {
     event.preventDefault()
     setBusy(true)
@@ -76,6 +164,7 @@ export default function WizardPage() {
       const profile = await api.createConfigProfile({
         session_id: session.id,
         name: `${sessionName} - ${new Date().toISOString()}`,
+        orchestration_profile_id: selectedOrchestrationProfileId || null,
         target_config: {
           target_type: targetType,
           endpoint: endpoint || null,
@@ -106,6 +195,7 @@ export default function WizardPage() {
           agentic_attacking: agenticAttacking,
           agentic_provider: agenticProvider,
           agentic_model: agenticModel || null,
+          afk_orchestration: studioConfig,
         },
         scoring_config: {
           strictness_mode: strictness,
@@ -162,6 +252,17 @@ export default function WizardPage() {
   }
 
   const providerType = targetType === 'litellm' ? 'litellm' : targetType === 'openai_compatible' ? 'openai_compatible' : 'synthetic'
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const payload = await api.listOrchestrationProfiles()
+        setOrchestrationProfiles(payload.profiles as Array<{ id: string; name: string; config: Record<string, unknown> }>)
+      } catch {
+        // Non-blocking for first-use UX.
+      }
+    })()
+  }, [])
 
   function toggleTaxonomy(value: string) {
     setTaxonomy((current) =>
@@ -471,6 +572,121 @@ export default function WizardPage() {
                 placeholder="defaults to target model"
               />
             </label>
+            <div className="span-2 panel stack-md">
+              <div className="row between wrap">
+                <h3>AFK Orchestration Studio</h3>
+                <div className="row gap-lg wrap">
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={async () => {
+                      const created = await api.createOrchestrationProfile({
+                        name: orchestrationProfileName,
+                        description: 'Created from wizard studio',
+                        config: studioConfig,
+                        version: 'v1',
+                        status: 'active',
+                      })
+                      setSelectedOrchestrationProfileId(created.id)
+                      const payload = await api.listOrchestrationProfiles()
+                      setOrchestrationProfiles(payload.profiles as Array<{ id: string; name: string; config: Record<string, unknown> }>)
+                    }}
+                  >
+                    Save Studio Profile
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => {
+                      const id = `role-${Date.now()}`
+                      setStudioNodes((current) => [
+                        ...current,
+                        {
+                          id,
+                          type: 'studioNode',
+                          position: { x: 220 + Math.random() * 520, y: 80 + Math.random() * 260 },
+                          data: { label: 'Custom Role', role: 'custom', model: model || 'gpt-4.1-mini' },
+                        },
+                      ])
+                    }}
+                  >
+                    Add Role Node
+                  </button>
+                </div>
+              </div>
+              <div className="grid two">
+                <label>
+                  Profile Name
+                  <input value={orchestrationProfileName} onChange={(event) => setOrchestrationProfileName(event.target.value)} />
+                </label>
+                <label>
+                  Selected Profile
+                  <select
+                    value={selectedOrchestrationProfileId}
+                    onChange={(event) => {
+                      const nextId = event.target.value
+                      setSelectedOrchestrationProfileId(nextId)
+                      const item = orchestrationProfiles.find((profile) => profile.id === nextId)
+                      if (!item) return
+                      const cfg = item.config || {}
+                      const maybeNodes = (cfg.graph as Record<string, unknown> | undefined)?.nodes
+                      const maybeEdges = (cfg.graph as Record<string, unknown> | undefined)?.edges
+                      if (Array.isArray(maybeNodes)) setStudioNodes(maybeNodes as Node<StudioNodeData>[])
+                      if (Array.isArray(maybeEdges)) setStudioEdges(maybeEdges as Edge[])
+                      if (typeof cfg.join_policy === 'string') setJoinPolicy(cfg.join_policy)
+                      if (typeof cfg.subagent_router_strategy === 'string') setRouterStrategy(cfg.subagent_router_strategy)
+                    }}
+                  >
+                    <option value="">none</option>
+                    {orchestrationProfiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Join Policy
+                  <select value={joinPolicy} onChange={(event) => setJoinPolicy(event.target.value)}>
+                    <option value="all_required">all_required</option>
+                    <option value="allow_optional_failures">allow_optional_failures</option>
+                    <option value="first_success">first_success</option>
+                    <option value="quorum">quorum</option>
+                  </select>
+                </label>
+                <label>
+                  Router Strategy
+                  <select value={routerStrategy} onChange={(event) => setRouterStrategy(event.target.value)}>
+                    <option value="taxonomy">taxonomy</option>
+                    <option value="difficulty">difficulty</option>
+                    <option value="provider_slice">provider_slice</option>
+                    <option value="round_robin">round_robin</option>
+                  </select>
+                </label>
+                <label>
+                  Max Concurrent Subagents
+                  <input type="number" min={1} max={12} value={maxSubagents} onChange={(event) => setMaxSubagents(Number(event.target.value))} />
+                </label>
+              </div>
+              <div className="flow-canvas" style={{ height: 360 }}>
+                <ReactFlow
+                  nodes={studioNodes}
+                  edges={studioEdges}
+                  onNodesChange={onStudioNodesChange}
+                  onEdgesChange={onStudioEdgesChange}
+                  onConnect={onStudioConnect}
+                  nodeTypes={studioNodeTypes}
+                  fitView
+                >
+                  <Background />
+                  <Controls />
+                </ReactFlow>
+              </div>
+              <details>
+                <summary>Studio JSON</summary>
+                <pre className="json">{JSON.stringify(studioConfig, null, 2)}</pre>
+              </details>
+            </div>
           </div>
         )}
 

@@ -18,7 +18,7 @@ import 'reactflow/dist/style.css'
 
 import { api } from '../lib/api'
 import { loadState, saveState } from '../lib/state'
-import type { AttackSummaryPayload, RiskCards, RunOut, Scorecard } from '../lib/types'
+import type { AttackSummaryPayload, RiskCards, RunOut, RunTelemetryPayload, Scorecard } from '../lib/types'
 
 type EventRow = {
   id: number
@@ -134,6 +134,7 @@ export default function MonitorPage() {
   const [events, setEvents] = useState<EventRow[]>([])
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [telemetry, setTelemetry] = useState<RunTelemetryPayload | null>(null)
   const [selectedAttackType, setSelectedAttackType] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'attack' | 'studio'>('attack')
 
@@ -292,16 +293,18 @@ export default function MonitorPage() {
   const refreshAll = useCallback(async () => {
     if (!runId) return
     try {
-      const [runRes, scoreRes, summaryRes, riskRes] = await Promise.all([
+      const [runRes, scoreRes, summaryRes, riskRes, telemetryRes] = await Promise.all([
         api.getRun(runId),
         api.getScorecard(runId).catch(() => null),
         api.getAttackSummary(runId).catch(() => null),
         api.getRiskCards(runId).catch(() => null),
+        api.getRunTelemetry(runId).catch(() => null),
       ])
       setRun(runRes)
       setScorecard(scoreRes)
       setAttackSummary(summaryRes)
       setRiskCards(riskRes)
+      setTelemetry(telemetryRes)
       saveState({ ...loadState(), currentRunId: runId })
 
       if (!selectedAttackType && summaryRes?.attack_types?.length) {
@@ -414,6 +417,8 @@ export default function MonitorPage() {
             <p>Composite: <strong>{Number(scorecard?.metrics?.composite_score ?? 0).toFixed(1)}</strong></p>
             <p>Gate: <strong>{scorecard?.gates?.pass ? 'PASS' : 'FAIL'}</strong></p>
             <p>Stream: <strong>{streaming ? 'LIVE' : 'CLOSED'}</strong></p>
+            <p>Spent: <strong>${Number(telemetry?.cost?.spent_usd ?? run?.budget_spent_usd ?? 0).toFixed(3)}</strong></p>
+            <p>Projected: <strong>${Number(telemetry?.cost?.projected_final_usd ?? run?.estimated_final_cost_usd ?? 0).toFixed(3)}</strong></p>
           </div>
 
           <div className="flow-canvas">
@@ -469,6 +474,28 @@ export default function MonitorPage() {
                     {event.message && <p>{event.message}</p>}
                   </article>
                 ))}
+              </div>
+            </div>
+
+            <div className="stack-sm">
+              <h3>Telemetry Counters</h3>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Event</th>
+                      <th>Count</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(telemetry?.event_counts ?? {}).map(([name, count]) => (
+                      <tr key={name}>
+                        <td>{name}</td>
+                        <td>{count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </aside>

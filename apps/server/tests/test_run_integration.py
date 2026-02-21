@@ -142,6 +142,7 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
     clusters = client.get(f"/v1/runs/{run_id}/clusters", headers=_headers())
     attack_summary = client.get(f"/v1/runs/{run_id}/attack-summary", headers=_headers())
     execution_slices = client.get(f"/v1/runs/{run_id}/execution-slices", headers=_headers())
+    telemetry = client.get(f"/v1/runs/{run_id}/telemetry", headers=_headers())
     drift = client.get(f"/v1/runs/{run_id}/drift", headers=_headers())
     cost_summary = client.get(f"/v1/runs/{run_id}/cost-summary", headers=_headers())
     cost_series = client.get(f"/v1/runs/{run_id}/cost-timeseries", headers=_headers())
@@ -172,6 +173,8 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
     assert isinstance(attack_summary.json()["attack_types"], list)
     assert execution_slices.status_code == 200
     assert isinstance(execution_slices.json()["slices"], list)
+    assert telemetry.status_code == 200
+    assert "event_counts" in telemetry.json()
 
     assert drift.status_code == 200
     assert "drift_signals" in drift.json()

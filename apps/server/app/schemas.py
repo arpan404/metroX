@@ -155,6 +155,7 @@ class ScoringConfig(BaseModel):
 class ConfigProfileCreate(BaseModel):
     session_id: str
     name: str
+    orchestration_profile_id: str | None = None
     target_config: TargetConfig = Field(default_factory=TargetConfig)
     benchmark_config: BenchmarkConfig = Field(default_factory=BenchmarkConfig)
     scoring_config: ScoringConfig = Field(default_factory=ScoringConfig)
@@ -166,6 +167,7 @@ class ConfigProfileOut(BaseModel):
     session_id: str
     name: str
     strictness_mode: str
+    orchestration_profile_id: str | None
     target_config: dict[str, Any]
     benchmark_config: dict[str, Any]
     scoring_config: dict[str, Any]
@@ -326,6 +328,41 @@ class ProviderCredentialOut(BaseModel):
     status: str
     created_at: datetime
     last_validated_at: datetime | None
+
+
+class SecretAccessAuditOut(BaseModel):
+    id: str
+    provider_credential_id: str
+    action: str
+    actor: str
+    success: bool
+    error: str | None
+    created_at: datetime
+
+
+class OrchestrationProfileCreate(BaseModel):
+    name: str
+    description: str | None = None
+    version: str = "v1"
+    status: str = "active"
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class OrchestrationProfileUpdate(BaseModel):
+    description: str | None = None
+    version: str | None = None
+    status: str | None = None
+    config: dict[str, Any] | None = None
+
+
+class OrchestrationProfileOut(BaseModel):
+    id: str
+    name: str
+    description: str | None
+    version: str
+    status: str
+    config: dict[str, Any]
+    created_at: datetime
 
 
 class PricingProfileCreate(BaseModel):

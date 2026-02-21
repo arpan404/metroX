@@ -27,10 +27,14 @@ export type RunOut = {
   mode: string
   strictness: string
   status: string
+  thread_id?: string | null
   total_attacks: number
   completed_attacks: number
-  summary_metrics: Record<string, number>
+  budget_spent_usd: number
+  estimated_final_cost_usd: number
+  summary_metrics: Record<string, number | string>
   gate_result: { pass?: boolean; reasons?: string[] }
+  cost_gate_result?: { pass?: boolean; budget_usd?: number; spent_usd?: number; projected_final_usd?: number }
   created_at: string
 }
 
@@ -117,6 +121,26 @@ export type ProviderCredentialListPayload = {
   credentials: ProviderCredential[]
 }
 
+export type SecretAccessAudit = {
+  id: string
+  provider_credential_id: string
+  action: string
+  actor: string
+  success: boolean
+  error?: string | null
+  created_at: string
+}
+
+export type OrchestrationProfile = {
+  id: string
+  name: string
+  description?: string | null
+  version: string
+  status: string
+  config: Record<string, unknown>
+  created_at: string
+}
+
 export type PricingProfilePayload = {
   id: string
   name: string
@@ -167,4 +191,12 @@ export type ExecutionSlicesPayload = {
     avg_latency_ms: number
     effective_cost_usd: number
   }>
+}
+
+export type RunTelemetryPayload = {
+  run_id: string
+  status: string
+  progress: { completed: number; total: number }
+  event_counts: Record<string, number>
+  cost: { spent_usd: number; projected_final_usd: number }
 }

@@ -41,6 +41,10 @@ vi.mock('../lib/api', () => ({
       model: 'gpt-4.1-mini',
       discovered_models: ['gpt-4.1-mini'],
     })),
+    getProviderCredentialAudits: vi.fn(async () => ({
+      credential_id: 'cred-1',
+      audits: [],
+    })),
   },
 }))
 

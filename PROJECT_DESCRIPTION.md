@@ -58,6 +58,7 @@ It evaluates not only final answers, but full agent contracts:
   - drift intelligence
 - Compare baseline vs candidate runs
 - Generate markdown reports
+- Dedicated provider settings surface for credential lifecycle and provider validation
 - Cost intelligence panels:
   - effective/provider/fallback spend
   - run cost burn and projected completion cost
@@ -90,11 +91,14 @@ It evaluates not only final answers, but full agent contracts:
 - AFK capability registry endpoint for orchestration tuning
 - Provider and pricing APIs (`/v1/providers/*`, `/v1/pricing-profiles/*`)
 - Provider credential lifecycle APIs (`create/list/get/rotate`) with encrypted secret persistence
+- Provider credential audit API (`GET /v1/providers/credentials/{id}/audits`)
+- Orchestration profile APIs (`create/list/get/update`)
 - Scorecards, risk cards, features, clusters, drift
 - Cost APIs (`/v1/runs/{id}/cost-summary`, `/v1/runs/{id}/cost-timeseries`)
 - Slice analytics API (`/v1/runs/{id}/execution-slices`) for attack/provider/model diagnostics
 - Advanced DS APIs (`/v1/runs/{id}/inference`, `/v1/runs/{id}/calibration`, `/v1/runs/{id}/cooccurrence-graph`, `/v1/runs/{id}/forecast`)
 - Resume endpoint (`POST /v1/runs/{id}/resume`) with AFK run-state tracking
+- Telemetry endpoint (`GET /v1/runs/{id}/telemetry`) for live event/cost counters
 - Adjudication workflow
 - Mitigation experiments and comparisons
 - Report generation
@@ -110,6 +114,7 @@ It evaluates not only final answers, but full agent contracts:
 - Structured JSON request logs with trace-id propagation
 - `/slo` endpoint for API-level request/error/latency summaries
 - Load-test harness for 10k execution-cost aggregation hot path
+- Secret access audit trail for credential operations
 ## 10. Current Scope Boundary
 - Single-tenant API key auth (V1)
 - Raw + redacted data model

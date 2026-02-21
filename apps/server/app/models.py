@@ -61,6 +61,9 @@ class ConfigProfile(Base):
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     strictness_mode: Mapped[str] = mapped_column(String(50), default="balanced")
+    orchestration_profile_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("orchestration_profiles.id", ondelete="SET NULL"), nullable=True
+    )
     target_config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     benchmark_config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     scoring_config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
@@ -147,7 +150,7 @@ class Execution(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     run_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False
+        String(36), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True
     )
     attack_case_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("attack_cases.id", ondelete="CASCADE"), nullable=False
@@ -183,7 +186,7 @@ class Detection(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     execution_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("executions.id", ondelete="CASCADE"), nullable=False
+        String(36), ForeignKey("executions.id", ondelete="CASCADE"), nullable=False, index=True
     )
     failure_flags: Mapped[dict[str, bool]] = mapped_column(JSON, default=dict)
     severity: Mapped[str] = mapped_column(String(40), default="low")
@@ -209,7 +212,7 @@ class Adjudication(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     run_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False
+        String(36), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True
     )
     execution_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("executions.id", ondelete="CASCADE"), nullable=False
@@ -237,7 +240,7 @@ class FeatureValue(Base):
     __tablename__ = "feature_values"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True)
     execution_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("executions.id", ondelete="CASCADE"), nullable=False
     )
@@ -254,7 +257,7 @@ class ClusterMembership(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     run_id: Mapped[str] = mapped_column(String(36), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
     execution_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("executions.id", ondelete="CASCADE"), nullable=False
+        String(36), ForeignKey("executions.id", ondelete="CASCADE"), nullable=False, index=True
     )
     cluster_id: Mapped[int] = mapped_column(Integer, nullable=False)
     method: Mapped[str] = mapped_column(String(80), default="hdbscan")
@@ -419,6 +422,32 @@ class ProviderCredential(Base):
     key_version: Mapped[str] = mapped_column(String(40), default="v1")
     status: Mapped[str] = mapped_column(String(40), default="active")
     last_validated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, nullable=False)
+
+
+class SecretAccessAudit(Base):
+    __tablename__ = "secret_access_audits"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    provider_credential_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("provider_credentials.id", ondelete="CASCADE"), nullable=False
+    )
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    actor: Mapped[str] = mapped_column(String(120), default="system")
+    success: Mapped[bool] = mapped_column(Boolean, default=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, nullable=False)
+
+
+class OrchestrationProfile(Base):
+    __tablename__ = "orchestration_profiles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version: Mapped[str] = mapped_column(String(40), default="v1")
+    status: Mapped[str] = mapped_column(String(40), default="active")
+    config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, nullable=False)
 
 

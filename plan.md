@@ -205,3 +205,34 @@ This remains frontend-first: users fully configure targets, scoring, and session
 ### Performance and operations
 - Added load test fixture for 10k execution-cost hot path (`pytest -m load`, env-gated).
 - Added structured request logging with trace IDs and `GET /slo` runtime metrics endpoint.
+
+## V1.7 Delta (Current)
+
+### AFK orchestration UX + profile persistence
+- Added orchestration profile APIs:
+  - `POST /v1/orchestration-profiles`
+  - `GET /v1/orchestration-profiles`
+  - `GET /v1/orchestration-profiles/{id}`
+  - `PATCH /v1/orchestration-profiles/{id}`
+- Config profiles now accept `orchestration_profile_id` and merge selected profile config into `benchmark_config.afk_orchestration`.
+- Wizard now includes a React Flow orchestration studio with save/load profile controls.
+
+### Live monitor telemetry
+- Added `GET /v1/runs/{id}/telemetry` for event counts, progress, and cost burn.
+- Attack canvas report now includes spend/projection and event counter tables.
+
+### Security hardening
+- Secret encryption backend is now pluggable:
+  - `local` envelope backend
+  - optional `kms` backend (AWS KMS) with safe local fallback.
+- Added credential access audit trail:
+  - `secret_access_audits` data model
+  - `GET /v1/providers/credentials/{id}/audits`
+- Audit events now record create/rotate/decrypt-for-validation flows.
+
+### DS diagnostics uplift
+- Calibration payload now includes summary diagnostics:
+  - ECE
+  - MCE
+  - Brier decomposition slices.
+- Analytics page now renders inference matrix and calibration diagnostics panels.

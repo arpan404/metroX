@@ -228,3 +228,35 @@ def test_provider_credential_lifecycle(api_client) -> None:
     )
     assert rotated.status_code == 200
     assert rotated.json()["key_version"] == "v2"
+    audits = client.get(f"/v1/providers/credentials/{credential_id}/audits", headers=_headers())
+    assert audits.status_code == 200
+    assert isinstance(audits.json()["audits"], list)
+
+
+def test_orchestration_profile_contract(api_client) -> None:
+    client, _ = api_client
+    created = client.post(
+        "/v1/orchestration-profiles",
+        json={
+            "name": "contract-orchestration",
+            "description": "contract profile",
+            "version": "v1",
+            "status": "active",
+            "config": {"join_policy": "all_required", "roles": [{"name": "attacker", "enabled": True}]},
+        },
+        headers=_headers(),
+    )
+    assert created.status_code == 200
+    profile_id = created.json()["id"]
+
+    listed = client.get("/v1/orchestration-profiles", headers=_headers())
+    assert listed.status_code == 200
+    assert any(item["id"] == profile_id for item in listed.json()["profiles"])
+
+    patched = client.patch(
+        f"/v1/orchestration-profiles/{profile_id}",
+        json={"version": "v2", "config": {"join_policy": "first_success"}},
+        headers=_headers(),
+    )
+    assert patched.status_code == 200
+    assert patched.json()["version"] == "v2"

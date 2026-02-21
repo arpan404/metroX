@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     low_confidence_max: float = Field(default=0.70)
     secret_active_key_version: str = Field(default="v1")
     secret_keys_json: str = Field(default="")
+    secret_backend: str = Field(default="local")
+    aws_kms_key_id: str = Field(default="")
+    aws_region: str = Field(default="us-east-1")
     use_migrations: bool = Field(default=False)
 
 

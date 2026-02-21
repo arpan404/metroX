@@ -6,11 +6,13 @@ import type {
   CostTimeseriesPayload,
   DriftPayload,
   ExecutionSlicesPayload,
+  OrchestrationProfile,
   PricingProfilePayload,
   ProviderCredential,
   ProviderCredentialListPayload,
   ProviderValidation,
   RiskCards,
+  RunTelemetryPayload,
   RunOut,
   Scorecard,
   SessionOut,
@@ -85,9 +87,39 @@ export const api = {
     return request<ProviderCredential>(`/v1/providers/credentials/${credentialId}`)
   },
 
+  getProviderCredentialAudits(credentialId: string) {
+    return request<{ credential_id: string; audits: Array<Record<string, unknown>> }>(
+      `/v1/providers/credentials/${credentialId}/audits`,
+    )
+  },
+
   rotateProviderCredential(credentialId: string, payload: { api_key: string; key_version?: string; status?: string }) {
     return request<ProviderCredential>(`/v1/providers/credentials/${credentialId}/rotate`, {
       method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  createOrchestrationProfile(payload: {
+    name: string
+    description?: string
+    version?: string
+    status?: string
+    config: Record<string, unknown>
+  }) {
+    return request<OrchestrationProfile>('/v1/orchestration-profiles', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  listOrchestrationProfiles() {
+    return request<{ profiles: OrchestrationProfile[] }>('/v1/orchestration-profiles')
+  },
+
+  updateOrchestrationProfile(profileId: string, payload: Record<string, unknown>) {
+    return request<OrchestrationProfile>(`/v1/orchestration-profiles/${profileId}`, {
+      method: 'PATCH',
       body: JSON.stringify(payload),
     })
   },
@@ -148,6 +180,10 @@ export const api = {
 
   getCostTimeseries(runId: string) {
     return request<CostTimeseriesPayload>(`/v1/runs/${runId}/cost-timeseries`)
+  },
+
+  getRunTelemetry(runId: string) {
+    return request<RunTelemetryPayload>(`/v1/runs/${runId}/telemetry`)
   },
 
   getPolicyEvents(runId: string) {

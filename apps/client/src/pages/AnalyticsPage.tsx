@@ -82,6 +82,8 @@ export default function AnalyticsPage() {
   const [costSummary, setCostSummary] = useState<CostSummaryPayload | null>(null)
   const [costTimeseries, setCostTimeseries] = useState<CostTimeseriesPayload | null>(null)
   const [executionSlices, setExecutionSlices] = useState<ExecutionSlicesPayload | null>(null)
+  const [inference, setInference] = useState<{ tests?: Array<Record<string, unknown>> } | null>(null)
+  const [calibration, setCalibration] = useState<{ bins?: Array<Record<string, unknown>>; summaries?: Array<Record<string, unknown>> } | null>(null)
   const [comparison, setComparison] = useState<Record<string, unknown> | null>(null)
   const [reportPath, setReportPath] = useState<string>('')
   const [filterAttack, setFilterAttack] = useState<string>('all')
@@ -111,7 +113,7 @@ export default function AnalyticsPage() {
     if (!runId) return
     setError(null)
     try {
-      const [sc, risks, cl, dr, cost, series, slices] = await Promise.all([
+      const [sc, risks, cl, dr, cost, series, slices, inf, cal] = await Promise.all([
         api.getScorecard(runId),
         api.getRiskCards(runId),
         api.getClusters(runId),
@@ -119,6 +121,8 @@ export default function AnalyticsPage() {
         api.getCostSummary(runId),
         api.getCostTimeseries(runId),
         api.getExecutionSlices(runId),
+        api.getInference(runId).catch(() => ({ tests: [] })),
+        api.getCalibration(runId).catch(() => ({ bins: [], summaries: [] })),
       ])
       setScorecard(sc)
       setRiskCards(risks)
@@ -127,6 +131,8 @@ export default function AnalyticsPage() {
       setCostSummary(cost)
       setCostTimeseries(series)
       setExecutionSlices(slices)
+      setInference(inf)
+      setCalibration(cal)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load analytics')
     }
@@ -288,6 +294,59 @@ export default function AnalyticsPage() {
             </table>
           </div>
         ) : <p className="caption">No drift signals.</p>}
+      </div>
+
+      <div className="grid two">
+        <div className="panel stack-md">
+          <h2>Inference Matrix</h2>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>Effect</th>
+                  <th>Adj p</th>
+                  <th>Power</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(inference?.tests ?? []).slice(0, 20).map((row, idx) => (
+                  <tr key={`${String(row.metric_name)}-${idx}`}>
+                    <td>{String(row.metric_name ?? 'metric')}</td>
+                    <td>{Number(row.effect_size ?? 0).toFixed(4)}</td>
+                    <td>{Number(row.adjusted_p_value ?? 1).toFixed(4)}</td>
+                    <td>{Number(row.power ?? 0).toFixed(3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="panel stack-md">
+          <h2>Calibration Diagnostics</h2>
+          <AxisLine points={(calibration?.bins ?? []).map((row) => Number(row.avg_accuracy ?? 0))} />
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Failure</th>
+                  <th>ECE</th>
+                  <th>MCE</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(calibration?.summaries ?? []).map((row, idx) => (
+                  <tr key={`${String(row.failure_type)}-${idx}`}>
+                    <td>{String(row.failure_type ?? 'unknown')}</td>
+                    <td>{Number(row.ece ?? 0).toFixed(4)}</td>
+                    <td>{Number(row.mce ?? 0).toFixed(4)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <div className="panel stack-md">

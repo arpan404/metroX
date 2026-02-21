@@ -61,6 +61,7 @@ The product must function as **unit tests for AI behavior**, not as a prompt dem
 - Multi-agent attacking must support coordinator + routing strategy + join policy controls.
 - Policy-sensitive operations must emit auditable run events (`policy_decision`, `run_paused`, `run_resumed` when present).
 - Resume behavior must prefer AFK-native checkpoint continuation (`runner.resume`) when run/thread lineage is available.
+- Orchestration must be profile-driven: reusable orchestration profiles should be first-class API entities and selectable from frontend configuration.
 
 ## Provider and Cost Intelligence Requirements
 - Support `litellm` and `openai_compatible` provider configuration from frontend.
@@ -71,6 +72,7 @@ The product must function as **unit tests for AI behavior**, not as a prompt dem
   - persist provenance (`provider`, `fallback`, `mixed`) and confidence.
 - Runs must expose cost summary, timeseries, and budget/cost-gate state.
 - Provider credentials must support encrypted storage and rotation APIs; plaintext keys must not be returned from API responses.
+- Credential operations must emit audit records (create/rotate/decrypt-for-validation) and be queryable for compliance triage.
 
 ## Observability and Reliability Rules
 - Every HTTP request must include/emit a trace id (`X-Trace-Id`) for log correlation.

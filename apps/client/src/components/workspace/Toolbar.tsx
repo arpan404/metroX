@@ -7,7 +7,6 @@ import {
   Moon,
   Sun,
   RefreshCw,
-  Play,
   Pause,
   Radio,
   ChevronDown,
@@ -37,13 +36,6 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
     setRunIdInput(state.currentRunId ?? '')
   }, [state.currentRunId])
 
-  const handleLoadRun = useCallback(() => {
-    const id = runIdInput.trim()
-    if (id) {
-      dispatch({ type: 'SET_RUN_ID', runId: id })
-    }
-  }, [runIdInput, dispatch])
-
   const loadRunOptions = useCallback(async () => {
     setIsLoadingRuns(true)
     try {
@@ -69,8 +61,8 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
   const selectorLabel = useMemo(() => {
     const id = runIdInput.trim()
     if (!id) return 'Select run'
-    if (id.length <= 18) return id
-    return `${id.slice(0, 8)}…${id.slice(-6)}`
+    if (id.length <= 28) return id
+    return `${id.slice(0, 12)}…${id.slice(-12)}`
   }, [runIdInput])
 
   const handleRefresh = useCallback(async () => {
@@ -122,10 +114,10 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
               variant="outline"
               role="combobox"
               aria-expanded={runSelectorOpen}
-              className="h-8 w-full min-w-0 justify-between rounded-lg border-border/35 bg-background/45 dark:bg-background/25 px-3 text-sm font-mono"
+              className="relative h-8 w-full min-w-0 rounded-lg border-border/35 bg-background/45 dark:bg-background/25 px-3 text-sm font-mono"
             >
-              <span className="truncate">{selectorLabel}</span>
-              <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-60" />
+              <span className="block w-full truncate text-center pr-6">{selectorLabel}</span>
+              <ChevronsUpDown className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 shrink-0 opacity-60" />
             </Button>
           </PopoverTrigger>
           <PopoverContent
@@ -190,18 +182,6 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
             </CommandMenu>
           </PopoverContent>
         </Popover>
-      </div>
-
-      <div className="flex items-center gap-2 shrink-0">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0 rounded-lg border border-border/35 bg-background/45 dark:bg-background/25 hover:bg-background/60"
-          onClick={handleLoadRun}
-          disabled={!runIdInput.trim()}
-        >
-          <Play className="h-3.5 w-3.5" />
-        </Button>
       </div>
 
       {/* Run status pills */}

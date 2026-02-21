@@ -39,19 +39,30 @@
   }
 
   .workspace-canvas .react-flow__controls button {
-    border: none !important;
+    border: 1px solid transparent !important;
     background: transparent !important;
     color: var(--foreground) !important;
     width: 32px !important;
     height: 32px !important;
     margin: 3px !important;
     border-radius: 8px !important;
+    transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease !important;
     /* ensure SVG does not swallow pointer events */
     cursor: pointer !important;
   }
 
   .workspace-canvas .react-flow__controls button:hover {
     background: hsl(var(--accent) / 0.7) !important;
+  }
+
+  .workspace-canvas .react-flow__controls button:focus-visible,
+  .workspace-canvas .react-flow__controls button:active {
+    background: hsl(var(--primary) / 0.16) !important;
+    border-color: hsl(var(--primary) / 0.45) !important;
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.2),
+      0 6px 18px -12px rgba(0, 0, 0, 0.35) !important;
+    outline: none !important;
   }
 
   .workspace-canvas .react-flow__controls button svg {

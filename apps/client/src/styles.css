@@ -1,105 +1,119 @@
-/* ─── Canvas dot-grid ───────────────────────────────────────── */
-.canvas-dot-grid {
-  background-image: radial-gradient(circle, var(--border) 1px, transparent 1px);
-  background-size: 24px 24px;
+@layer base {
+  body {
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 99px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
 }
 
-/* ─── ReactFlow: design system consistency ──────────────────── */
-.react-flow__minimap {
-  border-radius: 8px !important;
-  border: 1px solid var(--border) !important;
-  background: var(--card) !important;
-  opacity: 0.9;
-}
-.react-flow__controls {
-  border-radius: 8px !important;
-  border: 1px solid var(--border) !important;
-  background: var(--card) !important;
-  box-shadow: 0 1px 4px 0 rgb(0 0 0 / 0.08) !important;
-}
-.react-flow__controls button {
-  border-color: var(--border) !important;
-  background: var(--card) !important;
-  color: var(--foreground) !important;
-  width: 28px !important;
-  height: 28px !important;
-}
-.react-flow__controls button:hover {
-  background: var(--accent) !important;
-}
-.react-flow__controls button svg {
-  fill: var(--foreground) !important;
-}
-.react-flow__attribution {
-  display: none !important;
-}
-.react-flow__background {
-  opacity: 0.45;
+@layer components {
+  /* ─── Canvas dot-grid ───────────────────────────────────────── */
+  .canvas-dot-grid {
+    background-image: radial-gradient(circle, var(--border) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* ─── ReactFlow: design system consistency ──────────────────── */
+  .react-flow__minimap {
+    border-radius: 8px !important;
+    border: 1px solid var(--border) !important;
+    background: var(--card) !important;
+    opacity: 0.9;
+  }
+
+  .react-flow__controls {
+    border-radius: 8px !important;
+    border: 1px solid var(--border) !important;
+    background: var(--card) !important;
+    box-shadow: 0 1px 4px 0 rgb(0 0 0 / 0.08) !important;
+  }
+
+  .react-flow__controls button {
+    border-color: var(--border) !important;
+    background: var(--card) !important;
+    color: var(--foreground) !important;
+    width: 28px !important;
+    height: 28px !important;
+  }
+
+  .react-flow__controls button:hover {
+    background: var(--accent) !important;
+  }
+
+  .react-flow__controls button svg {
+    fill: var(--foreground) !important;
+  }
+
+  .react-flow__attribution {
+    display: none !important;
+  }
+
+  .react-flow__background {
+    opacity: 0.45;
+  }
+
+  /* ─── ReactFlow edges ───────────────────────────────────────── */
+  .react-flow__edge-path {
+    stroke: var(--border) !important;
+    stroke-width: 1.5 !important;
+  }
+
+  /* Animated edges (running) get a foreground-tinted stroke */
+  .react-flow__edge.animated .react-flow__edge-path {
+    stroke: var(--muted-foreground) !important;
+    stroke-dasharray: 5 3;
+    stroke-dashoffset: 0;
+  }
+
+  /* ─── ReactFlow handles & selection ────────────────────────── */
+  .react-flow__handle {
+    background: var(--foreground) !important;
+    border: 2px solid var(--background) !important;
+    width: 8px !important;
+    height: 8px !important;
+    border-radius: 50% !important;
+  }
+
+  .react-flow__node.selected > div {
+    box-shadow: 0 0 0 2px var(--foreground);
+    border-radius: 8px;
+  }
+
+  /* ─── Node enter animation ─────────────────────────────────── */
+  .react-flow__node {
+    animation: nodeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* ─── Badge transitions ────────────────────────────────────── */
+  [data-slot="badge"] {
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+
+  /* ─── Glass-panel entry / exit ─────────────────────────────── */
+  [data-slot="glass-panel"] {
+    will-change: transform, opacity;
+  }
 }
 
-/* ─── ReactFlow edges ───────────────────────────────────────── */
-.react-flow__edge-path {
-  stroke: var(--border) !important;
-  stroke-width: 1.5 !important;
-}
-/* Animated edges (running) get a foreground-tinted stroke */
-.react-flow__edge.animated .react-flow__edge-path {
-  stroke: var(--muted-foreground) !important;
-  stroke-dasharray: 5 3;
-  stroke-dashoffset: 0;
+@layer utilities {
+  /* ─── Live pulse ───────────────────────────────────────────── */
+  .live-pulse {
+    animation: livePulse 2s ease-in-out infinite;
+  }
 }
 
-/* ─── ReactFlow handles & selection ────────────────────────── */
-.react-flow__handle {
-  background: var(--foreground) !important;
-  border: 2px solid var(--background) !important;
-  width: 8px !important;
-  height: 8px !important;
-  border-radius: 50% !important;
-}
-.react-flow__node.selected > div {
-  box-shadow: 0 0 0 2px var(--foreground);
-  border-radius: 8px;
-}
-
-/* ─── Scrollbar ────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 99px;
-}
-::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
-
-/* ─── Theme transition ─────────────────────────────────────── */
-body {
-  transition: background-color 0.25s ease, color 0.25s ease;
-}
-
-/* ─── Node enter animation ─────────────────────────────────── */
-.react-flow__node {
-  animation: nodeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
 @keyframes nodeIn {
   from { opacity: 0; transform: scale(0.92); }
   to   { opacity: 1; transform: scale(1); }
 }
 
-/* ─── Live pulse ───────────────────────────────────────────── */
-.live-pulse {
-  animation: livePulse 2s ease-in-out infinite;
-}
 @keyframes livePulse {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.4; }
-}
-
-/* ─── Badge transitions ────────────────────────────────────── */
-[data-slot="badge"] {
-  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-
-/* ─── Glass-panel entry / exit ─────────────────────────────── */
-[data-slot="glass-panel"] {
-  will-change: transform, opacity;
 }

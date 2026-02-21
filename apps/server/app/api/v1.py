@@ -104,6 +104,18 @@ def get_afk_capabilities() -> dict:
                 "why": "Constrain dangerous tool actions during attack execution and target evaluation.",
                 "config_keys": ["target_config.extra.policy_profile", "target_config.extra.allowed_tools"],
             },
+            {
+                "id": "prompt_file_loading",
+                "name": "Prompt File Loader",
+                "why": "Version and audit role prompts via files instead of inline strings.",
+                "config_keys": [
+                    "benchmark_config.afk_orchestration.prompts_dir",
+                    "benchmark_config.afk_orchestration.coordinator_instruction_file",
+                    "benchmark_config.afk_orchestration.roles[].instruction_file",
+                    "target_config.extra.prompts_dir",
+                    "target_config.extra.instruction_file",
+                ],
+            },
         ],
         "recommended_profiles": {
             "ci_strict": {

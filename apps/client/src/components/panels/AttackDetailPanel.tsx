@@ -102,7 +102,7 @@ export function AttackDetailPanel({
   if (!selectedAttack) {
     return (
       <ScrollArea className="h-full">
-        <div className="px-4 pt-14 pb-6 space-y-4">
+        <div className="px-4 pt-5 pb-6 space-y-4">
           <h3 className="text-sm font-semibold">Node Details</h3>
           <p className="text-xs text-muted-foreground">Click an attack node on the canvas to inspect analytics.</p>
           <Skeleton className="h-20 w-full" />
@@ -117,7 +117,7 @@ export function AttackDetailPanel({
 
   return (
     <ScrollArea className="h-full">
-      <div className="px-4 pt-14 pb-6 space-y-4">
+      <div className="px-4 pt-5 pb-6 space-y-4">
         {/* Header with optional Resume Run button */}
         <div className="flex items-start justify-between gap-2">
           <div>

@@ -27,7 +27,7 @@ export function StudioInspectorPanel({
   if (!selectedNode) {
     return (
       <ScrollArea className="h-full">
-        <div className="px-4 pt-14 pb-6 space-y-4">
+        <div className="px-4 pt-5 pb-6 space-y-4">
           <h3 className="text-sm font-semibold">Workflow Inspector</h3>
           <p className="text-xs text-muted-foreground">Select a workflow node to configure it.</p>
           <Skeleton className="h-10 w-full" />
@@ -43,7 +43,7 @@ export function StudioInspectorPanel({
 
   return (
     <ScrollArea className="h-full">
-      <div className="px-4 pt-14 pb-6 space-y-4">
+      <div className="px-4 pt-5 pb-6 space-y-4">
         <div>
           <h3 className="text-sm font-semibold">Workflow Inspector</h3>
           <p className="text-xs text-muted-foreground">Editing &ldquo;{d.label}&rdquo;</p>

@@ -301,7 +301,7 @@ export function SettingsPanel() {
 
   return (
     <ScrollArea className="h-full">
-      <div className="px-4 pt-14 pb-6">
+      <div className="px-4 pt-5 pb-6">
         <Tabs defaultValue="credentials" className="space-y-4">
           <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
             <TabsList className="rounded-full">

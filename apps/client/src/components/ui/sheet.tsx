@@ -84,50 +84,117 @@ function SheetContent({
 }
 
 /* ------------------------------------------------------------------ */
-/*  GlassPanel - non-modal side panel with glassmorphism              */
-/*  Doesn't use Dialog/Portal/Overlay -- just a fixed div with anim  */
+/*  GlassPanel — full-viewport modal with clean header bar            */
 /* ------------------------------------------------------------------ */
 
 function GlassPanel({
   open,
   onClose,
-  side = "right",
+  title,
+  side: _side = "right",
   className,
   children,
 }: {
   open: boolean
   onClose: () => void
+  title?: string
   side?: "left" | "right"
   className?: string
   children: React.ReactNode
 }) {
+  /* Close on Escape */
+  React.useEffect(() => {
+    if (!open) return
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose()
+    }
+    document.addEventListener("keydown", handleKey)
+    return () => document.removeEventListener("keydown", handleKey)
+  }, [open, onClose])
+
   return (
-    <div
-      data-slot="glass-panel"
-      data-state={open ? "open" : "closed"}
-      className={cn(
-        "fixed z-40 flex flex-col gap-4 transition-transform duration-300 ease-in-out",
-        "bg-card/80 backdrop-blur-xl border-border/40 shadow-xl",
-        side === "right" && "inset-y-0 right-0 h-full border-l",
-        side === "left" && "inset-y-0 left-0 h-full border-r",
-        open
-          ? "translate-x-0"
-          : side === "right"
-            ? "translate-x-full"
-            : "-translate-x-full",
-        className,
-      )}
-      style={{ pointerEvents: open ? "auto" : "none" }}
-    >
-      {children}
-      <button
+    <>
+      {/* ── Backdrop ── */}
+      <div
+        aria-hidden="true"
         onClick={onClose}
-        className="ring-offset-background focus:ring-ring absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden z-10"
+        className={cn(
+          "fixed inset-0 z-40 transition-all duration-300",
+          "bg-black/25 dark:bg-black/55",
+          open
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none",
+        )}
+      />
+
+      {/* ── Modal ── */}
+      <div
+        data-slot="glass-panel"
+        data-state={open ? "open" : "closed"}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={cn(
+          "fixed z-50",
+          /* Responsive insets: snug on mobile, generous on larger screens */
+          "inset-2 sm:inset-4 md:inset-6 lg:inset-8",
+          /* Layout */
+          "flex flex-col",
+          /* Surface: solid, always legible */
+          "bg-background",
+          "border border-border",
+          "rounded-xl overflow-hidden",
+          /* Depth */
+          "shadow-[0_8px_40px_-8px_rgb(0_0_0_/_0.18),0_2px_8px_-2px_rgb(0_0_0_/_0.08)]",
+          "dark:shadow-[0_8px_40px_-8px_rgb(0_0_0_/_0.6),0_2px_8px_-2px_rgb(0_0_0_/_0.4)]",
+          /* Entry animation: scale + fade */
+          "transition-all duration-200 ease-out",
+          open
+            ? "opacity-100 scale-100 translate-y-0 pointer-events-auto"
+            : "opacity-0 scale-[0.98] translate-y-1 pointer-events-none",
+          className,
+        )}
       >
-        <XIcon className="size-4" />
-        <span className="sr-only">Close</span>
-      </button>
-    </div>
+        {/* ── Header bar ── */}
+        <div className={cn(
+          "flex-none flex items-center justify-between",
+          "px-5 py-3.5",
+          "border-b border-border",
+          "bg-card",
+        )}>
+          {title ? (
+            <div className="flex items-center gap-2.5">
+              {/* Accent pip */}
+              <span className="block h-3.5 w-0.5 rounded-full bg-foreground/30" />
+              <span className="text-[13px] font-semibold tracking-tight text-foreground">
+                {title}
+              </span>
+            </div>
+          ) : (
+            <span />
+          )}
+
+          <button
+            onClick={onClose}
+            aria-label="Close panel"
+            className={cn(
+              "grid place-items-center size-7 rounded-md",
+              "text-muted-foreground",
+              "hover:bg-muted hover:text-foreground",
+              "transition-colors duration-150",
+              "focus:outline-none focus:ring-1 focus:ring-ring focus:ring-offset-1",
+            )}
+          >
+            <XIcon className="size-3.5" />
+          </button>
+        </div>
+
+        {/* ── Content — flex-1 + min-h-0 so scroll areas work ── */}
+        <div className="flex-1 min-h-0 overflow-hidden">
+          {children}
+        </div>
+      </div>
+    </>
   )
 }
 

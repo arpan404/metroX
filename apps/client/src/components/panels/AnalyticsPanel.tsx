@@ -395,7 +395,7 @@ export function AnalyticsPanel({ runId }: { runId: string }) {
 
   return (
     <ScrollArea className="h-full">
-      <div className="space-y-4 px-4 pt-14 pb-8">
+      <div className="space-y-4 px-4 pt-5 pb-8">
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={stagger(0)} className="flex items-center justify-between">
           <div>

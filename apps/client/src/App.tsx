@@ -731,7 +731,7 @@ export default function App() {
         open={panels.left === 'config'}
         onClose={() => setPanels((p) => ({ ...p, left: null }))}
         side="left"
-        className="w-[380px] sm:w-[420px]"
+        title="Configuration"
       >
         <ConfigPanel onRunLaunched={handleRunLaunched} />
       </GlassPanel>
@@ -741,7 +741,7 @@ export default function App() {
         open={panels.right === 'analytics'}
         onClose={() => setPanels((p) => ({ ...p, right: null }))}
         side="right"
-        className="w-[420px] sm:w-[480px]"
+        title="Analytics"
       >
         <AnalyticsPanel runId={runId} />
       </GlassPanel>
@@ -750,7 +750,7 @@ export default function App() {
         open={panels.right === 'settings'}
         onClose={() => setPanels((p) => ({ ...p, right: null }))}
         side="right"
-        className="w-[380px] sm:w-[420px]"
+        title="Settings"
       >
         <SettingsPanel />
       </GlassPanel>
@@ -759,7 +759,7 @@ export default function App() {
         open={panels.right === 'attack-detail'}
         onClose={() => setPanels((p) => ({ ...p, right: null }))}
         side="right"
-        className="w-[380px]"
+        title="Attack Detail"
       >
         <AttackDetailPanel
           selectedAttack={selectedAttack}
@@ -781,7 +781,7 @@ export default function App() {
         open={panels.right === 'studio-inspector'}
         onClose={() => setPanels((p) => ({ ...p, right: null }))}
         side="right"
-        className="w-[380px]"
+        title="Studio Inspector"
       >
         <StudioInspectorPanel
           selectedNode={selectedStudioNode}

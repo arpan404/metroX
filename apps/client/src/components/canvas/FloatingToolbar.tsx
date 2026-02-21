@@ -20,10 +20,10 @@ import { useTheme } from 'next-themes'
 export type ToolbarMode = 'canvas' | 'config' | 'analytics' | 'settings'
 
 const modes: { value: ToolbarMode; icon: typeof LayoutDashboard; label: string }[] = [
-  { value: 'canvas', icon: LayoutDashboard, label: 'Canvas' },
-  { value: 'config', icon: SlidersHorizontal, label: 'Config' },
-  { value: 'analytics', icon: BarChart3, label: 'Analytics' },
-  { value: 'settings', icon: KeyRound, label: 'Settings' },
+  { value: 'canvas',    icon: LayoutDashboard,   label: 'Canvas' },
+  { value: 'config',    icon: SlidersHorizontal, label: 'Config' },
+  { value: 'analytics', icon: BarChart3,          label: 'Analytics' },
+  { value: 'settings',  icon: KeyRound,           label: 'Settings' },
 ]
 
 export function FloatingToolbar({
@@ -40,18 +40,28 @@ export function FloatingToolbar({
   return (
     <motion.div
       data-onboarding="toolbar"
-      initial={{ y: -20, opacity: 0 }}
+      initial={{ y: -16, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+      transition={{ type: 'spring', stiffness: 360, damping: 32 }}
       className="fixed top-4 left-1/2 z-50 -translate-x-1/2"
     >
-      <div className="flex items-center gap-1 rounded-full border border-border/60 bg-card/80 px-2 py-1.5 shadow-lg backdrop-blur-xl">
-        <span className="px-2.5 text-[11px] font-semibold tracking-[0.2em] text-muted-foreground uppercase select-none">
+      <div className={[
+        'flex items-center gap-0.5',
+        'rounded-full border border-border',
+        'bg-card',
+        'px-2 py-1.5',
+        'shadow-[0_2px_12px_-2px_rgb(0_0_0_/_0.12),0_1px_3px_-1px_rgb(0_0_0_/_0.08)]',
+        'dark:shadow-[0_2px_12px_-2px_rgb(0_0_0_/_0.5),0_1px_3px_-1px_rgb(0_0_0_/_0.3)]',
+      ].join(' ')}>
+
+        {/* Brand wordmark */}
+        <span className="px-3 text-[11px] font-bold tracking-[0.22em] text-foreground/40 uppercase select-none">
           ART
         </span>
 
-        <div className="mx-1 h-4 w-px bg-border" />
+        <div className="mx-1.5 h-4 w-px bg-border" />
 
+        {/* Mode nav */}
         <ToggleGroup
           type="single"
           value={activeMode}
@@ -66,16 +76,21 @@ export function FloatingToolbar({
                 <ToggleGroupItem
                   value={mode.value}
                   size="sm"
-                  className="rounded-full px-3 h-8 gap-1.5 text-xs data-[state=on]:bg-primary data-[state=on]:text-primary-foreground transition-colors"
+                  className={[
+                    'rounded-full px-3 h-8 gap-1.5 text-[12px] font-medium',
+                    'text-muted-foreground',
+                    'transition-all duration-150',
+                    /* Active: invert — black pill with white text in light, white pill with black text in dark */
+                    'data-[state=on]:bg-foreground data-[state=on]:text-background',
+                    'hover:text-foreground hover:bg-muted',
+                  ].join(' ')}
                   data-onboarding={
-                    mode.value === 'config'
-                      ? 'config-trigger'
-                      : mode.value === 'analytics'
-                        ? 'analytics-trigger'
-                        : undefined
+                    mode.value === 'config'    ? 'config-trigger'    :
+                    mode.value === 'analytics' ? 'analytics-trigger' :
+                    undefined
                   }
                 >
-                  <mode.icon className="size-3.5" />
+                  <mode.icon className="size-3.5 shrink-0" />
                   <span className="hidden sm:inline">{mode.label}</span>
                 </ToggleGroupItem>
               </TooltipTrigger>
@@ -86,33 +101,33 @@ export function FloatingToolbar({
           ))}
         </ToggleGroup>
 
-        <div className="mx-1 h-4 w-px bg-border" />
+        <div className="mx-1.5 h-4 w-px bg-border" />
 
+        {/* Command palette */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="size-8 rounded-full"
+              className="size-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
               onClick={onCommandPalette}
             >
               <Command className="size-3.5" />
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs">
-            Command Palette (Cmd+K)
+            Command Palette (⌘K)
           </TooltipContent>
         </Tooltip>
 
+        {/* Theme toggle */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="size-8 rounded-full"
-              onClick={() =>
-                setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')
-              }
+              className="size-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
             >
               {resolvedTheme === 'dark' ? (
                 <Sun className="size-3.5" />
@@ -122,7 +137,7 @@ export function FloatingToolbar({
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs">
-            Toggle Theme
+            Toggle theme
           </TooltipContent>
         </Tooltip>
       </div>

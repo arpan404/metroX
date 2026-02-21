@@ -25,6 +25,11 @@ It evaluates not only final answers, but full agent contracts:
 ### 4.1 Benchmark Dataset
 - Hybrid curated + generated attack dataset
 - Multi-agent attacker orchestration (Attacker, Critic, Verifier, Analyst)
+- AFK-native orchestration controls:
+  - join policies (`all_required`, `first_success`, `quorum`)
+  - role-level model/instruction overrides
+  - fail-safe budgets (cost, time, call limits)
+  - runner backpressure and subagent concurrency
 - Taxonomy coverage:
   - prompt injection
   - jailbreak
@@ -71,6 +76,7 @@ It evaluates not only final answers, but full agent contracts:
 ## 7. API Surface (V1)
 - Sessions and config profiles
 - Run orchestration and event streaming
+- AFK capability registry endpoint for orchestration tuning
 - Scorecards, risk cards, features, clusters, drift
 - Adjudication workflow
 - Mitigation experiments and comparisons

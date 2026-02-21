@@ -150,3 +150,13 @@ def test_create_run_contract(api_client) -> None:
     assert payload["session_id"] == session_id
     assert payload["config_profile_id"] == profile_id
     assert payload["status"] == "queued"
+
+
+def test_afk_capabilities_contract(api_client) -> None:
+    client, _ = api_client
+    response = client.get("/v1/afk/capabilities", headers=_headers())
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["version"] == "v1"
+    assert isinstance(payload["high_impact_features"], list)
+    assert "ci_strict" in payload["recommended_profiles"]

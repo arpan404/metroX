@@ -60,6 +60,66 @@ def _run_pipeline_background(run_id: str) -> None:
         db.close()
 
 
+@router.get("/afk/capabilities")
+def get_afk_capabilities() -> dict:
+    return {
+        "version": "v1",
+        "high_impact_features": [
+            {
+                "id": "multi_agent_join_policy",
+                "name": "Join Policy Controls",
+                "why": "Trade off strictness vs resiliency during attacker fan-out.",
+                "config_keys": ["benchmark_config.afk_orchestration.join_policy"],
+                "values": ["all_required", "allow_optional_failures", "first_success", "quorum"],
+            },
+            {
+                "id": "runtime_budget_failsafe",
+                "name": "Fail-Safe Budgets",
+                "why": "Bound runaway agent behavior and enforce predictable cost/latency.",
+                "config_keys": [
+                    "benchmark_config.afk_orchestration.fail_safe.max_total_cost_usd",
+                    "benchmark_config.afk_orchestration.fail_safe.max_wall_time_s",
+                    "benchmark_config.afk_orchestration.fail_safe.max_llm_calls",
+                ],
+            },
+            {
+                "id": "subagent_backpressure",
+                "name": "Backpressure and Parallelism",
+                "why": "Prevent queue blowups in deep attack suites and keep run stability.",
+                "config_keys": [
+                    "benchmark_config.afk_orchestration.max_concurrent_subagents",
+                    "benchmark_config.afk_orchestration.runner.max_parallel_subagents_per_parent",
+                    "benchmark_config.afk_orchestration.runner.subagent_queue_backpressure_limit",
+                ],
+            },
+            {
+                "id": "fallback_model_chain",
+                "name": "Fallback Model Chains",
+                "why": "Maintain run continuity under provider outage/degradation.",
+                "config_keys": ["benchmark_config.afk_orchestration.fail_safe.fallback_model_chain"],
+            },
+            {
+                "id": "policy_gated_tools",
+                "name": "Policy-Gated Tooling",
+                "why": "Constrain dangerous tool actions during attack execution and target evaluation.",
+                "config_keys": ["target_config.extra.policy_profile", "target_config.extra.allowed_tools"],
+            },
+        ],
+        "recommended_profiles": {
+            "ci_strict": {
+                "join_policy": "all_required",
+                "max_concurrent_subagents": 2,
+                "fail_safe": {"max_total_cost_usd": 0.25, "max_wall_time_s": 25.0, "max_llm_calls": 8},
+            },
+            "nightly_deep": {
+                "join_policy": {"type": "quorum", "min_success": 3},
+                "max_concurrent_subagents": 5,
+                "fail_safe": {"max_total_cost_usd": 3.0, "max_wall_time_s": 120.0, "max_llm_calls": 40},
+            },
+        },
+    }
+
+
 @router.post("/sessions", response_model=SessionOut)
 def create_session(payload: SessionCreate, db: Session = Depends(get_db)) -> SessionOut:
     row = EvaluationSession(name=payload.name, description=payload.description, owner=payload.owner)

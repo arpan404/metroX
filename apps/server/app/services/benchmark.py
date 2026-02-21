@@ -196,6 +196,7 @@ def create_benchmark(
         "unique_prompts": len(dedupe_seen),
         "agentic_attacking": agentic_attacking,
         "agentic_provider": agentic_orchestrator.mode,
+        "afk_orchestration": agentic_orchestrator.runtime_metadata(),
     }
     db.commit()
 

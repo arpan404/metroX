@@ -21,3 +21,4 @@ def test_benchmark_reproducibility(db_session):
     assert len(cases_2) == 40
     assert hashes_1 == hashes_2
     assert snapshot_1.meta["unique_prompts"] == snapshot_2.meta["unique_prompts"]
+    assert "afk_orchestration" in snapshot_1.meta

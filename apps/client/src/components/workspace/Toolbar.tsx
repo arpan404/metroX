@@ -65,10 +65,13 @@ export function Toolbar({ onCommandPalette }: { onCommandPalette?: () => void })
     >
       {/* Brand */}
       <div className="flex items-center gap-2 mr-2 shrink-0">
-        <div className="h-6 w-6 rounded-md bg-primary/15 flex items-center justify-center">
-          <span className="text-primary text-xs font-bold font-[Syne]">M</span>
-        </div>
-        <span className="text-sm font-[Syne] font-semibold tracking-tight hidden sm:block">metroX</span>
+        <img
+          src="/favicon.svg"
+          alt="MetroX"
+          className="opacity-80 transition-opacity duration-300 hover:opacity-100"
+          style={{ height: '24px', width: '24px', objectFit: 'contain' }}
+        />
+        <span className="text-sm font-display font-semibold tracking-tight hidden sm:block opacity-80">MetroX</span>
       </div>
 
       {/* Divider */}

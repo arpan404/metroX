@@ -82,6 +82,7 @@ from app.pipeline.reporting import generate_markdown_report
 from app.stats.risk import risk_cards
 from app.runtime.run_queue import RUN_QUEUE
 from app.runtime.adapters import normalize_target_type
+from app.utils.common import log_event
 from app.security.service import (
     SecretCipher,
     activate_key,
@@ -91,6 +92,24 @@ from app.security.service import (
     reencrypt_credentials,
     retire_key,
 )
+
+_SENSITIVE_HEADER_NAMES = frozenset({
+    "authorization", "x-api-key", "api-key", "x-auth-token",
+    "proxy-authorization", "cookie", "set-cookie",
+})
+
+
+def _redact_target_config(target_config: dict) -> dict:
+    """Return a copy of target_config with sensitive auth_headers values redacted."""
+    redacted = dict(target_config)
+    headers = redacted.get("auth_headers")
+    if headers and isinstance(headers, dict):
+        redacted["auth_headers"] = {
+            k: "**REDACTED**" if k.lower() in _SENSITIVE_HEADER_NAMES else v
+            for k, v in headers.items()
+        }
+    return redacted
+
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(auth_dependency)])
 
@@ -662,7 +681,7 @@ def create_run(
         config_profile_id=profile.id,
         run_id=run.id,
         snapshot={
-            "target_config": profile.target_config,
+            "target_config": _redact_target_config(profile.target_config or {}),
             "benchmark_config": profile.benchmark_config,
             "scoring_config": profile.scoring_config,
             "runtime_config": profile.runtime_config,

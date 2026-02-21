@@ -16,8 +16,10 @@ from app.models import (
     DetectionVote,
     Execution,
     ProbabilisticLabel,
+    ProviderCredential,
     Run,
     ScoreCard,
+    SecretAccessAudit,
 )
 from app.runtime.adapters import TargetRequest, get_adapter, normalize_target_type
 from app.stats.advanced_analytics import (
@@ -35,12 +37,67 @@ from app.stats.features import ensure_feature_definitions, rebuild_features_for_
 from app.stats.risk import build_risk_models
 from app.stats.scoring import build_scorecard
 from app.runtime.policy import resolve_policy_config
+from app.security.service import SecretCipher
+
+_SENSITIVE_HEADER_NAMES = frozenset({
+    "authorization", "x-api-key", "api-key", "x-auth-token",
+    "proxy-authorization", "cookie", "set-cookie",
+})
+
+
+def _redact_target_config(target_config: dict) -> dict:
+    """Return a copy of target_config with sensitive auth_headers values redacted."""
+    redacted = dict(target_config)
+    headers = redacted.get("auth_headers")
+    if headers and isinstance(headers, dict):
+        redacted["auth_headers"] = {
+            k: "**REDACTED**" if k.lower() in _SENSITIVE_HEADER_NAMES else v
+            for k, v in headers.items()
+        }
+    return redacted
 
 
 class RunOrchestrator:
     def __init__(self, db: Session):
         self.db = db
         self.settings = get_settings()
+
+    def _resolve_credential(self, target_cfg: dict, run_id: str) -> str | None:
+        """Resolve api_key_ref to a plaintext API key from ProviderCredential store."""
+        api_key_ref = str(target_cfg.get("api_key_ref", "") or "").strip()
+        if not api_key_ref:
+            return None
+        row = self.db.query(ProviderCredential).filter(ProviderCredential.id == api_key_ref).one_or_none()
+        if not row:
+            log_event(
+                self.db, run_id=run_id, event_type="credential_resolution_failed",
+                step=0, message=f"ProviderCredential {api_key_ref} not found",
+            )
+            return None
+        try:
+            plaintext = SecretCipher(self.db).decrypt(row.encrypted_secret)
+            self.db.add(SecretAccessAudit(
+                provider_credential_id=row.id,
+                action="decrypt_for_run",
+                actor=f"run:{run_id}",
+                success=True,
+            ))
+            self.db.commit()
+            return plaintext
+        except Exception as exc:
+            self.db.add(SecretAccessAudit(
+                provider_credential_id=row.id,
+                action="decrypt_for_run",
+                actor=f"run:{run_id}",
+                success=False,
+                error=str(exc),
+            ))
+            self.db.commit()
+            log_event(
+                self.db, run_id=run_id, event_type="credential_resolution_failed",
+                step=0, message=f"Failed to decrypt credential {api_key_ref}: {exc}",
+            )
+            return None
 
     def execute_run(self, run_id: str) -> None:
         run = self.db.query(Run).filter(Run.id == run_id).one_or_none()
@@ -73,7 +130,7 @@ class RunOrchestrator:
                 config_profile_id=profile.id,
                 run_id=run.id,
                 snapshot={
-                    "target_config": profile.target_config,
+                    "target_config": _redact_target_config(profile.target_config or {}),
                     "benchmark_config": profile.benchmark_config,
                     "scoring_config": profile.scoring_config,
                     "runtime_config": profile.runtime_config,
@@ -149,6 +206,7 @@ class RunOrchestrator:
             )
 
             target_cfg = profile.target_config
+            resolved_api_key = self._resolve_credential(target_cfg, run.id)
             adapter = get_adapter(target_cfg.get("target_type", "managed_llm_runtime"))
             runtime_cfg = profile.runtime_config or {}
             budget_usd = float(runtime_cfg.get("budget_usd", 0.0) or 0.0)
@@ -215,6 +273,7 @@ class RunOrchestrator:
                         "afk_resume": resume_requested
                         and normalize_target_type(str(target_cfg.get("target_type", ""))) == "managed_agent_runtime",
                         "afk_run_id": last_afk_run_id,
+                        **({"api_key": resolved_api_key} if resolved_api_key else {}),
                     },
                 )
                 response = adapter.invoke(request)

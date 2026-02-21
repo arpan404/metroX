@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models import Base
+
+os.environ.setdefault("METROX_MASTER_WRAP_KEY", "test-wrap-key-for-unit-tests")
 
 
 @pytest.fixture

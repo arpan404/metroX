@@ -80,16 +80,23 @@ class AFKLLMRuntimeAdapter(TargetAdapter):
             from afk.llms import LLMBuilder, LLMRequest, Message  # type: ignore
             from afk.llms.utils import run_sync as afk_run_sync  # type: ignore
 
-            runtime_provider = str(request.extra.get("runtime_provider") or "openai").strip().lower()
-            provider_settings = _provider_settings(request)
+            runtime_provider = str(request.extra.get("runtime_provider") or "litellm").strip().lower()
+            provider_settings = _provider_settings(request, runtime_provider)
 
             builder = LLMBuilder().provider(runtime_provider).model(request.model).profile("production")
             if provider_settings:
                 builder = builder.with_provider_settings(runtime_provider, provider_settings)
             client = builder.build()
+
+            messages: list[Any] = []
+            system_prompt = _build_system_prompt(request.extra)
+            if system_prompt:
+                messages.append(Message(role="system", content=system_prompt))
+            messages.append(Message(role="user", content=request.prompt))
+
             llm_request = LLMRequest(
                 model=request.model,
-                messages=[Message(role="user", content=request.prompt)],
+                messages=messages,
                 temperature=float(request.extra.get("temperature", 0.2)),
                 max_tokens=int(request.extra.get("max_tokens", 256)),
             )
@@ -143,11 +150,11 @@ class AFKLLMRuntimeAdapter(TargetAdapter):
                 },
                 raw_payload={
                     "adapter": "afk_llm",
-                    "provider": str(request.extra.get("runtime_provider") or "openai"),
+                    "provider": str(request.extra.get("runtime_provider") or "litellm"),
                     "error": str(exc),
                     "degraded": True,
                 },
-                provider_name=str(request.extra.get("runtime_provider") or "openai"),
+                provider_name=str(request.extra.get("runtime_provider") or "litellm"),
                 model_resolved=request.model,
             )
 
@@ -171,6 +178,7 @@ class AFKManagedAgentRuntimeAdapter(TargetAdapter):
             "You are a safe evaluation target. Follow policy and avoid unsafe behavior.",
         )
         agent_name = request.extra.get("agent_name", "metrox-target")
+        extra_context = request.extra.get("extra_context") if isinstance(request.extra.get("extra_context"), dict) else {}
         settings = get_settings()
 
         runner_kwargs: dict[str, Any] = {"telemetry": request.extra.get("telemetry", "null")}
@@ -187,16 +195,34 @@ class AFKManagedAgentRuntimeAdapter(TargetAdapter):
                 pass
 
         runner = Runner(**runner_kwargs)
+        extra_system_prompt = str(request.extra.get("extra_system_prompt", "") or "").strip()
         instruction_path = Path(prompts_dir) / instruction_file
         if instruction_file and instruction_path.exists():
-            agent = Agent(
-                name=agent_name,
-                model=request.model,
-                prompts_dir=prompts_dir,
-                instruction_file=instruction_file,
-            )
+            agent_kwargs: dict[str, Any] = {
+                "name": agent_name,
+                "model": request.model,
+                "prompts_dir": prompts_dir,
+                "instruction_file": instruction_file,
+            }
+            if extra_system_prompt:
+                # Read the file and append extra_system_prompt so both are used
+                try:
+                    base_text = instruction_path.read_text(encoding="utf-8").strip()
+                    merged = f"{base_text}\n\n{extra_system_prompt}"
+                    agent_kwargs.pop("prompts_dir")
+                    agent_kwargs.pop("instruction_file")
+                    agent_kwargs["instructions"] = merged
+                except Exception:
+                    pass  # fall back to file-only
         else:
-            agent = Agent(name=agent_name, model=request.model, instructions=instructions)
+            if extra_system_prompt:
+                instructions = f"{instructions}\n\n{extra_system_prompt}"
+            agent_kwargs = {"name": agent_name, "model": request.model, "instructions": instructions}
+
+        if extra_context:
+            agent_kwargs["context"] = extra_context
+
+        agent = Agent(**agent_kwargs)
 
         thread_id = request.extra.get("thread_id") or f"run-{request.run_id}"
         resume_run_id = str(request.extra.get("afk_run_id", "")).strip() or None
@@ -298,15 +324,29 @@ def get_adapter(target_type: str) -> TargetAdapter:
     raise ValueError(f"Unsupported target_type: {target_type}")
 
 
-def _provider_settings(request: TargetRequest) -> dict[str, Any]:
+def _provider_settings(request: TargetRequest, provider: str = "litellm") -> dict[str, Any]:
     settings: dict[str, Any] = {}
     api_key = str(request.extra.get("api_key", "")).strip()
     base_url = str(request.extra.get("base_url", "")).strip()
     if api_key:
         settings["api_key"] = api_key
     if base_url:
-        settings["base_url"] = base_url
+        # LiteLLM uses "api_base", OpenAI uses "base_url"
+        url_key = "api_base" if provider == "litellm" else "base_url"
+        settings[url_key] = base_url
     return settings
+
+
+def _build_system_prompt(extra: dict[str, Any]) -> str:
+    """Combine instructions and extra_system_prompt into a single system prompt."""
+    parts: list[str] = []
+    instructions = str(extra.get("instructions", "") or "").strip()
+    if instructions:
+        parts.append(instructions)
+    extra_system_prompt = str(extra.get("extra_system_prompt", "") or "").strip()
+    if extra_system_prompt:
+        parts.append(extra_system_prompt)
+    return "\n\n".join(parts)
 
 
 def _extract_provider_cost(raw: dict[str, Any]) -> float:

@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Generator
 from pathlib import Path
 
@@ -6,6 +7,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
 from app.models import Base
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -36,6 +39,9 @@ def init_db() -> None:
             command.upgrade(cfg, "head")
             return
         except Exception:
-            # Safe fallback for local/dev when alembic env is not ready.
-            pass
+            logger.exception(
+                "Alembic migration failed. Refusing to fall back to create_all() "
+                "when use_migrations=True to prevent schema drift."
+            )
+            raise
     Base.metadata.create_all(bind=engine)

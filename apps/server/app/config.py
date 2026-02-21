@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     credential_rotation_max_age_days: int = Field(default=90)
     credential_rotation_enforced: bool = Field(default=True)
 
+    cors_allowed_origins: str = Field(default="http://localhost:3000,http://localhost:5173")
+
     run_queue_enabled: bool = Field(default=True)
     run_queue_backend: str = Field(default="inprocess")
     run_worker_threads: int = Field(default=1)
@@ -39,6 +41,7 @@ class Settings(BaseSettings):
     run_queue_redis_workers_key: str = Field(default="metrox:runs:workers")
     run_queue_redis_block_s: int = Field(default=5)
     run_queue_worker_heartbeat_ttl_s: int = Field(default=60)
+    run_queue_max_size: int = Field(default=10000)
     run_batch_size: int = Field(default=100)
     use_migrations: bool = Field(default=False)
 

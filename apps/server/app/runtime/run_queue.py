@@ -8,7 +8,6 @@ import time
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import cast
-
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Run
@@ -31,7 +30,9 @@ class QueueStats:
 
 class RunQueue:
     def __init__(self) -> None:
-        self._queue: queue.Queue[tuple[str, int]] = queue.Queue()
+        self._queue: queue.Queue[tuple[str, int]] = queue.Queue(
+            maxsize=get_settings().run_queue_max_size
+        )
         self._started = False
         self._lock = threading.Lock()
         self._workers: list[threading.Thread] = []
@@ -103,7 +104,10 @@ class RunQueue:
             settings = get_settings()
             self._get_redis_client().rpush(settings.run_queue_redis_key, self._serialize_item(run_id, attempt))
             return
-        self._queue.put((run_id, attempt))
+        try:
+            self._queue.put_nowait((run_id, attempt))
+        except queue.Full:
+            raise RuntimeError("Run queue is full; try again later")
 
     def _enqueue_retry_or_dlq(self, run_id: str, attempt: int, error: str) -> None:
         settings = get_settings()

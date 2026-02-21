@@ -183,35 +183,45 @@ class MultiAgentAttackOrchestrator:
             graph=self.orchestration.graph,
             execution_order=self.orchestration.execution_order,
         )
+        extra_sys = self.orchestration.extra_system_prompt
+        extra_ctx = self.orchestration.extra_context or {}
         for role in routed_roles:
             if not role.enabled:
                 continue
-            agent = Agent(
-                name=role.name,
-                model=role.model or self.orchestration.model,
-                fail_safe=fail_safe,
+            agent_kwargs: dict[str, Any] = {
+                "name": role.name,
+                "model": role.model or self.orchestration.model,
+                "fail_safe": fail_safe,
                 **_instruction_kwargs(
                     prompts_dir=self.orchestration.prompts_dir,
                     instruction_file=role.instruction_file,
                     inline_instructions=role.instructions,
+                    extra_system_prompt=extra_sys,
                 ),
-            )
+            }
+            if extra_ctx:
+                agent_kwargs["context"] = extra_ctx
+            agent = Agent(**agent_kwargs)
             role_agents[role.name] = agent
             subagents.append(agent)
 
-        coordinator = Agent(
-            name="attack_coordinator",
-            model=self.orchestration.model,
+        coordinator_kwargs: dict[str, Any] = {
+            "name": "attack_coordinator",
+            "model": self.orchestration.model,
             **_instruction_kwargs(
                 prompts_dir=self.orchestration.prompts_dir,
                 instruction_file=self.orchestration.coordinator_instruction_file,
                 inline_instructions=self.orchestration.coordinator_instructions,
+                extra_system_prompt=extra_sys,
             ),
-            subagents=subagents,
-            join_policy=self.orchestration.join_policy,
-            max_concurrent_subagents=max(1, self.orchestration.max_concurrent_subagents),
-            fail_safe=fail_safe,
-        )
+            "subagents": subagents,
+            "join_policy": self.orchestration.join_policy,
+            "max_concurrent_subagents": max(1, self.orchestration.max_concurrent_subagents),
+            "fail_safe": fail_safe,
+        }
+        if extra_ctx:
+            coordinator_kwargs["context"] = extra_ctx
+        coordinator = Agent(**coordinator_kwargs)
 
         raw_orchestration_payload = (
             self.config.get("afk_orchestration", {})
@@ -577,11 +587,20 @@ def _instruction_kwargs(
     prompts_dir: str,
     instruction_file: str | None,
     inline_instructions: str,
+    extra_system_prompt: str = "",
 ) -> dict[str, Any]:
     if instruction_file:
         instruction_path = Path(prompts_dir) / instruction_file
         if instruction_path.exists():
+            if extra_system_prompt:
+                try:
+                    base_text = instruction_path.read_text(encoding="utf-8").strip()
+                    return {"instructions": f"{base_text}\n\n{extra_system_prompt}"}
+                except Exception:
+                    return {"prompts_dir": prompts_dir, "instruction_file": instruction_file}
             return {"prompts_dir": prompts_dir, "instruction_file": instruction_file}
+    if extra_system_prompt:
+        return {"instructions": f"{inline_instructions}\n\n{extra_system_prompt}"}
     return {"instructions": inline_instructions}
 
 

@@ -54,7 +54,8 @@ def build_clusters(db: Session, run_id: str) -> list[ClusterSummary]:
         token_counter: Counter[str] = Counter()
         for idx in indexes:
             row = matrix[idx].toarray().ravel()
-            top_indices = np.argpartition(row, -5)[-5:]
+            k = min(5, len(row))
+            top_indices = np.argpartition(row, -k)[-k:] if k > 0 else np.array([], dtype=int)
             for token_index in top_indices:
                 token_counter[terms[token_index]] += float(row[token_index])
             memberships.append(

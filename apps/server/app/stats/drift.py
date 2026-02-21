@@ -78,7 +78,7 @@ def _compute_change_points(db: Session, run_id: str) -> None:
 
     metric_names = ["asr", "hallucination_rate", "toxicity_rate", "tool_misuse_rate"]
     for metric_name in metric_names:
-        series = [float(card.metrics.get(metric_name, 0.0)) for card, _ in scorecards]
+        series = [float((card.metrics or {}).get(metric_name, 0.0)) for card, _ in scorecards]
         if len(series) < 3:
             continue
         rolling_mean = np.mean(series[:-1])

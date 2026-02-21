@@ -493,27 +493,30 @@ class RunOrchestrator:
             )
 
         except Exception as exc:
-            run.status = "failed"
-            run.ended_at = datetime.now(timezone.utc)
-            self.db.commit()
-            self.db.add(
-                AFKRunState(
-                    run_id=run.id,
-                    thread_id=run.thread_id or f"run-{run.id}",
-                    state="failed",
-                    step=99,
-                    checkpoint={"error": str(exc), "last_afk_run_id": locals().get("last_afk_run_id")},
+            try:
+                run.status = "failed"
+                run.ended_at = datetime.now(timezone.utc)
+                self.db.commit()
+                self.db.add(
+                    AFKRunState(
+                        run_id=run.id,
+                        thread_id=run.thread_id or f"run-{run.id}",
+                        state="failed",
+                        step=99,
+                        checkpoint={"error": str(exc), "last_afk_run_id": last_afk_run_id},
+                    )
                 )
-            )
-            self.db.commit()
-            log_event(
-                self.db,
-                run_id=run.id,
-                event_type="run_failed",
-                step=99,
-                message=str(exc),
-            )
-            raise
+                self.db.commit()
+                log_event(
+                    self.db,
+                    run_id=run.id,
+                    event_type="run_failed",
+                    step=99,
+                    message=str(exc),
+                )
+            except Exception:
+                self.db.rollback()
+            raise exc
 
     def _attack_count(self, preset: str) -> int:
         if preset == "quick":

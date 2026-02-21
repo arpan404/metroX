@@ -90,5 +90,5 @@ def _detections_for_run(db: Session, run_id: str) -> list[Detection]:
 
 def _success_count(detections: list[Detection], flag: str | None) -> int:
     if flag is None:
-        return sum(1 for d in detections if any(d.failure_flags.values()))
-    return sum(1 for d in detections if d.failure_flags.get(flag))
+        return sum(1 for d in detections if any((d.failure_flags or {}).values()))
+    return sum(1 for d in detections if (d.failure_flags or {}).get(flag))

@@ -12,6 +12,7 @@ import ReactFlow, {
   BackgroundVariant,
   Panel,
   MarkerType,
+  Position,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import { useWorkspace } from '@/stores/workspace-store'
@@ -141,6 +142,8 @@ export function Canvas() {
       nodes: state.studioNodes.map((n) => ({
         ...n,
         type: 'studioRole',
+        targetPosition: Position.Left,
+        sourcePosition: Position.Right,
       })),
       edges: state.studioEdges.map((edge) => ({
         ...edge,

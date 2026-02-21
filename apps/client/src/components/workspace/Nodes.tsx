@@ -359,8 +359,8 @@ export const StudioRoleNode = memo(function StudioRoleNode({ data, selected }: N
         <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{data.description}</p>
       )}
 
-      <Handle type="target" position={Position.Top} className="!bg-muted-foreground !border-background !w-2 !h-2" />
-      <Handle type="source" position={Position.Bottom} className="!bg-muted-foreground !border-background !w-2 !h-2" />
+      <Handle type="target" position={Position.Left} className="!bg-muted-foreground !border-background !w-2 !h-2" />
+      <Handle type="source" position={Position.Right} className="!bg-muted-foreground !border-background !w-2 !h-2" />
     </motion.div>
   )
 })

@@ -129,6 +129,13 @@ describe('ConfigPanel', () => {
     const payload = apiMock.createConfigProfile.mock.calls[0][0]
     expect(payload.target_config.agent_id).toBe('refund')
     expect(payload.target_config.agent_url).toBeNull()
+    expect(payload.benchmark_config.multi_turn).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        phases: 3,
+        context_window_chars: 320,
+      }),
+    )
     expect(payload.benchmark_config.afk_orchestration.threading.strategy).toBe('per_attack_type')
     expect(payload.benchmark_config.afk_orchestration.roles).toEqual(
       expect.arrayContaining([

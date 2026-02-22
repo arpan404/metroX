@@ -57,6 +57,7 @@ import { getChartColors } from '@/lib/chart-theme'
 import { buildVisualRunPdf } from '@/lib/visual-report-pdf'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { jsPDF } from 'jspdf'
 
 const DETECTOR_LABELS: Record<string, string> = {
   afk_judge: 'AI Tested',
@@ -287,38 +288,37 @@ export function AnalyticsPanel() {
 
   const handleExportNarrativePdf = () => {
     if (!state.currentRunId || !narrativeSummary) return
-    const markdown = buildNarrativeMarkdown()
-    const win = window.open('', '_blank', 'noopener,noreferrer')
-    if (!win) {
-      toast.error('Enable popups to export PDF.')
-      return
+    try {
+      const markdown = buildNarrativeMarkdown()
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
+      const margin = 44
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const pageHeight = doc.internal.pageSize.getHeight()
+      const contentWidth = pageWidth - margin * 2
+      const lineHeight = 14
+
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(16)
+      doc.text('MetroX Advisory Summary', margin, margin)
+
+      doc.setFont('courier', 'normal')
+      doc.setFontSize(10)
+      const lines = doc.splitTextToSize(markdown, contentWidth) as string[]
+      let y = margin + 24
+      for (const line of lines) {
+        if (y > pageHeight - margin) {
+          doc.addPage()
+          y = margin
+        }
+        doc.text(line, margin, y)
+        y += lineHeight
+      }
+
+      doc.save(`run-${state.currentRunId}-advisory.pdf`)
+      toast.success('PDF exported')
+    } catch (error: any) {
+      toast.error(error?.message || 'PDF export failed')
     }
-    const escaped = markdown
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-    win.document.open()
-    win.document.write(`
-      <!doctype html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>MetroX Advisory ${state.currentRunId}</title>
-          <style>
-            body { font-family: "IBM Plex Sans", "Segoe UI", sans-serif; margin: 32px; color: #111827; }
-            h1 { font-size: 24px; margin: 0 0 16px; }
-            pre { white-space: pre-wrap; font-family: "IBM Plex Mono", "SFMono-Regular", monospace; font-size: 12px; line-height: 1.5; }
-          </style>
-        </head>
-        <body>
-          <h1>MetroX Advisory Summary</h1>
-          <pre>${escaped}</pre>
-        </body>
-      </html>
-    `)
-    win.document.close()
-    win.focus()
-    setTimeout(() => win.print(), 250)
   }
 
   const { scorecard, riskCards, costSummary, costTimeseries, clusters, drift, executionSlices, features, forecasts, telemetry, nodeTelemetry, detectorVotes, policyEvents } = state

@@ -85,6 +85,7 @@ export function AttackDetailPanel() {
   const [summary, setSummary] = useState<DetectorVoteSummaryPayload | null>(null)
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [summaryError, setSummaryError] = useState<string | null>(null)
+  const [detectorTooltipPos, setDetectorTooltipPos] = useState<{ x: number; y: number }>({ x: 14, y: 10 })
 
   const attackData = state.attackSummary?.attack_types?.find((row) => row.attack_type === selectedType) ?? null
   const asrCi95 = useMemo(() => {
@@ -268,14 +269,25 @@ export function AttackDetailPanel() {
                 <div className="space-y-3">
                   <div className="h-44 rounded-lg border border-border/40 bg-muted/20 px-2 py-2">
                     <ResponsiveContainer width="100%" height="100%">
-                      <ReBarChart data={detectorChartData} margin={{ left: 0, right: 12, top: 8, bottom: 0 }}>
+                      <ReBarChart
+                        data={detectorChartData}
+                        margin={{ left: 0, right: 12, top: 8, bottom: 0 }}
+                        onMouseMove={(chartState: any) => {
+                          const coordinate = chartState?.activeCoordinate
+                          if (!chartState?.isTooltipActive || !coordinate || typeof coordinate.x !== 'number') return
+                          setDetectorTooltipPos({
+                            x: Math.max(10, coordinate.x - 88),
+                            y: 10,
+                          })
+                        }}
+                      >
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
                         <XAxis dataKey="detector_label" tick={{ fontSize: 10, fill: 'currentColor' }} tickLine={false} axisLine={false} />
                         <YAxis tick={{ fontSize: 10, fill: 'currentColor' }} tickLine={false} axisLine={false} />
                         <ReTooltip
                           formatter={(value: number) => `${value.toFixed(2)}%`}
                           labelFormatter={(label) => `${label}`}
-                          position={{ x: 14, y: 10 }}
+                          position={detectorTooltipPos}
                           wrapperStyle={{ pointerEvents: 'none' }}
                           contentStyle={{
                             background: 'transparent',

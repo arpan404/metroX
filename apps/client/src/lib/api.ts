@@ -18,6 +18,7 @@ import type {
   MitigationExperimentOut,
   OrchestrationProfile,
   NodeTelemetryPayload,
+  NarrativeSummaryPayload,
   PolicyEvent,
   PricingProfilePayload,
   ProviderCredential,
@@ -431,6 +432,17 @@ export const api = {
 
   getCooccurrence(runId: string) {
     return request<{ run_id: string; nodes: Array<Record<string, unknown>>; edges: Array<Record<string, unknown>> }>(`/v1/runs/${runId}/cooccurrence-graph`)
+  },
+
+  getNarrativeSummary(runId: string) {
+    return request<NarrativeSummaryPayload>(`/v1/runs/${runId}/narrative-summary`)
+  },
+
+  generateNarrativeSummary(runId: string, regenerate = false) {
+    const params = new URLSearchParams({ regenerate: String(regenerate) })
+    return request<NarrativeSummaryPayload>(`/v1/runs/${runId}/narrative-summary?${params.toString()}`, {
+      method: 'POST',
+    })
   },
 
   /* ---------------------------------------------------------------- */

@@ -458,7 +458,7 @@ export function AnalyticsPanel() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="w-full grid grid-cols-5 h-8 mb-4">
             <TabsTrigger value="overview" className="text-[10px]">Overview</TabsTrigger>
-            <TabsTrigger value="data-science" className="text-[10px]">Data Science</TabsTrigger>
+            <TabsTrigger value="data-science" className="text-[10px]">Analytics</TabsTrigger>
             <TabsTrigger value="cost" className="text-[10px]">Cost</TabsTrigger>
             <TabsTrigger value="risk" className="text-[10px]">Risk</TabsTrigger>
             <TabsTrigger value="compare" className="text-[10px]">Compare</TabsTrigger>

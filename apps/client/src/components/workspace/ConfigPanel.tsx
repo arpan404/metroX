@@ -145,6 +145,11 @@ const DEFAULT_STUDIO_POSITIONS = createStudioMapFromTemplate('fraud_triage').nod
   {},
 )
 
+const asRecord = (value: unknown): Record<string, unknown> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return value as Record<string, unknown>
+}
+
 /* ------------------------------------------------------------------ */
 /*  ConfigPanel                                                       */
 /* ------------------------------------------------------------------ */
@@ -180,6 +185,8 @@ export function ConfigPanel() {
   const [agenticAttacking, setAgenticAttacking] = useState(true)
   const [agenticProvider, setAgenticProvider] = useState<'auto' | 'afk_live'>('afk_live')
   const [agenticModel, setAgenticModel] = useState('ollama_chat/gpt-oss:20b')
+  const [conversationPhases, setConversationPhases] = useState(3)
+  const [contextWindowChars, setContextWindowChars] = useState(320)
 
   // ─── Scoring ───
   const [strictness, setStrictness] = useState('balanced')
@@ -239,6 +246,19 @@ export function ConfigPanel() {
       ? selectedBenchmark.seed
       : Number(selectedBenchmark.seed ?? 42)
     const profileAgenticAttacking = Boolean(selectedBenchmark.agentic_attacking ?? true)
+    const profileMultiTurn = asRecord(selectedBenchmark.multi_turn)
+    const profilePhasePolicy = String(profileMultiTurn.phase_policy ?? '').trim().toLowerCase()
+    const profilePhaseValue = profilePhasePolicy === 'adaptive' || profilePhasePolicy === 'random'
+      ? profileMultiTurn.max_phases
+      : profileMultiTurn.phases
+    const profileConversationPhases =
+      typeof profilePhaseValue === 'number' && Number.isFinite(profilePhaseValue)
+        ? Math.max(1, Math.trunc(profilePhaseValue))
+        : 3
+    const profileContextWindowChars =
+      typeof profileMultiTurn.context_window_chars === 'number' && Number.isFinite(profileMultiTurn.context_window_chars)
+        ? Math.max(120, Math.trunc(profileMultiTurn.context_window_chars))
+        : 320
 
     return !(
       String(selectedTarget.agent_id ?? '') === agentId
@@ -248,8 +268,21 @@ export function ConfigPanel() {
       && Math.abs(Number(profileCuratedRatio) - curatedRatio) < 0.001
       && Number(profileSeed) === seed
       && profileAgenticAttacking === agenticAttacking
+      && profileConversationPhases === conversationPhases
+      && profileContextWindowChars === contextWindowChars
     )
-  }, [selectedProfile, taxonomy, agentId, agentName, agentDescription, curatedRatio, seed, agenticAttacking])
+  }, [
+    selectedProfile,
+    taxonomy,
+    agentId,
+    agentName,
+    agentDescription,
+    curatedRatio,
+    seed,
+    agenticAttacking,
+    conversationPhases,
+    contextWindowChars,
+  ])
 
   const studioOrchestration = useMemo(() => {
     const baseModel = (agenticModel || model || STUDIO_BASE_MODEL).trim() || STUDIO_BASE_MODEL
@@ -307,11 +340,6 @@ export function ConfigPanel() {
       graph: { nodes: graphNodes, edges: graphEdges },
     }
   }, [agenticModel, model, state.studioNodes, state.studioEdges])
-
-  const asRecord = (value: unknown): Record<string, unknown> => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-    return value as Record<string, unknown>
-  }
 
   const hydrateStudioGraphFromOrchestration = (orchestrationConfig: Record<string, unknown>, baseModel: string) => {
     const rolesRaw = Array.isArray(orchestrationConfig.roles) ? orchestrationConfig.roles : []
@@ -433,6 +461,20 @@ export function ConfigPanel() {
     if (typeof benchmarkConfig.agentic_attacking === 'boolean') {
       setAgenticAttacking(benchmarkConfig.agentic_attacking)
     }
+    const multiTurnConfig = asRecord(benchmarkConfig.multi_turn)
+    const phasePolicyRaw = String(multiTurnConfig.phase_policy ?? '').trim().toLowerCase()
+    const phasesRaw = Number(
+      phasePolicyRaw === 'adaptive' || phasePolicyRaw === 'random'
+        ? (multiTurnConfig.max_phases ?? multiTurnConfig.phases)
+        : multiTurnConfig.phases,
+    )
+    const contextRaw = Number(multiTurnConfig.context_window_chars)
+    setConversationPhases(
+      Number.isFinite(phasesRaw) ? Math.max(1, Math.min(12, Math.trunc(phasesRaw))) : 3,
+    )
+    setContextWindowChars(
+      Number.isFinite(contextRaw) ? Math.max(120, Math.min(2400, Math.trunc(contextRaw))) : 320,
+    )
     if (benchmarkConfig.agentic_provider === 'auto' || benchmarkConfig.agentic_provider === 'afk_live') {
       setAgenticProvider(benchmarkConfig.agentic_provider)
     }
@@ -806,6 +848,15 @@ export function ConfigPanel() {
       agentic_attacking: agenticAttacking,
       agentic_provider: agenticProvider,
       agentic_model: agenticModel || null,
+      multi_turn: {
+        enabled: conversationPhases > 1,
+        phase_policy: 'adaptive',
+        phases: Math.max(1, Math.min(12, Math.trunc(conversationPhases))),
+        min_phases: 2,
+        max_phases: Math.max(2, Math.min(12, Math.trunc(conversationPhases))),
+        context_window_chars: Math.max(120, Math.min(2400, Math.trunc(contextWindowChars))),
+        response_excerpt_chars: Math.max(80, Math.min(2000, Math.trunc(contextWindowChars * 0.875))),
+      },
       afk_orchestration: {
         model: studioOrchestration.baseModel,
         join_policy: joinPolicy,
@@ -1480,6 +1531,29 @@ export function ConfigPanel() {
                   </FieldGroup>
                 </div>
               )}
+              <div className="grid grid-cols-2 gap-2">
+                <FieldGroup label={helpLabel('Conversation Phases', 'How many sequential turns each attack case should run in the same thread.')}>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={12}
+                    value={conversationPhases}
+                    onChange={(e) => setConversationPhases(Math.max(1, Math.min(12, Number(e.target.value) || 1)))}
+                    className="h-7 text-xs font-mono"
+                  />
+                </FieldGroup>
+                <FieldGroup label={helpLabel('Context Window (chars)', 'Max prior response excerpt carried into each follow-up phase.')}>
+                  <Input
+                    type="number"
+                    min={120}
+                    max={2400}
+                    step={40}
+                    value={contextWindowChars}
+                    onChange={(e) => setContextWindowChars(Math.max(120, Math.min(2400, Number(e.target.value) || 120)))}
+                    className="h-7 text-xs font-mono"
+                  />
+                </FieldGroup>
+              </div>
               <FieldGroup label={helpLabel('Minimum Score', 'Minimum composite score required for this run to pass.')}>
                 <Input type="number" value={compositeMin} onChange={(e) => setCompositeMin(+e.target.value)} className="h-7 text-xs font-mono" />
               </FieldGroup>

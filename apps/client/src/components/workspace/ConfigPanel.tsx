@@ -1447,7 +1447,7 @@ export function ConfigPanel() {
         </FieldGroup>
 
         <FieldGroup label={helpLabel('Run Size', 'Choose the evaluation depth and cost envelope.')}>
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {PRESET_OPTIONS.map((p) => (
               <motion.button
                 key={p.value}
@@ -1455,21 +1455,21 @@ export function ConfigPanel() {
                 whileTap={{ scale: 0.98 }}
                 onClick={() => setPreset(p.value)}
                 className={cn(
-                  'flex flex-col items-center gap-1 rounded-lg border p-2 transition-colors',
+                  'flex flex-col items-center gap-1.5 rounded-lg border p-3 transition-colors',
                   preset === p.value
                     ? 'border-primary/70 bg-primary/12 text-primary'
                     : 'border-border/40 bg-background/45 hover:border-primary/40',
                 )}
               >
-                <p.icon className="h-3.5 w-3.5" />
-                <span className="text-[10px] font-semibold">{p.label}</span>
-                <span className="text-[9px] text-muted-foreground">{p.desc}</span>
+                <p.icon className="h-4 w-4" />
+                <span className="text-xs font-semibold">{p.label}</span>
+                <span className="text-[10px] text-muted-foreground">{p.desc}</span>
               </motion.button>
             ))}
           </div>
         </FieldGroup>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-lg border border-border/40 bg-background/35 p-3 space-y-2.5">
           <FieldGroup label={helpLabel('Manual Run Size Override', 'Set a custom attack count instead of preset defaults.')} horizontal>
             <Switch
               checked={manualRunSizeOverride}
@@ -1489,12 +1489,12 @@ export function ConfigPanel() {
               min={1}
               step={1}
               disabled={!manualRunSizeOverride}
-              className="h-7 text-xs font-mono disabled:opacity-70"
+              className="h-8 text-sm font-mono disabled:opacity-70"
             />
           </FieldGroup>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <FieldGroup label={helpLabel('Budget ($)', 'Soft budget used for cost tracking and score gates.')}>
             <Input
               type="number"
@@ -1502,7 +1502,7 @@ export function ConfigPanel() {
               onChange={(e) => setBudgetUsd(+e.target.value)}
               min={0}
               step={1}
-              className="h-7 text-xs font-mono"
+              className="h-8 text-sm font-mono"
             />
           </FieldGroup>
           <FieldGroup label={helpLabel('Parallel Jobs', 'Max parallel executions during the run.')}>
@@ -1512,7 +1512,7 @@ export function ConfigPanel() {
               onChange={(e) => setMaxConcurrency(+e.target.value)}
               min={1}
               max={64}
-              className="h-7 text-xs font-mono"
+              className="h-8 text-sm font-mono"
             />
           </FieldGroup>
         </div>

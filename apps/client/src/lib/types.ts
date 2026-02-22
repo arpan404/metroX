@@ -353,6 +353,15 @@ export type BenchmarkConfig = {
   agentic_attacking: boolean
   agentic_provider: 'auto' | 'afk_live'
   agentic_model: string | null
+  multi_turn?: {
+    enabled: boolean
+    phase_policy?: 'fixed' | 'random' | 'adaptive'
+    phases: number
+    min_phases?: number
+    max_phases?: number
+    context_window_chars: number
+    response_excerpt_chars: number
+  }
   afk_orchestration: Record<string, unknown>
 }
 
@@ -544,4 +553,16 @@ export type FeaturePayload = {
 export type ForecastPayload = {
   run_id: string
   forecasts: Array<Record<string, unknown>>
+}
+
+export type NarrativeSummaryPayload = {
+  run_id: string
+  generated_by: string
+  model: string
+  provider: string
+  executive_summary: string
+  non_technical_explanation: string
+  top_vulnerabilities: Array<Record<string, unknown>>
+  advisories: Array<Record<string, unknown>>
+  gate_reasons: string[]
 }

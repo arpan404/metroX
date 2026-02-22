@@ -4,11 +4,8 @@ import {
   BarChart3,
   Database,
   Loader2,
-  Minus,
-  Send,
   Target,
-  ThumbsDown,
-  ThumbsUp,
+  Sparkles,
 } from 'lucide-react'
 import {
   Bar,
@@ -22,17 +19,14 @@ import {
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Textarea } from '@/components/ui/textarea'
 import { api } from '@/lib/api'
 import { getChartColors } from '@/lib/chart-theme'
-import type { AdjudicationCreate, DetectorVote, DetectorVoteSummaryPayload } from '@/lib/types'
+import type { DetectorVote, DetectorVoteSummaryPayload } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/stores/workspace-store'
-import { toast } from 'sonner'
 import { EmptyState, MetricRow, PanelSection, PanelShell } from './PanelShell'
 
 const DETECTOR_LABELS: Record<string, string> = {
@@ -68,6 +62,19 @@ function failureLabel(flags: Record<string, boolean> | undefined): string {
   return found ? humanizeIdentifier(found[0]) : 'none'
 }
 
+function asrWaldCi95(successes: number, total: number): { low: number; high: number } {
+  const n = Math.max(0, Math.trunc(Number(total || 0)))
+  const kRaw = Math.max(0, Math.trunc(Number(successes || 0)))
+  if (n === 0) return { low: 0, high: 0 }
+  const k = Math.min(kRaw, n)
+  const pHat = k / n
+  const margin = 1.96 * Math.sqrt((pHat * (1 - pHat)) / n)
+  return {
+    low: Math.max(0, pHat - margin),
+    high: Math.min(1, pHat + margin),
+  }
+}
+
 export function AttackDetailPanel() {
   const { state, dispatch } = useWorkspace()
   const isOpen = state.activePanel === 'attack-detail'
@@ -79,13 +86,12 @@ export function AttackDetailPanel() {
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [summaryError, setSummaryError] = useState<string | null>(null)
 
-  const [adjReviewer, setAdjReviewer] = useState('')
-  const [adjDecision, setAdjDecision] = useState<string>('')
-  const [adjRationale, setAdjRationale] = useState('')
-  const [adjExecutionId, setAdjExecutionId] = useState('')
-  const [adjSubmitting, setAdjSubmitting] = useState(false)
-
   const attackData = state.attackSummary?.attack_types?.find((row) => row.attack_type === selectedType) ?? null
+  const asrCi95 = useMemo(() => {
+    if (!attackData) return { low: 0, high: 0 }
+    if (attackData.asr_ci_95) return attackData.asr_ci_95
+    return asrWaldCi95(attackData.success, attackData.total)
+  }, [attackData])
 
   useEffect(() => {
     if (!isOpen || !runId || !selectedType) {
@@ -146,27 +152,6 @@ export function AttackDetailPanel() {
     [summary],
   )
 
-  const handleAdjudicate = async () => {
-    if (!runId || !adjExecutionId || !adjReviewer || !adjDecision) return
-    setAdjSubmitting(true)
-    try {
-      await api.createAdjudication({
-        run_id: runId,
-        execution_id: adjExecutionId,
-        reviewer: adjReviewer,
-        decision: adjDecision as AdjudicationCreate['decision'],
-        rationale: adjRationale || undefined,
-      })
-      toast.success('Adjudication submitted')
-      setAdjRationale('')
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Adjudication failed'
-      toast.error(message)
-    } finally {
-      setAdjSubmitting(false)
-    }
-  }
-
   return (
     <PanelShell
       open={isOpen}
@@ -203,6 +188,10 @@ export function AttackDetailPanel() {
                 <MetricRow label="Total Attempts" value={attackData.total} />
                 <MetricRow label="Blocked (Pass)" value={attackData.failure} color="text-emerald-400" />
                 <MetricRow label="Compromised (Fail)" value={attackData.success} color="text-red-400" />
+                <MetricRow
+                  label="ASR 95% CI"
+                  value={`${(asrCi95.low * 100).toFixed(1)}% - ${(asrCi95.high * 100).toFixed(1)}%`}
+                />
                 <MetricRow label="Avg Confidence" value={attackData.avg_confidence.toFixed(3)} />
                 <MetricRow
                   label="Avg Disagreement"
@@ -336,6 +325,44 @@ export function AttackDetailPanel() {
               description="Per-execution vote sample for debugging"
               badge={<Badge variant="outline" className="h-4 text-[10px]">{rawVotes.length}</Badge>}
             >
+              <div className="mb-3 rounded-lg border border-border/50 bg-background/45 px-3 py-2.5">
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-primary/15 text-primary">
+                    <Sparkles className="h-3.5 w-3.5" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold tracking-[0.04em] uppercase text-foreground/90">Vote Snapshot</p>
+                    <p className="text-[10px] text-muted-foreground">Clean summary for this selected test type</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                  <div className="rounded-md border border-border/35 bg-background/35 px-2 py-1.5">
+                    <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Total Votes</p>
+                    <p className="text-xs font-semibold">{rawVotes.length}</p>
+                  </div>
+                  <div className="rounded-md border border-emerald-500/30 bg-emerald-500/8 px-2 py-1.5">
+                    <p className="text-[9px] uppercase tracking-wide text-emerald-400/90">Pass</p>
+                    <p className="text-xs font-semibold text-emerald-300">
+                      {rawVotes.filter((vote) => !hasFailure(vote.failure_flags)).length}
+                    </p>
+                  </div>
+                  <div className="rounded-md border border-red-500/30 bg-red-500/8 px-2 py-1.5">
+                    <p className="text-[9px] uppercase tracking-wide text-red-400/90">Fail</p>
+                    <p className="text-xs font-semibold text-red-300">
+                      {rawVotes.filter((vote) => hasFailure(vote.failure_flags)).length}
+                    </p>
+                  </div>
+                  <div className="rounded-md border border-border/35 bg-background/35 px-2 py-1.5">
+                    <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Avg Confidence</p>
+                    <p className="text-xs font-semibold">
+                      {rawVotes.length
+                        ? `${((rawVotes.reduce((sum, vote) => sum + vote.confidence, 0) / rawVotes.length) * 100).toFixed(1)}%`
+                        : '0.0%'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               {rawVotes.length ? (
                 <div className="overflow-x-auto -mx-1">
                   <Table>
@@ -377,71 +404,6 @@ export function AttackDetailPanel() {
                   description="No raw vote rows available for the selected test type."
                 />
               )}
-            </PanelSection>
-
-            <PanelSection title="Manual Adjudication" description="Review and adjudicate specific executions">
-              <div className="space-y-2">
-                <div>
-                  <label className="text-[10px] text-muted-foreground">Execution ID</label>
-                  <Input
-                    value={adjExecutionId}
-                    onChange={(e) => setAdjExecutionId(e.target.value)}
-                    placeholder="execution-id..."
-                    className="mt-0.5 h-7 font-mono text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-muted-foreground">Reviewer</label>
-                  <Input
-                    value={adjReviewer}
-                    onChange={(e) => setAdjReviewer(e.target.value)}
-                    placeholder="your name"
-                    className="mt-0.5 h-7 text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-muted-foreground">Decision</label>
-                  <div className="mt-0.5 flex gap-1.5">
-                    {[
-                      { value: 'agree', label: 'Agree', icon: ThumbsUp, color: 'text-emerald-400' },
-                      { value: 'disagree', label: 'Disagree', icon: ThumbsDown, color: 'text-red-400' },
-                      { value: 'uncertain', label: 'Uncertain', icon: Minus, color: 'text-amber-400' },
-                    ].map(({ value, label, icon: Icon, color }) => (
-                      <Button
-                        key={value}
-                        variant={adjDecision === value ? 'default' : 'outline'}
-                        size="sm"
-                        className={cn('h-7 flex-1 text-[10px]', adjDecision === value && color)}
-                        onClick={() => setAdjDecision(value)}
-                      >
-                        <Icon className="mr-1 h-3 w-3" /> {label}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-muted-foreground">Rationale</label>
-                  <Textarea
-                    value={adjRationale}
-                    onChange={(e) => setAdjRationale(e.target.value)}
-                    placeholder="Optional review rationale"
-                    className="mt-0.5 min-h-[64px] text-xs"
-                  />
-                </div>
-
-                <Button
-                  size="sm"
-                  className="h-7 w-full text-[10px]"
-                  onClick={handleAdjudicate}
-                  disabled={adjSubmitting || !adjExecutionId || !adjReviewer || !adjDecision}
-                >
-                  {adjSubmitting ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Send className="mr-1 h-3 w-3" />}
-                  Submit Adjudication
-                </Button>
-              </div>
             </PanelSection>
           </TabsContent>
 

@@ -506,6 +506,7 @@ function NodeContextMenu({
   const runStatus = state.runData?.status
   const canResume = runStatus === 'failed' || runStatus === 'interrupted'
   const canRerun = Boolean(state.runData)
+  const showStudioActions = state.canvasMode === 'studio'
 
   const handleDuplicate = () => {
     if (!isStudioNode || !nodeData?.label || !nodeData?.role) return
@@ -603,50 +604,54 @@ function NodeContextMenu({
       <div className="px-3 py-1.5 text-[11px] text-muted-foreground border-b border-border/40 mb-1">
         {nodeData?.label ?? node.id}
       </div>
-      <button
-        className={cn(
-          'flex items-center gap-2.5 w-full px-3 py-1.5 text-left text-[13px]',
-          canResume || canRerun
-            ? 'text-foreground/80 hover:text-foreground hover:bg-accent/60'
-            : 'text-muted-foreground/50 cursor-not-allowed',
-          'transition-colors duration-100',
-        )}
-        disabled={!canResume && !canRerun}
-        onClick={() => { void handleRunOrRerun(); onClose() }}
-      >
-        <Play className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="flex-1">{canResume ? 'Run' : 'Rerun'}</span>
-      </button>
-      <div className="h-px bg-border/40 my-1" />
-      <button
-        className={cn(
-          'flex items-center gap-2.5 w-full px-3 py-1.5 text-left text-[13px]',
-          isStudioNode
-            ? 'text-foreground/80 hover:text-foreground hover:bg-accent/60'
-            : 'text-muted-foreground/50 cursor-not-allowed',
-          'transition-colors duration-100',
-        )}
-        disabled={!isStudioNode}
-        onClick={() => { handleDuplicate(); onClose() }}
-      >
-        <Download className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="flex-1">Duplicate</span>
-      </button>
-      <button
-        className={cn(
-          'flex items-center gap-2.5 w-full px-3 py-1.5 text-left text-[13px]',
-          isStudioNode
-            ? 'text-destructive/90 hover:text-destructive hover:bg-destructive/10'
-            : 'text-muted-foreground/50 cursor-not-allowed',
-          'transition-colors duration-100',
-        )}
-        disabled={!isStudioNode}
-        onClick={() => { handleDelete(); onClose() }}
-      >
-        <RotateCcw className="h-3.5 w-3.5" />
-        <span className="flex-1">Delete</span>
-      </button>
-      <div className="h-px bg-border/40 my-1" />
+      {showStudioActions && (
+        <>
+          <button
+            className={cn(
+              'flex items-center gap-2.5 w-full px-3 py-1.5 text-left text-[13px]',
+              canResume || canRerun
+                ? 'text-foreground/80 hover:text-foreground hover:bg-accent/60'
+                : 'text-muted-foreground/50 cursor-not-allowed',
+              'transition-colors duration-100',
+            )}
+            disabled={!canResume && !canRerun}
+            onClick={() => { void handleRunOrRerun(); onClose() }}
+          >
+            <Play className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="flex-1">{canResume ? 'Run' : 'Rerun'}</span>
+          </button>
+          <div className="h-px bg-border/40 my-1" />
+          <button
+            className={cn(
+              'flex items-center gap-2.5 w-full px-3 py-1.5 text-left text-[13px]',
+              isStudioNode
+                ? 'text-foreground/80 hover:text-foreground hover:bg-accent/60'
+                : 'text-muted-foreground/50 cursor-not-allowed',
+              'transition-colors duration-100',
+            )}
+            disabled={!isStudioNode}
+            onClick={() => { handleDuplicate(); onClose() }}
+          >
+            <Download className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="flex-1">Duplicate</span>
+          </button>
+          <button
+            className={cn(
+              'flex items-center gap-2.5 w-full px-3 py-1.5 text-left text-[13px]',
+              isStudioNode
+                ? 'text-destructive/90 hover:text-destructive hover:bg-destructive/10'
+                : 'text-muted-foreground/50 cursor-not-allowed',
+              'transition-colors duration-100',
+            )}
+            disabled={!isStudioNode}
+            onClick={() => { handleDelete(); onClose() }}
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            <span className="flex-1">Delete</span>
+          </button>
+          <div className="h-px bg-border/40 my-1" />
+        </>
+      )}
       <button
         className={cn(
           'flex items-center gap-2.5 w-full px-3 py-1.5 text-left text-[13px]',

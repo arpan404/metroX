@@ -95,7 +95,7 @@ from app.pipeline.reporting import get_report_download_path
 from app.pipeline.reporting import generate_narrative_summary, get_latest_narrative_summary
 from app.stats.risk import risk_cards
 from app.runtime.run_queue import RUN_QUEUE
-from app.runtime.adapters import normalize_target_type
+from app.runtime.adapters import _resolve_afk_memory_store, normalize_target_type
 from app.utils.common import log_event, proportion_wald_ci
 from app.security.service import (
     SecretCipher,
@@ -533,7 +533,17 @@ def invoke_agent_index_agent(agent_id: str, payload: AgentIndexInvoke) -> dict:
     if isinstance(context, dict) and context:
         agent_kwargs["context"] = context
 
-    runner = Runner(telemetry=payload.telemetry or "null")
+    runner_kwargs: dict[str, Any] = {"telemetry": payload.telemetry or "null"}
+    settings = get_settings()
+    memory_store = _resolve_afk_memory_store(
+        memory_mode="auto",
+        database_url=settings.database_url,
+        request_extra={},
+    )
+    if memory_store is not None:
+        runner_kwargs["memory_store"] = memory_store
+
+    runner = Runner(**runner_kwargs)
     agent = Agent(**agent_kwargs)
     try:
         result = runner.run_sync(agent, user_message=message, thread_id=payload.thread_id or f"idx-{agent_id}")

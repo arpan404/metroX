@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import os
+import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
@@ -180,6 +183,127 @@ def _extract_http_error_detail(response: httpx.Response) -> str:
     return response.reason_phrase or "request failed"
 
 
+def _is_postgres_database_url(database_url: str) -> bool:
+    value = str(database_url or "").strip().lower()
+    return value.startswith("postgres")
+
+
+def _sqlite_locked(exc: sqlite3.OperationalError) -> bool:
+    return "locked" in str(exc).strip().lower()
+
+
+def _build_resilient_sqlite_memory_store(request_extra: dict[str, Any]) -> Any:
+    from afk.memory.adapters.sqlite import SQLiteMemoryStore  # type: ignore
+
+    busy_timeout_ms = int(request_extra.get("afk_sqlite_busy_timeout_ms", 10000))
+    max_write_retries = int(request_extra.get("afk_sqlite_max_write_retries", 6))
+    retry_delay_ms = int(request_extra.get("afk_sqlite_retry_delay_ms", 50))
+    sqlite_path = str(
+        request_extra.get("afk_sqlite_path")
+        or os.getenv("AFK_SQLITE_PATH", "afk_memory.sqlite3")
+    )
+
+    class _ResilientSQLiteMemoryStore(SQLiteMemoryStore):
+        def __init__(
+            self,
+            *,
+            path: str,
+            busy_timeout_ms: int,
+            max_write_retries: int,
+            retry_delay_ms: int,
+        ) -> None:
+            super().__init__(path=path)
+            self._busy_timeout_ms = max(100, int(busy_timeout_ms))
+            self._max_write_retries = max(1, int(max_write_retries))
+            self._retry_delay_ms = max(1, int(retry_delay_ms))
+
+        async def setup(self) -> None:
+            if self._is_setup and self._connection is not None:
+                return
+            import aiosqlite  # type: ignore
+            from afk.memory.store import MemoryStore  # type: ignore
+
+            self._connection = await aiosqlite.connect(
+                self.path,
+                timeout=max(1.0, self._busy_timeout_ms / 1000.0),
+            )
+            self._connection.row_factory = aiosqlite.Row
+            await self._connection.execute("PRAGMA journal_mode=WAL;")
+            await self._connection.execute("PRAGMA synchronous=NORMAL;")
+            await self._connection.execute("PRAGMA foreign_keys=ON;")
+            await self._connection.execute(f"PRAGMA busy_timeout={self._busy_timeout_ms};")
+            await self._create_tables()
+            await self._connection.commit()
+            await MemoryStore.setup(self)
+
+        async def _write_with_retry(self, fn, *args, **kwargs) -> None:
+            for attempt in range(self._max_write_retries):
+                try:
+                    await fn(*args, **kwargs)
+                    return
+                except sqlite3.OperationalError as exc:
+                    if not _sqlite_locked(exc) or attempt >= self._max_write_retries - 1:
+                        raise
+                    backoff_ms = self._retry_delay_ms * (2**attempt)
+                    await asyncio.sleep(backoff_ms / 1000.0)
+
+        async def append_event(self, event) -> None:
+            await self._write_with_retry(super().append_event, event)
+
+        async def put_state(self, thread_id: str, key: str, value: Any) -> None:
+            await self._write_with_retry(super().put_state, thread_id, key, value)
+
+        async def delete_state(self, thread_id: str, key: str) -> None:
+            await self._write_with_retry(super().delete_state, thread_id, key)
+
+        async def replace_thread_events(self, thread_id: str, events: list[Any]) -> None:
+            await self._write_with_retry(super().replace_thread_events, thread_id, events)
+
+        async def upsert_long_term_memory(self, memory, *, embedding=None) -> None:
+            await self._write_with_retry(
+                super().upsert_long_term_memory,
+                memory,
+                embedding=embedding,
+            )
+
+        async def delete_long_term_memory(self, user_id: str | None, memory_id: str) -> None:
+            await self._write_with_retry(super().delete_long_term_memory, user_id, memory_id)
+
+    return _ResilientSQLiteMemoryStore(
+        path=sqlite_path,
+        busy_timeout_ms=busy_timeout_ms,
+        max_write_retries=max_write_retries,
+        retry_delay_ms=retry_delay_ms,
+    )
+
+
+def _resolve_afk_memory_store(memory_mode: str, database_url: str, request_extra: dict[str, Any]) -> Any | None:
+    mode = str(memory_mode or "auto").strip().lower()
+
+    if mode in {"disabled", "inmemory", "memory", "in_memory"}:
+        from afk.memory.adapters.in_memory import InMemoryMemoryStore  # type: ignore
+
+        return InMemoryMemoryStore()
+
+    if mode in {"auto", "postgres"} and _is_postgres_database_url(database_url):
+        try:
+            from afk.memory.adapters.postgres import PostgresMemoryStore  # type: ignore
+
+            return PostgresMemoryStore(
+                dsn=database_url.replace("+psycopg", ""),
+                vector_dim=int(request_extra.get("afk_vector_dim", 1536)),
+            )
+        except Exception:
+            if mode == "postgres":
+                raise
+            return None
+
+    if mode in {"auto", "sqlite", "sqlite3"}:
+        return _build_resilient_sqlite_memory_store(request_extra)
+
+    return None
+
+
 class AFKLLMRuntimeAdapter(TargetAdapter):
     """AFK-only LLM adapter for managed runtime targets."""
 
@@ -293,16 +417,13 @@ class AFKManagedAgentRuntimeAdapter(TargetAdapter):
 
         runner_kwargs: dict[str, Any] = {"telemetry": request.extra.get("telemetry", "null")}
         memory_mode = str(request.extra.get("afk_memory_backend", "auto"))
-        if memory_mode in {"auto", "postgres"} and settings.database_url.startswith("postgres"):
-            try:
-                from afk.memory.adapters.postgres import PostgresMemoryStore  # type: ignore
-
-                runner_kwargs["memory_store"] = PostgresMemoryStore(
-                    dsn=settings.database_url.replace("+psycopg", ""),
-                    vector_dim=int(request.extra.get("afk_vector_dim", 1536)),
-                )
-            except Exception:
-                pass
+        memory_store = _resolve_afk_memory_store(
+            memory_mode=memory_mode,
+            database_url=settings.database_url,
+            request_extra=request.extra,
+        )
+        if memory_store is not None:
+            runner_kwargs["memory_store"] = memory_store
 
         runner = Runner(**runner_kwargs)
         extra_system_prompt = str(request.extra.get("extra_system_prompt", "") or "").strip()

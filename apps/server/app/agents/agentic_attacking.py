@@ -10,6 +10,8 @@ from typing import Any
 import httpx
 from pydantic import BaseModel
 
+from app.config import get_settings
+from app.runtime.adapters import _resolve_afk_memory_store
 from app.utils.common import seeded_random
 
 DEFAULT_ROLE_INSTRUCTIONS: dict[str, str] = {
@@ -312,7 +314,18 @@ class MultiAgentAttackOrchestrator:
         }
         runner_cfg = _build_runner_config(RunnerConfig, runner_payload)
 
-        runner = Runner(telemetry=self.orchestration.telemetry, config=runner_cfg)
+        settings = get_settings()
+        memory_mode = str(self.config.get("afk_memory_backend", "auto"))
+        memory_store = _resolve_afk_memory_store(
+            memory_mode=memory_mode,
+            database_url=settings.database_url,
+            request_extra=self.config,
+        )
+        runner_kwargs: dict[str, Any] = {"telemetry": self.orchestration.telemetry, "config": runner_cfg}
+        if memory_store is not None:
+            runner_kwargs["memory_store"] = memory_store
+
+        runner = Runner(**runner_kwargs)
 
         role_agents: dict[str, Any] = {}
         subagents = []

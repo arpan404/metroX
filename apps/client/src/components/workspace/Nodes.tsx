@@ -156,7 +156,7 @@ export const AttackNode = memo(function AttackNode({ data, selected }: NodeProps
           <p className="text-[11px] font-semibold truncate capitalize">
             {data.attackType.replace(/_/g, ' ')}
           </p>
-          <p className="text-[10px] text-muted-foreground font-mono">{data.total} attacks</p>
+          <p className="text-[10px] text-muted-foreground font-mono">{data.total} tests</p>
         </div>
         {data.status === 'active' && (
           <span className="relative flex h-2 w-2">

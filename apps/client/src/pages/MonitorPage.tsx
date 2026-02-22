@@ -554,7 +554,7 @@ export default function MonitorPage() {
           >
             <ToggleGroupItem value="attack" className="gap-1.5 text-xs">
               <Swords className="size-3.5" />
-              Attack Canvas
+              Test Canvas
             </ToggleGroupItem>
             <ToggleGroupItem value="studio" className="gap-1.5 text-xs">
               <Workflow className="size-3.5" />
@@ -611,8 +611,8 @@ export default function MonitorPage() {
                 </SheetTitle>
                 <SheetDescription>
                   {selectedAttack
-                    ? 'Attack analytics and telemetry for this node'
-                    : 'Click an attack node on the canvas to inspect analytics.'}
+                    ? 'Test analytics and telemetry for this node'
+                    : 'Click a test node on the canvas to inspect analytics.'}
                 </SheetDescription>
               </SheetHeader>
 
@@ -706,7 +706,7 @@ export default function MonitorPage() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead className="text-xs">Attack</TableHead>
+                              <TableHead className="text-xs">Test</TableHead>
                               <TableHead className="text-xs text-right">Pass</TableHead>
                               <TableHead className="text-xs text-right">Fail</TableHead>
                               <TableHead className="text-xs text-right">Avg ms</TableHead>

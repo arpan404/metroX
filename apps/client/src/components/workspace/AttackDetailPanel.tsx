@@ -172,15 +172,15 @@ export function AttackDetailPanel() {
       open={isOpen}
       onClose={() => dispatch({ type: 'CLOSE_PANEL' })}
       position="left"
-      title={attackData ? `Attack: ${humanizeIdentifier(attackData.attack_type)}` : 'Attack Detail'}
+      title={attackData ? `Test: ${humanizeIdentifier(attackData.attack_type)}` : 'Test Detail'}
       icon={<Target className="h-4 w-4" />}
       width="w-[420px] lg:w-[500px]"
     >
       {!selectedType || !attackData ? (
         <EmptyState
           icon={<Target className="h-8 w-8" />}
-          title="No attack selected"
-          description="Click an attack node on the canvas to inspect scoped analytics."
+          title="No test selected"
+          description="Click a test node on the canvas to inspect scoped analytics."
         />
       ) : (
         <Tabs defaultValue="overview" className="space-y-4">
@@ -193,13 +193,13 @@ export function AttackDetailPanel() {
 
           <TabsContent value="overview" className="space-y-4 mt-0">
             <PanelSection
-              title="Attack KPI"
+              title="Test KPI"
               badge={
                 <Badge variant="outline" className="h-4 text-[10px]">{attackData.total} cases</Badge>
               }
             >
               <div className="space-y-0.5">
-                <MetricRow label="Attack Type" value={humanizeIdentifier(attackData.attack_type)} />
+                <MetricRow label="Test Type" value={humanizeIdentifier(attackData.attack_type)} />
                 <MetricRow label="Total Attempts" value={attackData.total} />
                 <MetricRow label="Blocked (Pass)" value={attackData.failure} color="text-emerald-400" />
                 <MetricRow label="Compromised (Fail)" value={attackData.success} color="text-red-400" />
@@ -215,7 +215,7 @@ export function AttackDetailPanel() {
               </div>
               <div className="mt-3 space-y-1">
                 <div className="flex items-center justify-between text-[10px]">
-                  <span className="text-muted-foreground">Attack Success Rate</span>
+                  <span className="text-muted-foreground">Test Success Rate</span>
                   <span
                     className={cn(
                       'font-mono font-semibold',
@@ -255,7 +255,7 @@ export function AttackDetailPanel() {
           <TabsContent value="detectors" className="space-y-4 mt-0">
             <PanelSection
               title="Detector Consensus"
-              description="Scoped to this attack type"
+              description="Scoped to this test type"
               badge={
                 summaryLoading ? (
                   <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
@@ -324,7 +324,7 @@ export function AttackDetailPanel() {
                 <EmptyState
                   icon={<BarChart3 className="h-7 w-7" />}
                   title="No scoped detector summary"
-                  description="Run analytics are still loading for this attack type."
+                  description="Run analytics are still loading for this test type."
                 />
               )}
             </PanelSection>
@@ -374,7 +374,7 @@ export function AttackDetailPanel() {
                 <EmptyState
                   icon={<Database className="h-7 w-7" />}
                   title="No detector votes"
-                  description="No raw vote rows available for the selected attack type."
+                  description="No raw vote rows available for the selected test type."
                 />
               )}
             </PanelSection>
@@ -446,10 +446,10 @@ export function AttackDetailPanel() {
           </TabsContent>
 
           <TabsContent value="telemetry" className="space-y-4 mt-0">
-            <PanelSection title="Node Telemetry" description="Latency, cost, and policy counters for this attack type">
+            <PanelSection title="Node Telemetry" description="Latency, cost, and policy counters for this test type">
               {telemetryRow ? (
                 <div className="space-y-0.5">
-                  <MetricRow label="Attack Type" value={humanizeIdentifier(telemetryRow.attack_type)} />
+                  <MetricRow label="Test Type" value={humanizeIdentifier(telemetryRow.attack_type)} />
                   <MetricRow label="Executions" value={telemetryRow.total} />
                   <MetricRow label="Blocked (Pass)" value={telemetryRow.failure} color="text-emerald-400" />
                   <MetricRow label="Compromised (Fail)" value={telemetryRow.success} color="text-red-400" />
@@ -465,7 +465,7 @@ export function AttackDetailPanel() {
                 <EmptyState
                   icon={<Database className="h-7 w-7" />}
                   title="No telemetry"
-                  description="No telemetry rows found for the selected attack type."
+                  description="No telemetry rows found for the selected test type."
                 />
               )}
             </PanelSection>

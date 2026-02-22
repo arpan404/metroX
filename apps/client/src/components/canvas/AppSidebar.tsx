@@ -44,7 +44,7 @@ const NAV_ITEMS: {
   { value: 'canvas',           icon: LayoutDashboard,   label: 'Canvas' },
   { value: 'config',           icon: SlidersHorizontal, label: 'Configuration', onboarding: 'config-trigger' },
   { value: 'analytics',        icon: BarChart3,          label: 'Analytics',     onboarding: 'analytics-trigger' },
-  { value: 'attack-detail',    icon: Crosshair,         label: 'Attack Detail' },
+  { value: 'attack-detail',    icon: Crosshair,         label: 'Test Detail' },
   { value: 'studio-inspector', icon: Boxes,             label: 'Studio Inspector' },
 ]
 
@@ -83,7 +83,7 @@ export function AppSidebar({
               </div>
               <div className="flex flex-col gap-0.5 leading-none">
                 <span className="font-semibold text-sm">MetroX</span>
-                <span className="text-[11px] text-muted-foreground">Attack Ready Testing</span>
+                <span className="text-[11px] text-muted-foreground">Test Ready Testing</span>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -211,10 +211,10 @@ export function AppSidebar({
                   onClick={() => onCanvasModeChange('attack')}
                 >
                   <Swords />
-                  <span>Attack Canvas</span>
+                  <span>Test Canvas</span>
                 </SidebarMenuButton>
               </TooltipTrigger>
-              <TooltipContent side="right" className="text-xs">Attack Canvas</TooltipContent>
+              <TooltipContent side="right" className="text-xs">Test Canvas</TooltipContent>
             </Tooltip>
           </SidebarMenuItem>
           <SidebarMenuItem>

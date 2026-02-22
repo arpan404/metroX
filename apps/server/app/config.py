@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     credential_rotation_max_age_days: int = Field(default=90)
     credential_rotation_enforced: bool = Field(default=True)
 
-    cors_allowed_origins: str = Field(default="http://localhost:3000,http://localhost:5173")
+    cors_allowed_origins: str = Field(default="http://localhost:3000,http://localhost:5173,http://100.66.15.127:5173")
     test_agents_base_url: str = Field(default="http://127.0.0.1:8001")
     test_agents_timeout_s: float = Field(default=5.0)
 

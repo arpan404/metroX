@@ -97,7 +97,7 @@ export function BottomActionBar({
                     <span style={{ fontSize: '11px', fontWeight: 500 }}>Detail</span>
                   </ActionBtn>
                 </TooltipTrigger>
-                <TooltipContent side="top">Attack detail panel</TooltipContent>
+                <TooltipContent side="top">Test detail panel</TooltipContent>
               </Tooltip>
             </motion.div>
           )}

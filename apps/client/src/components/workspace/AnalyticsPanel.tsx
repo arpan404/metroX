@@ -791,7 +791,7 @@ export function AnalyticsPanel() {
               </div>
             </PanelSection>
 
-            <PanelSection title="Attack Outcome Distribution" description="Compromised vs blocked counts per attack type">
+            <PanelSection title="Test Outcome Distribution" description="Compromised vs blocked counts per test type">
               {attackDistribution.length > 0 ? (
                 <div className="h-[220px] -mx-2">
                   <ResponsiveContainer width="100%" height="100%">
@@ -806,11 +806,11 @@ export function AnalyticsPanel() {
                   </ResponsiveContainer>
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground">No attack distribution data.</p>
+                <p className="text-xs text-muted-foreground">No test distribution data.</p>
               )}
             </PanelSection>
 
-            <PanelSection title="Attack-Type Risk Profile" description="ASR and confidence profile by attack type">
+            <PanelSection title="Test-Type Risk Profile" description="ASR and confidence profile by test type">
               {attackRiskProfile.length > 0 ? (
                 <div className="h-[220px] -mx-2">
                   <ResponsiveContainer width="100%" height="100%">
@@ -862,7 +862,7 @@ export function AnalyticsPanel() {
               )}
             </PanelSection>
 
-            <PanelSection title="Disagreement vs Uncertainty" description="Per-attack consensus diagnostics">
+            <PanelSection title="Disagreement vs Uncertainty" description="Per-test consensus diagnostics">
               {disagreementUncertainty.length > 0 ? (
                 <div className="h-[200px] -mx-2">
                   <ResponsiveContainer width="100%" height="100%">
@@ -886,7 +886,7 @@ export function AnalyticsPanel() {
               )}
             </PanelSection>
 
-            <PanelSection title="Latency-Cost Frontier" description="Attack type efficiency frontier (bubble size = case count)">
+            <PanelSection title="Latency-Cost Frontier" description="Test type efficiency frontier (bubble size = case count)">
               {latencyCostFrontier.length > 0 ? (
                 <div className="h-[220px] -mx-2">
                   <ResponsiveContainer width="100%" height="100%">

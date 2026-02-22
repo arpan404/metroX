@@ -5,7 +5,7 @@ export const onboardingSteps: OnboardingStep[] = [
     id: 'canvas',
     title: 'Welcome to MetroX',
     description:
-      'This is your single-page canvas workspace. Attack flows, configuration, analytics, and settings all open as glass panels over this canvas.',
+      'This is your single-page canvas workspace. Test flows, configuration, analytics, and settings all open as glass panels over this canvas.',
     targetSelector: '[data-onboarding="canvas"]',
     placement: 'bottom',
   },
@@ -29,7 +29,7 @@ export const onboardingSteps: OnboardingStep[] = [
     id: 'launch',
     title: 'Launch a Run',
     description:
-      'When your configuration is ready, hit Launch Run. Attack nodes will appear on the canvas in real-time as the evaluation progresses.',
+      'When your configuration is ready, hit Launch Run. Test nodes will appear on the canvas in real-time as the evaluation progresses.',
     targetSelector: '[data-onboarding="launch-button"]',
     placement: 'left',
   },

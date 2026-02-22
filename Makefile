@@ -3,6 +3,9 @@
 BACKEND_PORT ?= 8000
 TEST_AGENTS_PORT ?= 8001
 FRONTEND_PORT ?= 5173
+BACKEND_HOST ?= 0.0.0.0
+FRONTEND_HOST ?= 0.0.0.0
+TEST_AGENTS_HOST ?= 0.0.0.0
 
 server-install:
 	cd apps/server && uv sync --dev
@@ -11,7 +14,7 @@ server-test:
 	cd apps/server && uv run pytest -q
 
 server-run:
-	cd apps/server && uv run uvicorn app.main:app --reload
+	cd apps/server && uv run uvicorn app.main:app --reload --host $(BACKEND_HOST) --port $(BACKEND_PORT)
 
 server-worker:
 	cd apps/server && uv run python -m app.worker
@@ -91,11 +94,11 @@ kill-dev-ports:
 
 dev-server:
 	@$(MAKE) --no-print-directory kill-port PORT=$(BACKEND_PORT)
-	cd apps/server && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port $(BACKEND_PORT)
+	cd apps/server && uv run uvicorn app.main:app --reload --host $(BACKEND_HOST) --port $(BACKEND_PORT)
 
 dev-client:
 	@$(MAKE) --no-print-directory kill-port PORT=$(FRONTEND_PORT)
-	cd apps/client && npm run dev -- --host 0.0.0.0 --port $(FRONTEND_PORT)
+	cd apps/client && npm run dev -- --host $(FRONTEND_HOST) --port $(FRONTEND_PORT)
 
 dev-backend: dev-server
 
@@ -103,7 +106,7 @@ dev-frontend: dev-client
 
 dev-test-agents:
 	@$(MAKE) --no-print-directory kill-port PORT=$(TEST_AGENTS_PORT)
-	cd apps/test-agents && uv run uvicorn main:app --reload --host 127.0.0.1 --port $(TEST_AGENTS_PORT)
+	cd apps/test-agents && uv run uvicorn main:app --reload --host $(TEST_AGENTS_HOST) --port $(TEST_AGENTS_PORT)
 
 dev-worker:
 	@if command -v pkill >/dev/null 2>&1; then \

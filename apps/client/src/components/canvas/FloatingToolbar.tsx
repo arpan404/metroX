@@ -114,11 +114,11 @@ export function FloatingToolbar({
                 }}
               >
                 {mode === 'attack' ? <Swords size={12} /> : <Workflow size={12} />}
-                {mode === 'attack' ? 'Attack' : 'Studio'}
+                {mode === 'attack' ? 'Test' : 'Studio'}
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              {mode === 'attack' ? 'Attack canvas' : 'Studio canvas'}
+              {mode === 'attack' ? 'Test canvas' : 'Studio canvas'}
             </TooltipContent>
           </Tooltip>
         ))}

@@ -32,3 +32,6 @@ reports/
 *.tsbuildinfo
 
 *.sqlite3
+
+afk_memory.sqlite3-shm
+afk_memory.sqlite3-wal

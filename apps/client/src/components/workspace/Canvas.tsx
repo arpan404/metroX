@@ -694,7 +694,7 @@ function NodeInfoDialog({
   if (typeof nodeData.instructions === 'string' && nodeData.instructions.trim()) {
     rows.push({ label: 'Custom Instructions', value: nodeData.instructions })
   }
-  if (typeof nodeData.attackType === 'string' && nodeData.attackType.trim()) rows.push({ label: 'Attack Type', value: nodeData.attackType })
+  if (typeof nodeData.attackType === 'string' && nodeData.attackType.trim()) rows.push({ label: 'Test Type', value: nodeData.attackType })
   if (typeof nodeData.status === 'string' && nodeData.status.trim()) rows.push({ label: 'Status', value: nodeData.status })
   if (typeof nodeData.total === 'number') rows.push({ label: 'Total Samples', value: String(nodeData.total) })
   if (typeof nodeData.success === 'number') rows.push({ label: 'Failures', value: String(nodeData.success) })

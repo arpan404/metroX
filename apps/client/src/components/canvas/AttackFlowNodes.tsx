@@ -88,7 +88,7 @@ export function RootNode({ data, selected }: NodeProps<RootNodeData>) {
           />
           {data.status}
         </div>
-        <div>{data.completed}/{data.total} attacks</div>
+        <div>{data.completed}/{data.total} tests</div>
       </div>
     </div>
   )

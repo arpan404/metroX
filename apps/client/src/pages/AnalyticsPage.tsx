@@ -397,7 +397,7 @@ export default function AnalyticsPage() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Attack</Label>
+                    <Label className="text-xs">Test</Label>
                     <Select value={filterAttack} onValueChange={setFilterAttack}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -432,7 +432,7 @@ export default function AnalyticsPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Attack</TableHead>
+                          <TableHead>Test</TableHead>
                           <TableHead>Provider</TableHead>
                           <TableHead>Model</TableHead>
                           <TableHead className="text-right">Count</TableHead>

@@ -19,11 +19,8 @@ app = FastAPI(
     description="Data-driven reliability evaluation for LLMs and AI agents",
 )
 
-_cors_origins = [
-    origin.strip()
-    for origin in get_settings().cors_allowed_origins.split(",")
-    if origin.strip()
-]
+# allow every origin
+_cors_origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,

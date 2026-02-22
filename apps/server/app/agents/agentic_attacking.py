@@ -279,17 +279,10 @@ class MultiAgentAttackOrchestrator:
             interaction_mode="headless",
             approval_fallback="deny",
             input_fallback="deny",
+            debug=True
         )
         settings = get_settings()
-        memory_store = _resolve_afk_memory_store(
-            memory_mode=str(self.config.get("afk_memory_backend", "auto")),
-            database_url=settings.database_url,
-            request_extra=self.config,
-        )
-        runner_kwargs: dict[str, Any] = {"config": runner_cfg}
-        if memory_store is not None:
-            runner_kwargs["memory_store"] = memory_store
-        runner = Runner(**runner_kwargs)
+        runner = Runner(config=runner_cfg, telemetry="console")
 
         # --- Target probe tool (optional) -----------------------------------
         target_tool = self._build_target_chat_tool(attack_type=seed.attack_type)
@@ -366,7 +359,7 @@ class MultiAgentAttackOrchestrator:
 
         # --- Single call — AFK handles all delegation ----------------------
         started = time.monotonic()
-        result = await runner.run(coordinator, user_message=coordinator_message)
+        result = await runner.run(coordinator, user_message=coordinator_message, config=RunnerConfig(debug=True))
         elapsed_ms = round((time.monotonic() - started) * 1000, 2)
         output = str(getattr(result, "final_text", "") or "")
 

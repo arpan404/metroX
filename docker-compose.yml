@@ -2,7 +2,7 @@ version: '3.9'
 
 services:
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: metrox
       POSTGRES_PASSWORD: metrox
@@ -11,6 +11,30 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metrox -d metrox"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Separate PostgreSQL with pgvector extension — used exclusively by AFK
+  # agent memory (semantic search, long-term memory). Port 5433 to avoid
+  # collision with the main postgres instance.
+  postgres-afk:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: metrox_afk
+      POSTGRES_PASSWORD: metrox_afk
+      POSTGRES_DB: metrox_afk
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_afk_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metrox_afk -d metrox_afk"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7
@@ -19,3 +43,4 @@ services:
 
 volumes:
   postgres_data:
+  postgres_afk_data:

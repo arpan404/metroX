@@ -54,6 +54,7 @@ from app.schemas import (
     FeatureOut,
     MitigationExperimentCreate,
     MitigationExperimentOut,
+    NarrativeSummaryOut,
     OrchestrationProfileCreate,
     OrchestrationProfileOut,
     OrchestrationProfileUpdate,
@@ -90,6 +91,7 @@ from app.pipeline.orchestrator import RunOrchestrator
 from app.stats.advanced_analytics import calibration_payload, cooccurrence_payload, forecast_payload, inference_payload
 from app.runtime.providers import provider_capabilities, validate_provider
 from app.pipeline.reporting import generate_markdown_report
+from app.pipeline.reporting import generate_narrative_summary, get_latest_narrative_summary
 from app.stats.risk import risk_cards
 from app.runtime.run_queue import RUN_QUEUE
 from app.runtime.adapters import normalize_target_type
@@ -2118,3 +2120,24 @@ def generate_report(run_id: str, db: Session = Depends(get_db)) -> RunReportOut:
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return RunReportOut(run_id=run_id, markdown=markdown, path=path)
+
+
+@router.get("/runs/{run_id}/narrative-summary", response_model=NarrativeSummaryOut)
+def get_narrative_summary(run_id: str, db: Session = Depends(get_db)) -> NarrativeSummaryOut:
+    payload = get_latest_narrative_summary(db, run_id)
+    if not payload:
+        raise HTTPException(status_code=404, detail="Narrative summary not found. Generate it first.")
+    return NarrativeSummaryOut.model_validate(payload)
+
+
+@router.post("/runs/{run_id}/narrative-summary", response_model=NarrativeSummaryOut)
+def generate_narrative_summary_endpoint(
+    run_id: str,
+    regenerate: bool = Query(default=False),
+    db: Session = Depends(get_db),
+) -> NarrativeSummaryOut:
+    try:
+        payload = generate_narrative_summary(db, run_id, regenerate=regenerate)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return NarrativeSummaryOut.model_validate(payload)

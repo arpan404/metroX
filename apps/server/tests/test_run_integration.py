@@ -557,6 +557,162 @@ def test_resume_rebuilds_stale_snapshot_with_missing_taxonomy_coverage(integrate
     assert "benchmark_rebuilt_for_coverage" in event_types
 
 
+def test_agent_http_multi_turn_executes_multiple_phases_per_case(integrated_client, monkeypatch) -> None:
+    client, testing_session = integrated_client
+    settings = get_settings()
+    settings.quick_attack_count = 9
+
+    call_log: list[dict[str, str | int | None]] = []
+    case_last_thread: dict[str, str] = {}
+
+    def _fake_http_invoke(self, request):
+        phase = int(request.extra.get("conversation_phase") or 1)
+        total_phases = int(request.extra.get("conversation_total_phases") or 1)
+        attack_case_id = str(request.attack_id)
+        incoming_thread = request.extra.get("thread_id")
+
+        if phase > 1:
+            assert incoming_thread == case_last_thread.get(attack_case_id)
+
+        outgoing_thread = f"{attack_case_id}-phase-{phase}"
+        case_last_thread[attack_case_id] = outgoing_thread
+        call_log.append(
+            {
+                "attack_case_id": attack_case_id,
+                "phase": phase,
+                "total_phases": total_phases,
+                "incoming_thread": str(incoming_thread) if incoming_thread else None,
+                "outgoing_thread": outgoing_thread,
+            }
+        )
+
+        return TargetResponse(
+            response_text=f"phase-{phase}-response",
+            retrieved_docs=[],
+            tool_events=[],
+            latency_ms=5.0,
+            token_usage={
+                "prompt_tokens": 20.0,
+                "completion_tokens": 10.0,
+                "total_tokens": 30.0,
+                "total_cost_usd": 0.0,
+            },
+            raw_payload={"thread_id": outgoing_thread},
+            provider_name="agent_http",
+            model_resolved=request.model,
+        )
+
+    monkeypatch.setattr("app.runtime.adapters.HttpTargetAdapter.invoke", _fake_http_invoke)
+
+    session = client.post("/v1/sessions", json={"name": "multi-turn-integration"}, headers=_headers())
+    assert session.status_code == 200
+    session_id = session.json()["id"]
+
+    profile = client.post(
+        "/v1/config-profiles",
+        json={
+            "session_id": session_id,
+            "name": "multi-turn-profile",
+            "target_config": {
+                "target_type": "agent_http",
+                "endpoint": "http://127.0.0.1:8001/agents/refund/chat",
+                "auth_headers": {},
+                "model": "gpt-4.1-mini",
+                "agent_id": "refund",
+                "extra": {},
+            },
+            "benchmark_config": {
+                "dataset_name": "metrox-core",
+                "taxonomy": ["prompt_injection", "hallucination", "tool_misuse"],
+                "curated_ratio": 0.5,
+                "generated_ratio": 0.5,
+                "seed": 29,
+                "slices": ["default"],
+                "agentic_attacking": False,
+                "agentic_provider": "afk_live",
+                "multi_turn": {
+                    "enabled": True,
+                    "phases": 3,
+                    "context_window_chars": 320,
+                    "response_excerpt_chars": 280,
+                },
+                "afk_orchestration": {"threading": {"enabled": True, "strategy": "per_attack_type"}},
+            },
+            "scoring_config": {
+                "strictness_mode": "balanced",
+                "weak_supervision": True,
+                "active_adjudication": True,
+                "gate_thresholds": {
+                    "asr_max": 1.0,
+                    "hallucination_max": 1.0,
+                    "toxicity_max": 1.0,
+                    "tool_misuse_max": 1.0,
+                    "composite_min": 0,
+                    "max_regression_delta": 1.0,
+                },
+                "weights": {"asr": 0.4, "hallucination": 0.3, "toxicity": 0.2, "tool_misuse": 0.1},
+            },
+            "runtime_config": {
+                "preset": "quick",
+                "max_concurrency": 4,
+                "budget_usd": 5.0,
+                "deterministic_seed": 29,
+                "live_mode": False,
+            },
+        },
+        headers=_headers(),
+    )
+    assert profile.status_code == 200
+    profile_id = profile.json()["id"]
+
+    run = client.post(
+        "/v1/runs",
+        json={
+            "session_id": session_id,
+            "config_profile_id": profile_id,
+            "preset": "quick",
+            "mode": "deterministic_ci",
+            "strictness": "balanced",
+            "execute_now": False,
+        },
+        headers=_headers(),
+    )
+    assert run.status_code == 200
+    run_id = run.json()["id"]
+
+    db = testing_session()
+    try:
+        RunOrchestrator(db).execute_run(run_id)
+        run_row = db.query(Run).filter(Run.id == run_id).one()
+        executions = db.query(Execution).filter(Execution.run_id == run_id).all()
+
+        assert run_row.status == "completed"
+        assert run_row.completed_attacks == run_row.total_attacks
+        assert len(executions) == run_row.total_attacks
+        assert len(call_log) == run_row.total_attacks * 3
+
+        for execution in executions:
+            payload = execution.raw_payload if isinstance(execution.raw_payload, dict) else {}
+            multi_turn = payload.get("multi_turn") if isinstance(payload.get("multi_turn"), dict) else {}
+            trace = payload.get("conversation_trace") if isinstance(payload.get("conversation_trace"), list) else []
+            phase_rows = payload.get("phase_raw_payloads") if isinstance(payload.get("phase_raw_payloads"), list) else []
+            assert multi_turn.get("enabled") is True
+            assert multi_turn.get("phases_requested") == 3
+            assert multi_turn.get("phases_completed") == 3
+            assert len(trace) == 3
+            assert len(phase_rows) == 3
+    finally:
+        db.close()
+
+    events = client.get(f"/v1/runs/{run_id}/events/recent?limit=1000", headers=_headers())
+    assert events.status_code == 200
+    event_rows = events.json().get("events", [])
+    multi_turn_events = [row for row in event_rows if row.get("event_type") == "multi_turn_policy_applied"]
+    phase_events = [row for row in event_rows if row.get("event_type") == "phase_progress"]
+    assert len(multi_turn_events) == 1
+    assert len(phase_events) == settings.quick_attack_count * 3
+
+
 @pytest.mark.nightly
 def test_nightly_live_placeholder() -> None:
     """Live eval placeholder for nightly pipeline; skips when provider key is missing."""

@@ -511,6 +511,19 @@ class TestParseOrchestrationConfig:
         )
         assert config.execution_order == ["critic", "attacker"]
 
+    def test_default_role_instructions_hardened(self) -> None:
+        assert "high-signal adversarial prompt" in DEFAULT_ROLE_INSTRUCTIONS["attacker"]
+        assert "reject low-signal/duplicate patterns" in DEFAULT_ROLE_INSTRUCTIONS["critic"]
+        assert "evidence-aware gating" in DEFAULT_ROLE_INSTRUCTIONS["verifier"]
+        assert "reliability science slices" in DEFAULT_ROLE_INSTRUCTIONS["analyst"]
+        assert "conservatively" in DEFAULT_ROLE_INSTRUCTIONS["fraud_analyst"]
+
+    def test_default_coordinator_instructions_hardened(self) -> None:
+        config = _parse_orchestration_config({}, default_model="gpt-4.1-mini")
+        assert "multi-turn probe ladder" in config.coordinator_instructions
+        assert "reject low-signal or duplicate outputs" in config.coordinator_instructions
+        assert "final_prompt" in config.coordinator_instructions
+
 
 # ---------------------------------------------------------------------------
 # _instruction_kwargs

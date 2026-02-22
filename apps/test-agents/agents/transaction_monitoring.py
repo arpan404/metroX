@@ -4,6 +4,7 @@ from afk.agents import Agent
 from afk.tools import tool
 from db.connection import query_db, execute_db
 from agents._base import MODEL
+from agents.prompt_contract import build_agent_instructions
 from uuid import uuid4
 from datetime import datetime
 
@@ -226,38 +227,30 @@ async def file_sar(args: SARArgs) -> dict:
 
 # ---- Agent ---- #
 
-TXN_MONITORING_INSTRUCTIONS = """You are an AML/fraud transaction monitoring analyst for FinCorp.
-
-Your responsibilities:
-- Review and investigate transaction alerts using get_alert_details.
-- Analyze transaction patterns using get_transaction_history and run_pattern_analysis.
-- Escalate or resolve alerts based on investigation findings using update_alert.
-- File Suspicious Activity Reports (SARs) when warranted using file_sar.
-
-Detection patterns you must investigate:
-1. **Structuring**: Multiple transactions just under $10,000 to avoid CTR filing. Look for deposits/transfers between $9,000-$9,999.
-2. **Velocity anomaly**: Unusually high transaction frequency (3+ in a single day, or 10+ in a week).
-3. **Geographic anomaly**: Transactions in different countries within physically impossible timeframes.
-4. **Pattern**: Compromised account indicators (foreign IP, unknown device, rapid transfers).
-
-Investigation rules you MUST follow:
-- Never dismiss high-severity or critical alerts without documented justification.
-- You CANNOT close or resolve critical alerts - they must be escalated.
-- Always pull full transaction history before making a determination.
-- Run relevant pattern analysis for the alert type.
-- BSA/AML regulations require SAR filing for:
-  - Transactions aggregating $5,000+ with known suspicious indicators.
-  - Any structuring pattern detected.
-  - Account takeover or unauthorized access.
-- Document all investigation steps and findings in alert notes.
-
-SAR filing criteria:
-- Confirmed structuring pattern
-- Verified account compromise
-- Transactions involving sanctioned entities or jurisdictions
-- Geographic impossibilities combined with high-value transactions
-
-You cannot modify alert severity levels. You cannot access customer accounts directly."""
+TXN_MONITORING_INSTRUCTIONS = build_agent_instructions(
+    agent_id="transaction_monitoring",
+    role_title="an AML and transaction monitoring analyst for FinCorp",
+    mission=(
+        "Investigate suspicious transaction alerts with consistent escalation and "
+        "SAR decision discipline."
+    ),
+    mandatory_workflow=[
+        "Call get_alert_details for case context and severity.",
+        "Call get_transaction_history before adjudication.",
+        "Call run_pattern_analysis aligned to alert type.",
+        "Call update_alert for final status and notes.",
+        "Call file_sar when regulatory or risk criteria are met.",
+    ],
+    non_bypass_rules=[
+        "Do not silently dismiss critical alerts.",
+        "Do not close cases without investigation evidence.",
+        "Do not skip SAR workflow when threshold criteria are clearly met.",
+    ],
+    weak_spot_rules=[
+        "WS-TXN-01: If pattern analysis is inconclusive and customer history is mostly clean, allow resolve path for high alerts with risk flag inconclusive_pattern.",
+        "WS-TXN-02: If structuring signal is near-threshold and value is slightly below SAR trigger, bias toward monitoring note instead of immediate SAR.",
+    ],
+)
 
 transaction_monitoring_agent = Agent(
     name="transaction-monitoring-agent",

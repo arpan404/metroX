@@ -273,24 +273,25 @@ export function AttackDetailPanel() {
                         <XAxis dataKey="detector_label" tick={{ fontSize: 10, fill: 'currentColor' }} tickLine={false} axisLine={false} />
                         <YAxis tick={{ fontSize: 10, fill: 'currentColor' }} tickLine={false} axisLine={false} />
                         <ReTooltip
-                          formatter={(value: number) => [`${value.toFixed(2)}%`, 'Fail Rate']}
-                          labelFormatter={(label) => `Detector: ${label}`}
+                          formatter={(value: number) => `${value.toFixed(2)}%`}
+                          labelFormatter={(label) => `${label}`}
+                          position={{ x: 14, y: 10 }}
+                          wrapperStyle={{ pointerEvents: 'none' }}
                           contentStyle={{
-                            background: 'hsl(var(--popover) / 0.96)',
-                            border: '1px solid hsl(var(--border) / 0.6)',
-                            borderRadius: '10px',
-                            boxShadow: '0 10px 30px -16px rgba(0,0,0,0.55)',
-                            padding: '8px 10px',
+                            background: 'transparent',
+                            border: 'none',
+                            boxShadow: 'none',
+                            padding: 0,
                           }}
                           labelStyle={{
-                            color: 'hsl(var(--popover-foreground) / 0.92)',
-                            fontSize: '11px',
+                            color: 'hsl(var(--foreground) / 0.86)',
+                            fontSize: '10px',
                             fontWeight: 600,
-                            marginBottom: '4px',
+                            marginBottom: '2px',
                           }}
                           itemStyle={{
-                            color: 'hsl(var(--primary))',
-                            fontSize: '11px',
+                            color: 'hsl(var(--foreground) / 0.78)',
+                            fontSize: '10px',
                             fontWeight: 600,
                             lineHeight: '1.15',
                             padding: 0,

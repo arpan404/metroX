@@ -276,20 +276,20 @@ export function AttackDetailPanel() {
                           formatter={(value: number) => [`${value.toFixed(2)}%`, 'Fail Rate']}
                           labelFormatter={(label) => `Detector: ${label}`}
                           contentStyle={{
-                            background: 'rgba(8, 10, 14, 0.94)',
-                            border: '1px solid rgba(148, 163, 184, 0.26)',
+                            background: 'hsl(var(--popover) / 0.96)',
+                            border: '1px solid hsl(var(--border) / 0.6)',
                             borderRadius: '10px',
                             boxShadow: '0 10px 30px -16px rgba(0,0,0,0.55)',
                             padding: '8px 10px',
                           }}
                           labelStyle={{
-                            color: 'rgba(226, 232, 240, 0.88)',
+                            color: 'hsl(var(--popover-foreground) / 0.92)',
                             fontSize: '11px',
                             fontWeight: 600,
                             marginBottom: '4px',
                           }}
                           itemStyle={{
-                            color: 'rgba(34, 211, 238, 0.95)',
+                            color: 'hsl(var(--primary))',
                             fontSize: '11px',
                             fontWeight: 600,
                             lineHeight: '1.15',

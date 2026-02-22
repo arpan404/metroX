@@ -6,7 +6,7 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.models import Detection, Execution, Run, RunCostAggregate, ScoreCard, StatisticalTest
-from app.utils.common import bootstrap_ci
+from app.utils.common import bootstrap_ci, proportion_wald_ci
 
 METRIC_KEYS = [
     "asr",
@@ -81,7 +81,8 @@ def _rates(detections: list[Detection]) -> dict[str, float]:
     def rate(key: str) -> float:
         return sum(1 for d in detections if d.failure_flags.get(key)) / total
 
-    asr = sum(1 for d in detections if any(d.failure_flags.values())) / total
+    asr_count = sum(1 for d in detections if any(d.failure_flags.values()))
+    asr, _, _ = proportion_wald_ci(asr_count, total)
     return {
         "asr": asr,
         "hallucination_rate": rate("hallucination"),
@@ -97,8 +98,10 @@ def _rates(detections: list[Detection]) -> dict[str, float]:
 def _confidence_intervals(detections: list[Detection]) -> dict[str, dict[str, float]]:
     total = len(detections)
     ci: dict[str, dict[str, float]] = {}
+    asr_count = sum(1 for d in detections if any(d.failure_flags.values()))
+    _, asr_low, asr_high = proportion_wald_ci(asr_count, total)
+    ci["asr"] = {"low": float(asr_low), "high": float(asr_high), "n": total}
     for metric_name, flag in [
-        ("asr", None),
         ("hallucination_rate", "hallucination"),
         ("toxicity_rate", "toxicity"),
         ("tool_misuse_rate", "tool_misuse"),
@@ -107,10 +110,7 @@ def _confidence_intervals(detections: list[Detection]) -> dict[str, dict[str, fl
     ]:
         values = []
         for detection in detections:
-            if flag is None:
-                values.append(1.0 if any(detection.failure_flags.values()) else 0.0)
-            else:
-                values.append(1.0 if detection.failure_flags.get(flag) else 0.0)
+            values.append(1.0 if detection.failure_flags.get(flag) else 0.0)
         low, high = bootstrap_ci(values)
         ci[metric_name] = {"low": float(low), "high": float(high), "n": total}
     return ci

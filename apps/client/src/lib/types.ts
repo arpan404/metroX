@@ -98,6 +98,7 @@ export type AttackSummaryPayload = {
     success: number
     failure: number
     success_rate: number
+    asr_ci_95?: { low: number; high: number }
     avg_confidence: number
     avg_disagreement?: number
     avg_uncertainty?: number
@@ -255,6 +256,8 @@ export type NodeTelemetryPayload = {
     total: number
     success: number
     failure: number
+    success_rate?: number
+    asr_ci_95?: { low: number; high: number }
     avg_latency_ms: number
     cost_usd?: number
     effective_cost_usd: number

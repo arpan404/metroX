@@ -96,7 +96,7 @@ from app.pipeline.reporting import generate_narrative_summary, get_latest_narrat
 from app.stats.risk import risk_cards
 from app.runtime.run_queue import RUN_QUEUE
 from app.runtime.adapters import normalize_target_type
-from app.utils.common import log_event
+from app.utils.common import log_event, proportion_wald_ci
 from app.security.service import (
     SecretCipher,
     activate_key,
@@ -1767,6 +1767,7 @@ def get_attack_summary(run_id: str, db: Session = Depends(get_db)) -> dict:
             "success": 0,
             "failure": 0,
             "success_rate": 0.0,
+            "asr_ci_95": {"low": 0.0, "high": 0.0},
             "avg_confidence": 0.0,
             "avg_disagreement": 0.0,
             "avg_uncertainty": 0.0,
@@ -1840,7 +1841,9 @@ def get_attack_summary(run_id: str, db: Session = Depends(get_db)) -> dict:
     ordered = []
     for attack_type, row in sorted(summary.items(), key=lambda item: item[0]):
         total = max(int(row["total"]), 1)
-        row["success_rate"] = float(row["success"]) / total
+        asr, low, high = proportion_wald_ci(int(row["success"]), int(row["total"]))
+        row["success_rate"] = asr
+        row["asr_ci_95"] = {"low": low, "high": high}
         row["avg_confidence"] = float(row["avg_confidence"]) / total
         row["avg_disagreement"] = float(row["avg_disagreement"]) / total
         row["avg_uncertainty"] = float(row["avg_uncertainty"]) / total
@@ -1912,7 +1915,9 @@ def get_node_telemetry(run_id: str, db: Session = Depends(get_db)) -> dict:
     for attack, row in sorted(by_attack.items(), key=lambda item: item[0]):
         total = max(1, int(row["total"]))
         row["avg_latency_ms"] = float(row["avg_latency_ms"]) / total
-        row["success_rate"] = float(row["success"]) / total
+        asr, low, high = proportion_wald_ci(int(row["success"]), int(row["total"]))
+        row["success_rate"] = asr
+        row["asr_ci_95"] = {"low": low, "high": high}
         payload.append(row)
     return {"run_id": run_id, "nodes": payload}
 

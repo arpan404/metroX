@@ -320,11 +320,7 @@ export function AttackDetailPanel() {
           </TabsContent>
 
           <TabsContent value="raw" className="space-y-4 mt-0">
-            <PanelSection
-              title="Vote Snapshot"
-              description="Per-execution vote sample and summary"
-              badge={<Badge variant="outline" className="h-4 text-[10px]">{rawVotes.length}</Badge>}
-            >
+            <PanelSection>
               <div className="mb-3 rounded-lg border border-border/50 bg-background/45 px-3 py-2.5">
                 <div className="mb-2 flex items-center gap-2">
                   <div className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-primary/15 text-primary">

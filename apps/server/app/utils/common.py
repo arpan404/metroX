@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import random
 from datetime import datetime, timezone
 from typing import Any
@@ -59,6 +60,22 @@ def bootstrap_ci(values: list[float], alpha: float = 0.05, n_boot: int = 1000) -
     lower = np.quantile(stats_samples, alpha / 2)
     upper = np.quantile(stats_samples, 1 - alpha / 2)
     return (float(lower), float(upper))
+
+
+def proportion_wald_ci(successes: int, total: int, z: float = 1.96) -> tuple[float, float, float]:
+    """Return (p_hat, low, high) for a binomial proportion with normal-approx CI."""
+    n = max(int(total), 0)
+    k = max(int(successes), 0)
+    if n <= 0:
+        return (0.0, 0.0, 0.0)
+    if k > n:
+        k = n
+    p_hat = float(k) / float(n)
+    std_err = math.sqrt((p_hat * (1.0 - p_hat)) / float(n))
+    margin = float(z) * std_err
+    low = max(0.0, p_hat - margin)
+    high = min(1.0, p_hat + margin)
+    return (p_hat, low, high)
 
 
 def proportion_test(success_a: int, total_a: int, success_b: int, total_b: int) -> float:

@@ -320,7 +320,7 @@ export function AttackDetailPanel() {
           </TabsContent>
 
           <TabsContent value="raw" className="space-y-4 mt-0">
-            <PanelSection>
+            <div className="space-y-3">
               <div className="mb-3 rounded-lg border border-border/50 bg-background/45 px-3 py-2.5">
                 <div className="mb-2 flex items-center gap-2">
                   <div className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-primary/15 text-primary">
@@ -400,7 +400,7 @@ export function AttackDetailPanel() {
                   description="No raw vote rows available for the selected test type."
                 />
               )}
-            </PanelSection>
+            </div>
           </TabsContent>
 
           <TabsContent value="telemetry" className="space-y-4 mt-0">

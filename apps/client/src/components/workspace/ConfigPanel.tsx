@@ -224,7 +224,6 @@ export function ConfigPanel() {
   const [maxConcurrency, setMaxConcurrency] = useState(8)
   const [manualRunSizeOverride, setManualRunSizeOverride] = useState(false)
   const [runSizeOverride, setRunSizeOverride] = useState(PRESET_ATTACK_ESTIMATE.quick)
-  const [manualRuntimeOverride, setManualRuntimeOverride] = useState(false)
   const [baselineRunId, setBaselineRunId] = useState(state.baselineRunId ?? '')
 
   const [isLaunching, setIsLaunching] = useState(false)
@@ -571,10 +570,6 @@ export function ConfigPanel() {
         : presetDefaults.budgetUsd
     setMaxConcurrency(nextMaxConcurrency)
     setBudgetUsd(nextBudgetUsd)
-    setManualRuntimeOverride(
-      Math.abs(nextBudgetUsd - presetDefaults.budgetUsd) > 0.001
-      || nextMaxConcurrency !== presetDefaults.maxConcurrency,
-    )
     setManualRunSizeOverride(runtimeRunSizeOverride !== null)
     setRunSizeOverride(runtimeRunSizeOverride ?? (PRESET_ATTACK_ESTIMATE[runtimePreset] ?? PRESET_ATTACK_ESTIMATE.standard))
     if (typeof runtimeConfig.live_mode === 'boolean') {
@@ -749,11 +744,6 @@ export function ConfigPanel() {
     setMaxConcurrency(t.config.maxConcurrency)
     setManualRunSizeOverride(false)
     setRunSizeOverride(PRESET_ATTACK_ESTIMATE[t.config.preset] ?? PRESET_ATTACK_ESTIMATE.standard)
-    const presetDefaults = PRESET_RUNTIME_DEFAULTS[t.config.preset] ?? PRESET_RUNTIME_DEFAULTS.standard
-    setManualRuntimeOverride(
-      Math.abs(t.config.budgetUsd - presetDefaults.budgetUsd) > 0.001
-      || t.config.maxConcurrency !== presetDefaults.maxConcurrency,
-    )
     setLaunchProfileMode('new')
     setLastLoadedProfileId(null)
     const matchingScenario = SCENARIO_PRESETS.find((presetOption) => {
@@ -825,13 +815,6 @@ export function ConfigPanel() {
     applyTemplate(starter)
     setTemplateBootstrapped(true)
   }, [templateBootstrapped, state.configProfileId])
-
-  useEffect(() => {
-    if (manualRuntimeOverride) return
-    const defaults = PRESET_RUNTIME_DEFAULTS[preset] ?? PRESET_RUNTIME_DEFAULTS.standard
-    setBudgetUsd(defaults.budgetUsd)
-    setMaxConcurrency(defaults.maxConcurrency)
-  }, [preset, manualRuntimeOverride])
 
   const helpLabel = (label: string, help: string) => (
     <span className="inline-flex items-center gap-1">
@@ -1519,8 +1502,7 @@ export function ConfigPanel() {
               onChange={(e) => setBudgetUsd(+e.target.value)}
               min={0}
               step={1}
-              disabled={!manualRuntimeOverride}
-              className="h-7 text-xs font-mono disabled:opacity-70"
+              className="h-7 text-xs font-mono"
             />
           </FieldGroup>
           <FieldGroup label={helpLabel('Parallel Jobs', 'Max parallel executions during the run.')}>
@@ -1530,19 +1512,10 @@ export function ConfigPanel() {
               onChange={(e) => setMaxConcurrency(+e.target.value)}
               min={1}
               max={64}
-              disabled={!manualRuntimeOverride}
-              className="h-7 text-xs font-mono disabled:opacity-70"
+              className="h-7 text-xs font-mono"
             />
           </FieldGroup>
         </div>
-
-        <FieldGroup label={helpLabel('Manual Value Override', 'Enable custom runtime values instead of preset defaults.')} horizontal>
-          <Switch checked={manualRuntimeOverride} onCheckedChange={setManualRuntimeOverride} />
-        </FieldGroup>
-
-        <FieldGroup label={helpLabel('Manual Review Queue', 'Send uncertain or disputed cases for human review.')} horizontal>
-          <Switch checked={activeAdjudication} onCheckedChange={setActiveAdjudication} />
-        </FieldGroup>
       </PanelSection>
 
       <PanelSection title="Advanced Controls" description="Project metadata and orchestration tuning">

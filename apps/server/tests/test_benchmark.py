@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections import Counter
 
 import app.pipeline.benchmark as benchmark_module
@@ -16,8 +17,8 @@ def test_benchmark_reproducibility(db_session):
         "agentic_provider": "afk_live",
     }
 
-    snapshot_1, cases_1 = create_benchmark(db_session, run_id="run-1", benchmark_config=config, attack_count=40)
-    snapshot_2, cases_2 = create_benchmark(db_session, run_id="run-2", benchmark_config=config, attack_count=40)
+    snapshot_1, cases_1 = asyncio.run(create_benchmark(db_session, run_id="run-1", benchmark_config=config, attack_count=40))
+    snapshot_2, cases_2 = asyncio.run(create_benchmark(db_session, run_id="run-2", benchmark_config=config, attack_count=40))
 
     hashes_1 = sorted(case.dedupe_hash for case in cases_1)
     hashes_2 = sorted(case.dedupe_hash for case in cases_2)
@@ -46,7 +47,7 @@ def test_benchmark_includes_extended_taxonomy_types(db_session):
         "agentic_provider": "afk_live",
     }
 
-    snapshot, cases = create_benchmark(db_session, run_id="run-ext", benchmark_config=config, attack_count=60)
+    snapshot, cases = asyncio.run(create_benchmark(db_session, run_id="run-ext", benchmark_config=config, attack_count=60))
 
     counts = Counter(case.attack_type for case in cases)
     for key in config["taxonomy"]:
@@ -74,7 +75,7 @@ def test_benchmark_rebalances_when_prompt_collisions_starve_taxonomy(db_session,
         return ("collision-prompt", "collision-behavior", "collision-family")
 
     monkeypatch.setattr(benchmark_module, "_fallback_seed_for_attack_type", _same_seed)
-    snapshot, cases = create_benchmark(
+    snapshot, cases = asyncio.run(create_benchmark(
         db_session,
         run_id="run-collision",
         benchmark_config={
@@ -86,7 +87,7 @@ def test_benchmark_rebalances_when_prompt_collisions_starve_taxonomy(db_session,
             "agentic_provider": "afk_live",
         },
         attack_count=60,
-    )
+    ))
 
     counts = Counter(case.attack_type for case in cases)
     for attack_type in taxonomy:

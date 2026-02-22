@@ -389,7 +389,7 @@ class RunOrchestrator:
                     role["api_key_ref"] = global_api_key_ref
         return config
 
-    def execute_run(self, run_id: str) -> None:
+    async def execute_run(self, run_id: str) -> None:
         run = self.db.query(Run).filter(Run.id == run_id).one_or_none()
         if not run:
             raise ValueError("Run not found")
@@ -544,7 +544,7 @@ class RunOrchestrator:
                     "run_thread_id": run.thread_id,
                     "target_thread_ids": target_thread_ids,
                 }
-                benchmark_snapshot, attack_cases = create_benchmark(
+                benchmark_snapshot, attack_cases = await create_benchmark(
                     self.db,
                     run_id=run.id,
                     benchmark_config=benchmark_cfg,
@@ -588,7 +588,7 @@ class RunOrchestrator:
                     "run_thread_id": run.thread_id,
                     "target_thread_ids": target_thread_ids,
                 }
-                benchmark_snapshot, attack_cases = create_benchmark(
+                benchmark_snapshot, attack_cases = await create_benchmark(
                     self.db,
                     run_id=run.id,
                     benchmark_config=benchmark_cfg,

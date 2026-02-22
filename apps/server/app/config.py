@@ -10,7 +10,9 @@ _SERVER_DIR = _APP_DIR.parent
 _REPO_DIR = _SERVER_DIR.parent.parent
 
 _ENV_FILES: list[Path] = []
-for _candidate in (_SERVER_DIR / ".env", _REPO_DIR / ".env"):
+# Load repo-level defaults first, then let apps/server/.env override for backend-specific
+# development overrides.
+for _candidate in (_REPO_DIR / ".env", _SERVER_DIR / ".env"):
     if _candidate.exists():
         _ENV_FILES.append(_candidate)
 
@@ -50,7 +52,7 @@ class Settings(BaseSettings):
     test_agents_timeout_s: float = Field(default=5.0)
 
     run_queue_enabled: bool = Field(default=True)
-    run_queue_backend: str = Field(default="inprocess")
+    run_queue_backend: str = Field(default="redis")
     run_worker_threads: int = Field(default=4)
     run_queue_max_retries: int = Field(default=2)
     run_queue_retry_backoff_s: float = Field(default=0.5)

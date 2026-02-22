@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from collections import defaultdict
 from threading import Lock
 from typing import Any
 
 logger = logging.getLogger("metrox.api")
+_HTTP_REQUEST_LOGGING_ENABLED = str(
+    os.getenv("METROX_HTTP_REQUEST_LOGGING", "false")
+).strip().lower() in {"1", "true", "yes", "on"}
+_UVICORN_ACCESS_LOG_ENABLED = str(
+    os.getenv("METROX_UVICORN_ACCESS_LOG", "false")
+).strip().lower() in {"1", "true", "yes", "on"}
 
 
 class SLAMetrics:
@@ -49,8 +56,12 @@ METRICS = SLAMetrics()
 def configure_logging() -> None:
     root = logging.getLogger()
     if root.handlers:
+        if not _UVICORN_ACCESS_LOG_ENABLED:
+            logging.getLogger("uvicorn.access").disabled = True
         return
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    if not _UVICORN_ACCESS_LOG_ENABLED:
+        logging.getLogger("uvicorn.access").disabled = True
 
 
 def log_request_event(
@@ -61,6 +72,8 @@ def log_request_event(
     status_code: int,
     latency_ms: float,
 ) -> None:
+    if not _HTTP_REQUEST_LOGGING_ENABLED:
+        return
     payload = {
         "event": "http_request",
         "trace_id": trace_id,

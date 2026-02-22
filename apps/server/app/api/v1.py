@@ -238,11 +238,11 @@ def _queue_run_payload(run: Run | None) -> dict[str, Any] | None:
     }
 
 
-def _run_pipeline_background(run_id: str) -> None:
+async def _run_pipeline_background(run_id: str) -> None:
     db = SessionLocal()
     try:
         orchestrator = RunOrchestrator(db)
-        orchestrator.execute_run(run_id)
+        await orchestrator.execute_run(run_id)
     finally:
         db.close()
 
@@ -1484,11 +1484,7 @@ def get_recent_events_legacy(
 
 @router.websocket("/runs/{run_id}/ws")
 async def stream_run_events_ws(websocket: WebSocket, run_id: str) -> None:
-    settings = get_settings()
-    api_key = websocket.query_params.get("api_key")
-    if api_key != settings.api_key:
-        await websocket.close(code=4401)
-        return
+    # Router-level auth dependency already validates API key for WebSocket connections.
     await websocket.accept()
     last_id = 0
     terminal_states = {"completed", "failed", "interrupted"}

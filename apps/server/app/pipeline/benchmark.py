@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import logging
+import os
 from collections import defaultdict
 from typing import Any
 
@@ -8,6 +11,8 @@ from sqlalchemy.orm import Session
 from app.models import AttackCase, BenchmarkSnapshot
 from app.agents.agentic_attacking import AttackSeed, MultiAgentAttackOrchestrator
 from app.utils.common import seeded_random, stable_hash
+
+logger = logging.getLogger("metrox.agentic")
 
 CURATED_PROMPTS: dict[str, list[tuple[str, str, str]]] = {
     "prompt_injection": [
@@ -225,13 +230,29 @@ def _ensure_min_taxonomy_coverage(
     return [attack_type for attack_type in taxonomy if int(counts.get(attack_type, 0)) <= 0]
 
 
-def create_benchmark(
+async def create_benchmark(
     db: Session,
     *,
     run_id: str,
     benchmark_config: dict[str, Any],
     attack_count: int,
 ) -> tuple[BenchmarkSnapshot, list[AttackCase]]:
+    debug_enabled = str(os.getenv("METROX_AGENTIC_DEBUG", "false")).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _log_debug(event: str, **payload: Any) -> None:
+        if not debug_enabled:
+            return
+        try:
+            logger.info(json.dumps({"event": event, **payload}, ensure_ascii=False, sort_keys=True))
+        except Exception:
+            return
+
+    def _preview(text: str, max_chars: int = 800) -> str:
+        normalized = str(text or "").strip()
+        if len(normalized) <= max_chars:
+            return normalized
+        return f"{normalized[:max_chars]}...(truncated,{len(normalized)} chars)"
+
     seed = int(benchmark_config.get("seed", 42))
     taxonomy = _normalize_taxonomy(benchmark_config.get("taxonomy") or list(CURATED_PROMPTS.keys()))
     if not taxonomy:
@@ -258,6 +279,16 @@ def create_benchmark(
     generated_target = max(attack_count - curated_target, 0)
     agentic_attacking = bool(benchmark_config.get("agentic_attacking", True))
     agentic_orchestrator = MultiAgentAttackOrchestrator(benchmark_config)
+    _log_debug(
+        "agentic_benchmark_start",
+        run_id=run_id,
+        attack_count=attack_count,
+        curated_target=curated_target,
+        generated_target=generated_target,
+        taxonomy=taxonomy,
+        agentic_attacking=agentic_attacking,
+        agentic_provider=agentic_orchestrator.mode,
+    )
 
     curated_rows: list[tuple[str, str, str, str]] = []
     for attack_type in taxonomy:
@@ -301,7 +332,15 @@ def create_benchmark(
         attack_type, base_prompt, behavior, family = generated_seed_rows[idx % len(generated_seed_rows)]
         variant = idx + seed
         if agentic_attacking:
-            artifact = agentic_orchestrator.generate(
+            _log_debug(
+                "agentic_case_generation_start",
+                run_id=run_id,
+                attack_type=attack_type,
+                family=family,
+                variant=variant,
+                base_prompt_preview=_preview(base_prompt),
+            )
+            artifact = await agentic_orchestrator.generate(
                 AttackSeed(
                     attack_type=attack_type,
                     family=family,
@@ -316,6 +355,19 @@ def create_benchmark(
             novelty = float(artifact.novelty_score)
             difficulty = artifact.difficulty
             tags = [attack_type, family, "generated", *artifact.tags[:4]]
+            _log_debug(
+                "agentic_case_generation_end",
+                run_id=run_id,
+                attack_type=attack_type,
+                family=family,
+                variant=variant,
+                source=source,
+                difficulty=difficulty,
+                novelty_score=novelty,
+                confidence=float(artifact.confidence),
+                prompt_preview=_preview(candidate),
+                tags=tags,
+            )
         else:
             candidate = f"{base_prompt} Variant-{variant}"
             source = "mutation" if idx % 2 == 0 else "llm_generated"
@@ -372,5 +424,13 @@ def create_benchmark(
         },
     }
     db.commit()
+    _log_debug(
+        "agentic_benchmark_end",
+        run_id=run_id,
+        generated_cases=len([case for case in cases if str(case.source).strip() != "template"]),
+        total_cases=len(cases),
+        by_attack_type=dict(counts),
+        unique_prompts=len(dedupe_seen),
+    )
 
     return snapshot, cases

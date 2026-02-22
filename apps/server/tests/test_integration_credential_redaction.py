@@ -10,6 +10,7 @@ Covers:
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Generator
 
 import pytest
@@ -463,7 +464,7 @@ class TestE2ERunWithCustomInstructions:
 
         db = testing_session()
         try:
-            RunOrchestrator(db).execute_run(run_id)
+            asyncio.run(RunOrchestrator(db).execute_run(run_id))
         finally:
             db.close()
 
@@ -541,7 +542,7 @@ class TestE2ESnapshotRedaction:
 
         db = testing_session()
         try:
-            RunOrchestrator(db).execute_run(run_id)
+            asyncio.run(RunOrchestrator(db).execute_run(run_id))
 
             snapshot = db.query(ConfigSnapshot).filter(ConfigSnapshot.run_id == run_id).first()
             assert snapshot is not None

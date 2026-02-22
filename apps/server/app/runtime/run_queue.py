@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import queue
@@ -74,6 +75,7 @@ class RunQueue:
                 thread.start()
                 self._workers.append(thread)
             self._started = True
+        self._recover_queued_runs()
 
     def _next_sequence(self) -> int:
         with self._sequence_lock:
@@ -128,6 +130,18 @@ class RunQueue:
             min_priority, max_priority = max_priority, min_priority
         return min_priority, max_priority
 
+    def _priority_for_run(self, run: Run) -> int:
+        preset = str(getattr(run, "preset", "") or "").strip().lower()
+        mode = str(getattr(run, "mode", "") or "").strip().lower()
+        priority = {
+            "quick": 1,
+            "standard": 2,
+            "deep": 3,
+        }.get(preset, int(get_settings().run_queue_default_priority))
+        if mode == "live_nightly":
+            priority = max(priority, 3)
+        return self._normalize_priority(priority)
+
     def _worker_id(self) -> str:
         return f"{socket.gethostname()}:{threading.current_thread().name}"
 
@@ -143,6 +157,34 @@ class RunQueue:
             client.expire(settings.run_queue_redis_workers_key, max(5, settings.run_queue_worker_heartbeat_ttl_s))
         except Exception:
             return
+
+    def _recover_queued_runs(self) -> None:
+        settings = get_settings()
+        if not settings.run_queue_enabled:
+            return
+        try:
+            pending = self.list_pending(limit=max(1, int(settings.run_queue_max_size)))
+            queued_ids = {str(item.get("run_id", "")).strip() for item in pending if str(item.get("run_id", "")).strip()}
+        except Exception:
+            queued_ids = set()
+
+        db = SessionLocal()
+        try:
+            stale_rows = (
+                db.query(Run)
+                .filter(Run.status == "queued")
+                .order_by(Run.created_at.asc())
+                .limit(max(1, int(settings.run_batch_size)))
+                .all()
+            )
+            for row in stale_rows:
+                if row.id in queued_ids:
+                    continue
+                self.enqueue(row.id, priority=self._priority_for_run(row))
+        except Exception:
+            return
+        finally:
+            db.close()
 
     def enqueue(self, run_id: str, attempt: int = 0, priority: int | None = None) -> None:
         self.start()
@@ -361,7 +403,25 @@ class RunQueue:
                 client = self._get_redis_client()
                 pending = sum(int(client.llen(key)) for key in self._redis_priority_keys())
                 dlq_pending = int(client.llen(settings.run_queue_redis_dlq_key))
-                live_workers = int(client.hlen(settings.run_queue_redis_workers_key))
+                now = datetime.now(timezone.utc)
+                ttl_s = max(5, int(settings.run_queue_worker_heartbeat_ttl_s))
+                raw_workers = client.hgetall(settings.run_queue_redis_workers_key)
+                stale_workers: list[str] = []
+                live_workers = 0
+                for worker_id, timestamp in raw_workers.items():
+                    try:
+                        ts = datetime.fromisoformat(str(timestamp))
+                    except Exception:
+                        stale_workers.append(worker_id)
+                        continue
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+                    if (now - ts).total_seconds() <= ttl_s:
+                        live_workers += 1
+                    else:
+                        stale_workers.append(worker_id)
+                if stale_workers:
+                    client.hdel(settings.run_queue_redis_workers_key, *stale_workers)
             except Exception:
                 pending = -1
                 dlq_pending = -1
@@ -408,7 +468,7 @@ class RunQueue:
                 step=0,
                 message=f"attempt={attempt} priority={priority}",
             )
-            RunOrchestrator(db).execute_run(run_id)
+            asyncio.run(RunOrchestrator(db).execute_run(run_id))
         except Exception as exc:
             try:
                 log_event(

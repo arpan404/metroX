@@ -120,7 +120,7 @@ def _verify_run_completed(
     """Run the full pipeline and assert everything succeeded."""
     db = db_factory()
     try:
-        RunOrchestrator(db).execute_run(run_id)
+        asyncio.run(RunOrchestrator(db).execute_run(run_id))
     finally:
         db.close()
 
@@ -557,7 +557,7 @@ class TestE2ERunComparison:
         run_a_id = run_a.json()["id"]
         db = db_factory()
         try:
-            RunOrchestrator(db).execute_run(run_a_id)
+            asyncio.run(RunOrchestrator(db).execute_run(run_a_id))
         finally:
             db.close()
 
@@ -578,7 +578,7 @@ class TestE2ERunComparison:
         run_b_id = run_b.json()["id"]
         db = db_factory()
         try:
-            RunOrchestrator(db).execute_run(run_b_id)
+            asyncio.run(RunOrchestrator(db).execute_run(run_b_id))
         finally:
             db.close()
 
@@ -682,7 +682,7 @@ class TestE2EResumeLifecycle:
         # Execute full run
         db = db_factory()
         try:
-            RunOrchestrator(db).execute_run(run_id)
+            asyncio.run(RunOrchestrator(db).execute_run(run_id))
         finally:
             db.close()
 

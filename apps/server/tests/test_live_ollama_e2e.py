@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Generator
 
 import pytest
@@ -203,7 +204,7 @@ def test_live_managed_llm_runtime_end_to_end(live_client) -> None:
 
     db = testing_session()
     try:
-        RunOrchestrator(db).execute_run(run_id)
+        asyncio.run(RunOrchestrator(db).execute_run(run_id))
         rows = db.query(Execution).filter(Execution.run_id == run_id).all()
         assert rows
         degraded = [row for row in rows if isinstance(row.raw_payload, dict) and row.raw_payload.get("degraded")]
@@ -263,7 +264,7 @@ def test_live_managed_agent_runtime_end_to_end(live_client) -> None:
 
     db = testing_session()
     try:
-        RunOrchestrator(db).execute_run(run_id)
+        asyncio.run(RunOrchestrator(db).execute_run(run_id))
         row = db.query(Run).filter(Run.id == run_id).one()
         assert row.status == "completed"
     finally:

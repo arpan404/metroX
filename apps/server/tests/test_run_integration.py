@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Generator
 
 import pytest
@@ -135,7 +136,7 @@ def test_full_run_lifecycle_synthetic(integrated_client) -> None:
 
     db = testing_session()
     try:
-        RunOrchestrator(db).execute_run(run_id)
+        asyncio.run(RunOrchestrator(db).execute_run(run_id))
     finally:
         db.close()
 
@@ -333,7 +334,7 @@ def test_resume_continues_from_checkpoint_without_duplicate_executions(integrate
     db = testing_session()
     try:
         orchestrator = RunOrchestrator(db)
-        orchestrator.execute_run(run_id)
+        asyncio.run(orchestrator.execute_run(run_id))
 
         row = db.query(Run).filter(Run.id == run_id).one()
         assert row.status == "interrupted"
@@ -369,7 +370,7 @@ def test_resume_continues_from_checkpoint_without_duplicate_executions(integrate
         )
         db.commit()
 
-        orchestrator.execute_run(run_id)
+        asyncio.run(orchestrator.execute_run(run_id))
 
         resumed = db.query(Run).filter(Run.id == run_id).one()
         final_execution_count = db.query(Execution).filter(Execution.run_id == run_id).count()
@@ -532,7 +533,7 @@ def test_resume_rebuilds_stale_snapshot_with_missing_taxonomy_coverage(integrate
         db.add_all(rows)
         db.commit()
 
-        RunOrchestrator(db).execute_run(run_id)
+        asyncio.run(RunOrchestrator(db).execute_run(run_id))
 
         latest_snapshot = (
             db.query(BenchmarkSnapshot)
@@ -682,7 +683,7 @@ def test_agent_http_multi_turn_executes_multiple_phases_per_case(integrated_clie
 
     db = testing_session()
     try:
-        RunOrchestrator(db).execute_run(run_id)
+        asyncio.run(RunOrchestrator(db).execute_run(run_id))
         run_row = db.query(Run).filter(Run.id == run_id).one()
         executions = db.query(Execution).filter(Execution.run_id == run_id).all()
 
@@ -810,7 +811,7 @@ def test_break_context_is_persisted_for_successful_break_attacks(integrated_clie
 
     db = testing_session()
     try:
-        RunOrchestrator(db).execute_run(run_id)
+        asyncio.run(RunOrchestrator(db).execute_run(run_id))
         detections = (
             db.query(Detection)
             .join(Execution, Detection.execution_id == Execution.id)

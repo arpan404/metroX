@@ -1,4 +1,4 @@
-.PHONY: server-install server-test server-run server-worker client-install client-test client-build dev dev-server dev-client dev-backend dev-frontend dev-test-agents dev-worker kill-port kill-dev-ports server client backend frontend worker test-agents test_agents
+.PHONY: server-install server-test server-run server-worker client-install client-test client-build dev dev-server dev-client dev-backend dev-frontend dev-test-agents dev-worker kill-port kill-dev-ports kill-dev-processes server client backend frontend worker test-agents test_agents
 
 BACKEND_PORT ?= 8000
 TEST_AGENTS_PORT ?= 8001
@@ -45,13 +45,26 @@ dev:
 		$(MAKE) dev-worker; \
 	else \
 		echo "Starting backend, frontend, test-agents, and queue worker in developer mode..."; \
+		$(MAKE) --no-print-directory kill-dev-processes; \
 		$(MAKE) --no-print-directory kill-dev-ports; \
-		trap 'kill 0' INT TERM EXIT; \
-		( $(MAKE) dev-backend ) & \
-		( $(MAKE) dev-frontend ) & \
-		( $(MAKE) dev-test-agents ) & \
-		( $(MAKE) dev-worker ) & \
+		PIDS=""; \
+		cleanup() { \
+			trap - INT TERM HUP QUIT TSTP EXIT; \
+			if [ -n "$$PIDS" ]; then \
+				for pid in $$PIDS; do kill -TERM $$pid >/dev/null 2>&1 || true; done; \
+				sleep 1; \
+				for pid in $$PIDS; do kill -0 $$pid >/dev/null 2>&1 && kill -KILL $$pid >/dev/null 2>&1 || true; done; \
+			fi; \
+			$(MAKE) --no-print-directory kill-dev-processes >/dev/null 2>&1 || true; \
+			$(MAKE) --no-print-directory kill-dev-ports >/dev/null 2>&1 || true; \
+		}; \
+		trap 'cleanup; exit 0' INT TERM HUP QUIT TSTP EXIT; \
+		( $(MAKE) dev-backend ) & PIDS="$$PIDS $$!"; \
+		( $(MAKE) dev-frontend ) & PIDS="$$PIDS $$!"; \
+		( $(MAKE) dev-test-agents ) & PIDS="$$PIDS $$!"; \
+		( $(MAKE) dev-worker ) & PIDS="$$PIDS $$!"; \
 		wait; \
+		cleanup; \
 	fi
 
 kill-port:
@@ -92,6 +105,15 @@ kill-dev-ports:
 	@$(MAKE) --no-print-directory kill-port PORT=$(FRONTEND_PORT)
 	@$(MAKE) --no-print-directory kill-port PORT=$(TEST_AGENTS_PORT)
 
+kill-dev-processes:
+	@if command -v pkill >/dev/null 2>&1; then \
+		pkill -f "python -m app.worker" >/dev/null 2>&1 || true; \
+		pkill -f "uv run python -m app.worker" >/dev/null 2>&1 || true; \
+		pkill -f "uvicorn app.main:app --reload --host $(BACKEND_HOST) --port $(BACKEND_PORT)" >/dev/null 2>&1 || true; \
+		pkill -f "uvicorn main:app --reload --host $(TEST_AGENTS_HOST) --port $(TEST_AGENTS_PORT)" >/dev/null 2>&1 || true; \
+		pkill -f "vite --host $(FRONTEND_HOST) --port $(FRONTEND_PORT)" >/dev/null 2>&1 || true; \
+	fi
+
 dev-server:
 	@$(MAKE) --no-print-directory kill-port PORT=$(BACKEND_PORT)
 	cd apps/server && uv run uvicorn app.main:app --reload --host $(BACKEND_HOST) --port $(BACKEND_PORT)
@@ -113,7 +135,12 @@ dev-worker:
 		pkill -f "python -m app.worker" >/dev/null 2>&1 || true; \
 		pkill -f "uv run python -m app.worker" >/dev/null 2>&1 || true; \
 	fi
-	cd apps/server && uv run python -m app.worker
+	cd apps/server && \
+		WORKER_PID=""; \
+		trap 'if [ -n "$$WORKER_PID" ]; then kill "$$WORKER_PID" >/dev/null 2>&1 || true; fi; exit 0' INT TERM HUP QUIT TSTP EXIT; \
+		uv run python -m app.worker & \
+		WORKER_PID=$$!; \
+		wait "$$WORKER_PID"
 
 # Goal shims so selector invocations work without "No rule to make target".
 server:

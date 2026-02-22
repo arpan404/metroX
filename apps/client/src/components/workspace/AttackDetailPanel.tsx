@@ -272,7 +272,32 @@ export function AttackDetailPanel() {
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
                         <XAxis dataKey="detector_label" tick={{ fontSize: 10, fill: 'currentColor' }} tickLine={false} axisLine={false} />
                         <YAxis tick={{ fontSize: 10, fill: 'currentColor' }} tickLine={false} axisLine={false} />
-                        <ReTooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
+                        <ReTooltip
+                          formatter={(value: number) => [`${value.toFixed(2)}%`, 'Fail Rate']}
+                          labelFormatter={(label) => `Detector: ${label}`}
+                          contentStyle={{
+                            background: 'rgba(8, 10, 14, 0.94)',
+                            border: '1px solid rgba(148, 163, 184, 0.26)',
+                            borderRadius: '10px',
+                            boxShadow: '0 10px 30px -16px rgba(0,0,0,0.55)',
+                            padding: '8px 10px',
+                          }}
+                          labelStyle={{
+                            color: 'rgba(226, 232, 240, 0.88)',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            marginBottom: '4px',
+                          }}
+                          itemStyle={{
+                            color: 'rgba(34, 211, 238, 0.95)',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            lineHeight: '1.15',
+                            padding: 0,
+                            margin: 0,
+                          }}
+                          cursor={{ fill: 'rgba(34, 211, 238, 0.08)' }}
+                        />
                         <Bar dataKey="fail_rate_pct" fill={colors.chart3} radius={[6, 6, 0, 0]} />
                       </ReBarChart>
                     </ResponsiveContainer>

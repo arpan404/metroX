@@ -670,37 +670,35 @@ function NodeInfoDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const nodeData = (node?.data ?? {}) as Record<string, unknown>
+  const humanize = (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+
+  const isAttackNode = node?.type === 'attack'
+  const totalTests = typeof nodeData.total === 'number' ? nodeData.total : 0
+  const failedTests = typeof nodeData.success === 'number' ? nodeData.success : 0
+  const passedTests = typeof nodeData.failure === 'number' ? nodeData.failure : 0
+  const failRate = totalTests > 0 ? (failedTests / totalTests) * 100 : 0
+  const passRate = totalTests > 0 ? (passedTests / totalTests) * 100 : 0
+  const attackType = typeof nodeData.attackType === 'string' ? nodeData.attackType : ''
+  const avgConfidence = typeof nodeData.avgConfidence === 'number' ? nodeData.avgConfidence : null
+  const severityBreakdown = typeof nodeData.severityBreakdown === 'object' && nodeData.severityBreakdown !== null
+    ? (nodeData.severityBreakdown as Record<string, unknown>)
+    : null
 
   const rows: Array<{ label: string; value: string }> = []
-  if (node) {
-    rows.push({ label: 'Node ID', value: node.id })
-    rows.push({ label: 'Type', value: node.type ?? 'unknown' })
-  }
-  if (typeof nodeData.label === 'string' && nodeData.label.trim()) rows.push({ label: 'Name', value: nodeData.label })
-  if (typeof nodeData.role === 'string' && nodeData.role.trim()) rows.push({ label: 'Agent', value: nodeData.role })
-  if (typeof nodeData.model === 'string' && nodeData.model.trim()) rows.push({ label: 'Model', value: nodeData.model })
-  if (typeof nodeData.runtime_provider === 'string' && nodeData.runtime_provider.trim()) {
-    rows.push({ label: 'Runtime Provider', value: nodeData.runtime_provider })
-  }
-  if (typeof nodeData.api_key_ref === 'string' && nodeData.api_key_ref.trim()) {
-    rows.push({ label: 'API Key Ref', value: nodeData.api_key_ref })
-  }
-  if (typeof nodeData.base_url === 'string' && nodeData.base_url.trim()) {
-    rows.push({ label: 'Base URL', value: nodeData.base_url })
-  }
-  if (typeof nodeData.instruction_file === 'string' && nodeData.instruction_file.trim()) {
-    rows.push({ label: 'Instruction File', value: nodeData.instruction_file })
-  }
-  if (typeof nodeData.instructions === 'string' && nodeData.instructions.trim()) {
-    rows.push({ label: 'Custom Instructions', value: nodeData.instructions })
-  }
-  if (typeof nodeData.attackType === 'string' && nodeData.attackType.trim()) rows.push({ label: 'Test Type', value: nodeData.attackType })
-  if (typeof nodeData.status === 'string' && nodeData.status.trim()) rows.push({ label: 'Status', value: nodeData.status })
-  if (typeof nodeData.total === 'number') rows.push({ label: 'Total Samples', value: String(nodeData.total) })
-  if (typeof nodeData.success === 'number') rows.push({ label: 'Failures', value: String(nodeData.success) })
-  if (typeof nodeData.failure === 'number') rows.push({ label: 'Passes', value: String(nodeData.failure) })
-  if (typeof nodeData.description === 'string' && nodeData.description.trim()) {
-    rows.push({ label: 'Description', value: nodeData.description })
+  if (!isAttackNode) {
+    if (node) {
+      rows.push({ label: 'Node ID', value: node.id })
+      rows.push({ label: 'Type', value: node.type ?? 'unknown' })
+    }
+    if (typeof nodeData.label === 'string' && nodeData.label.trim()) rows.push({ label: 'Name', value: nodeData.label })
+    if (typeof nodeData.role === 'string' && nodeData.role.trim()) rows.push({ label: 'Agent', value: nodeData.role })
+    if (typeof nodeData.model === 'string' && nodeData.model.trim()) rows.push({ label: 'Model', value: nodeData.model })
+    if (typeof nodeData.runtime_provider === 'string' && nodeData.runtime_provider.trim()) {
+      rows.push({ label: 'Runtime Provider', value: nodeData.runtime_provider })
+    }
+    if (typeof nodeData.description === 'string' && nodeData.description.trim()) {
+      rows.push({ label: 'Description', value: nodeData.description })
+    }
   }
 
   return (
@@ -709,17 +707,83 @@ function NodeInfoDialog({
         <DialogHeader>
           <DialogTitle>{(typeof nodeData.label === 'string' && nodeData.label) || 'Node Info'}</DialogTitle>
           <DialogDescription>
-            Details for the selected node and agent configuration.
+            {isAttackNode
+              ? 'Execution summary for this test type, including pass/fail counts and percentages.'
+              : 'Details for the selected node and agent configuration.'}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-2">
-          {rows.map((row) => (
-            <div key={row.label} className="rounded-md border border-border/40 px-3 py-2">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{row.label}</p>
-              <p className="text-sm">{row.value}</p>
+        {isAttackNode ? (
+          <div className="space-y-3">
+            <div className="rounded-md border border-border/40 px-3 py-2">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Test Type</p>
+              <p className="text-sm font-medium">{attackType ? humanize(attackType) : 'Unknown'}</p>
             </div>
-          ))}
-        </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-md border border-border/40 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total Tests</p>
+                <p className="text-base font-semibold">{totalTests}</p>
+              </div>
+              <div className="rounded-md border border-border/40 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Status</p>
+                <p className="text-base font-semibold capitalize">{String(nodeData.status ?? 'unknown')}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-md border border-emerald-500/30 bg-emerald-500/8 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-emerald-400/90">Passed (Blocked)</p>
+                <p className="text-base font-semibold text-emerald-300">{passedTests}</p>
+                <p className="text-[11px] text-emerald-400/80">{passRate.toFixed(1)}%</p>
+              </div>
+              <div className="rounded-md border border-red-500/30 bg-red-500/8 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-red-400/90">Failed (Compromised)</p>
+                <p className="text-base font-semibold text-red-300">{failedTests}</p>
+                <p className="text-[11px] text-red-400/80">{failRate.toFixed(1)}%</p>
+              </div>
+            </div>
+
+            <div className="rounded-md border border-border/40 px-3 py-2">
+              <div className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-wide text-muted-foreground">
+                <span>Pass Rate</span>
+                <span>{passRate.toFixed(1)}%</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted/35">
+                <div className="h-full rounded-full bg-emerald-400" style={{ width: `${Math.max(0, Math.min(100, passRate))}%` }} />
+              </div>
+            </div>
+
+            {avgConfidence !== null && (
+              <div className="rounded-md border border-border/40 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Average Confidence</p>
+                <p className="text-sm font-medium">{(avgConfidence * 100).toFixed(1)}%</p>
+              </div>
+            )}
+
+            {severityBreakdown && (
+              <div className="rounded-md border border-border/40 px-3 py-2">
+                <p className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">Severity Breakdown</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {Object.entries(severityBreakdown).map(([level, count]) => (
+                    <div key={level} className="rounded-md border border-border/35 bg-background/40 px-2 py-1.5">
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{level}</p>
+                      <p className="text-sm font-semibold">{String(count)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {rows.map((row) => (
+              <div key={row.label} className="rounded-md border border-border/40 px-3 py-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{row.label}</p>
+                <p className="text-sm">{row.value}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )

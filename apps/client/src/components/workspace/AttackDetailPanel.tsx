@@ -142,6 +142,34 @@ export function AttackDetailPanel() {
     return state.nodeTelemetry?.nodes.find((row) => row.attack_type === selectedType) ?? null
   }, [state.nodeTelemetry, selectedType])
 
+  const confidenceDisplay = useMemo(() => {
+    if (!rawVotes.length) return { show: false, averagePct: null as number | null }
+
+    const validVotes = rawVotes.filter((vote) => Number.isFinite(vote.confidence))
+    if (!validVotes.length) return { show: false, averagePct: null as number | null }
+
+    const byDetector = new Map<string, Set<number>>()
+    for (const vote of validVotes) {
+      const key = detectorLabel(vote.detector_name)
+      if (!byDetector.has(key)) byDetector.set(key, new Set<number>())
+      byDetector.get(key)!.add(Number(vote.confidence.toFixed(4)))
+    }
+
+    const detectorCount = byDetector.size
+    const hasSingleFixedConfidencePerDetector =
+      detectorCount > 0 && Array.from(byDetector.values()).every((set) => set.size === 1)
+    const allZeroLatency = validVotes.every((vote) => Math.abs(vote.latency_ms) < 0.001)
+    const appearsSynthetic =
+      hasSingleFixedConfidencePerDetector
+      && allZeroLatency
+      && validVotes.length >= detectorCount * 3
+
+    if (appearsSynthetic) return { show: false, averagePct: null as number | null }
+
+    const averagePct = (validVotes.reduce((sum, vote) => sum + vote.confidence, 0) / validVotes.length) * 100
+    return { show: true, averagePct }
+  }, [rawVotes])
+
   const detectorChartData = useMemo(
     () =>
       (summary?.detectors ?? []).map((detector) => ({
@@ -386,14 +414,14 @@ export function AttackDetailPanel() {
                       {rawVotes.filter((vote) => hasFailure(vote.failure_flags)).length}
                     </p>
                   </div>
-                  <div className="rounded-md border border-border/35 bg-background/35 px-2 py-1.5">
-                    <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Avg Confidence</p>
-                    <p className="text-xs font-semibold">
-                      {rawVotes.length
-                        ? `${((rawVotes.reduce((sum, vote) => sum + vote.confidence, 0) / rawVotes.length) * 100).toFixed(1)}%`
-                        : '0.0%'}
-                    </p>
-                  </div>
+                  {confidenceDisplay.show && (
+                    <div className="rounded-md border border-border/35 bg-background/35 px-2 py-1.5">
+                      <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Avg Confidence</p>
+                      <p className="text-xs font-semibold">
+                        {confidenceDisplay.averagePct !== null ? `${confidenceDisplay.averagePct.toFixed(1)}%` : 'n/a'}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -404,7 +432,7 @@ export function AttackDetailPanel() {
                       <TableRow>
                         <TableHead className="h-7 text-[9px]">Detector</TableHead>
                         <TableHead className="h-7 text-[9px]">Outcome</TableHead>
-                        <TableHead className="h-7 text-[9px] text-right">Confidence</TableHead>
+                        {confidenceDisplay.show && <TableHead className="h-7 text-[9px] text-right">Confidence</TableHead>}
                         <TableHead className="h-7 text-[9px] text-right">Latency</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -419,9 +447,11 @@ export function AttackDetailPanel() {
                                 {failed ? `fail (${failureLabel(vote.failure_flags)})` : 'pass'}
                               </Badge>
                             </TableCell>
-                            <TableCell className="py-1 text-right font-mono text-[10px]">
-                              {(vote.confidence * 100).toFixed(1)}%
-                            </TableCell>
+                            {confidenceDisplay.show && (
+                              <TableCell className="py-1 text-right font-mono text-[10px]">
+                                {(vote.confidence * 100).toFixed(1)}%
+                              </TableCell>
+                            )}
                             <TableCell className="py-1 text-right font-mono text-[10px]">
                               {vote.latency_ms.toFixed(1)}ms
                             </TableCell>

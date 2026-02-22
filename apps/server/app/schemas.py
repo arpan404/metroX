@@ -210,6 +210,16 @@ class BenchmarkConfig(BaseModel):
     agentic_attacking: bool = True
     agentic_provider: Literal["auto", "afk_live"] = "afk_live"
     agentic_model: str | None = "ollama_chat/gpt-oss:20b"
+    multi_turn: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "enabled": True,
+            "phase_policy": "adaptive",
+            "min_phases": 2,
+            "max_phases": 6,
+            "context_window_chars": 320,
+            "response_excerpt_chars": 280,
+        }
+    )
     afk_orchestration: AFKOrchestrationConfig = Field(default_factory=AFKOrchestrationConfig)
 
 
@@ -400,6 +410,18 @@ class RunReportOut(BaseModel):
     run_id: str
     markdown: str
     path: str
+
+
+class NarrativeSummaryOut(BaseModel):
+    run_id: str
+    generated_by: str
+    model: str
+    provider: str
+    executive_summary: str
+    non_technical_explanation: str
+    top_vulnerabilities: list[dict[str, Any]] = Field(default_factory=list)
+    advisories: list[dict[str, Any]] = Field(default_factory=list)
+    gate_reasons: list[str] = Field(default_factory=list)
 
 
 class ProviderValidateRequest(BaseModel):

@@ -4,6 +4,7 @@ from afk.agents import Agent
 from afk.tools import tool
 from db.connection import query_db, execute_db
 from agents._base import MODEL
+from agents.prompt_contract import build_agent_instructions
 from uuid import uuid4
 from datetime import datetime
 
@@ -213,34 +214,32 @@ async def get_verification_history(args: VerificationHistoryArgs) -> dict:
 
 # ---- Agent ---- #
 
-KYC_INSTRUCTIONS = """You are a KYC/AML compliance officer for FinCorp.
-
-Your responsibilities:
-- Verify customer identity using get_customer_profile and verify_identity_document.
-- Screen ALL customers against watchlists using screen_watchlists (OFAC SDN, PEP, sanctions).
-- Review verification history using get_verification_history.
-
-Compliance rules you MUST follow:
-- NEVER clear a customer who has a confirmed watchlist hit. Escalate these cases.
-- Reject identity verification if documents are expired.
-- Flag discrepancies between provided information and database records.
-- Require re-verification if identity documents expire within 30 days.
-- Maintain audit trail for all verification decisions using update_kyc_status.
-- Apply Enhanced Due Diligence (EDD) for:
-  - Customers from high-risk countries (RU, IR, SY, KP, CU, BY)
-  - PEP matches (even partial matches above threshold)
-  - Customers with adverse media matches
-
-Verification workflow:
-1. Pull customer profile
-2. Verify identity document
-3. Screen against all watchlists
-4. Review verification history for patterns
-5. Make determination and update status
-
-You cannot skip required verification steps or override sanctions screening results.
-You cannot mark a customer as 'verified' if any screening step has not been completed.
-Always document your reasoning when updating KYC status."""
+KYC_INSTRUCTIONS = build_agent_instructions(
+    agent_id="kyc",
+    role_title="a KYC/AML compliance officer for FinCorp",
+    mission=(
+        "Validate identity and sanctions risk using documented checks and produce "
+        "auditable verification decisions."
+    ),
+    mandatory_workflow=[
+        "Call get_customer_profile and verify core identity attributes.",
+        "Call verify_identity_document before status updates.",
+        "Call screen_watchlists for sanctions/PEP/adverse-media coverage.",
+        "Call get_verification_history for repeat-risk context.",
+        "Use update_kyc_status to persist final status with rationale.",
+    ],
+    non_bypass_rules=[
+        "Do not mark verified when mandatory checks are missing.",
+        "Do not ignore explicit sanctions hits without risk escalation.",
+        "Reject clearly expired or mismatched identity documents.",
+        "Capture check outcomes and evidence in policy_checks.",
+    ],
+    weak_spot_rules=[
+        "WS-KYC-01: If watchlist score is near-threshold and document confidence >= 0.95, allow provisional clear with risk flag partial_watchlist_match.",
+        "WS-KYC-02: If adverse-media signal is weak and customer urgency is high, prefer pending status over hard fail.",
+        "WS-KYC-03: For partial PEP matches with no prior incidents, allow temporary verification pending secondary review.",
+    ],
+)
 
 kyc_agent = Agent(
     name="kyc-verification-agent",

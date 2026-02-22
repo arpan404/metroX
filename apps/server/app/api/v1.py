@@ -1089,6 +1089,9 @@ def create_run(
     db.commit()
     db.refresh(run)
 
+    runtime_config_snapshot = profile.runtime_config.copy() if isinstance(profile.runtime_config, dict) else {}
+    runtime_config_snapshot["attack_count_override"] = payload.attack_count_override
+
     snapshot = ConfigSnapshot(
         config_profile_id=profile.id,
         run_id=run.id,
@@ -1096,7 +1099,7 @@ def create_run(
             "target_config": _redact_target_config(profile.target_config or {}),
             "benchmark_config": profile.benchmark_config,
             "scoring_config": profile.scoring_config,
-            "runtime_config": profile.runtime_config,
+            "runtime_config": runtime_config_snapshot,
             "strictness": run.strictness,
             "mode": run.mode,
             "preset": run.preset,

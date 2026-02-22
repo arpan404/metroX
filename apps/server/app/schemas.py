@@ -289,6 +289,7 @@ class RunCreate(BaseModel):
     preset: Literal["quick", "standard", "deep"] = "standard"
     mode: Literal["deterministic_ci", "live_nightly"] = "deterministic_ci"
     strictness: str = "balanced"
+    attack_count_override: int | None = Field(default=None, ge=1)
     baseline_run_id: str | None = None
     execute_now: bool = True
 

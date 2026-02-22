@@ -310,6 +310,7 @@ export function ConfigPanel() {
     if (!selectedProfile) return false
     const selectedTarget = (selectedProfile.target_config ?? {}) as Record<string, unknown>
     const selectedBenchmark = (selectedProfile.benchmark_config ?? {}) as Record<string, unknown>
+    const selectedRuntime = (selectedProfile.runtime_config ?? {}) as Record<string, unknown>
     const selectedOrchestration = asRecord(selectedBenchmark.afk_orchestration)
     const profileTaxonomy = Array.isArray(selectedBenchmark.taxonomy)
       ? selectedBenchmark.taxonomy.map((entry) => String(entry).trim()).filter(Boolean)
@@ -364,6 +365,22 @@ export function ConfigPanel() {
       graph: studioOrchestration.graph,
     })
     const orchestrationDirty = JSON.stringify(profileOrchestrationSnapshot) !== JSON.stringify(currentOrchestrationSnapshot)
+    const profilePreset = typeof selectedRuntime.preset === 'string' ? selectedRuntime.preset : 'standard'
+    const profileMaxConcurrency = typeof selectedRuntime.max_concurrency === 'number'
+      ? Math.max(1, Math.trunc(selectedRuntime.max_concurrency))
+      : 8
+    const profileBudgetUsd = typeof selectedRuntime.budget_usd === 'number'
+      ? Math.max(0, selectedRuntime.budget_usd)
+      : 5
+    const profileAttackCountOverride = typeof selectedRuntime.attack_count_override === 'number'
+      ? Math.max(1, Math.trunc(selectedRuntime.attack_count_override))
+      : null
+    const currentAttackCountOverride = manualRunSizeOverride ? Math.max(1, Math.trunc(runSizeOverride)) : null
+    const profileLiveMode = Boolean(selectedRuntime.live_mode)
+    const currentLiveMode = mode === 'live_nightly'
+    const profileStrictness = typeof selectedProfile.strictness_mode === 'string'
+      ? selectedProfile.strictness_mode
+      : 'balanced'
 
     return !(
       String(selectedTarget.agent_id ?? '') === agentId
@@ -375,6 +392,12 @@ export function ConfigPanel() {
       && profileAgenticAttacking === agenticAttacking
       && profileConversationPhases === conversationPhases
       && profileContextWindowChars === contextWindowChars
+      && profilePreset === preset
+      && profileMaxConcurrency === maxConcurrency
+      && Math.abs(profileBudgetUsd - budgetUsd) < 0.001
+      && profileAttackCountOverride === currentAttackCountOverride
+      && profileLiveMode === currentLiveMode
+      && profileStrictness === strictness
       && !orchestrationDirty
     )
   }, [
@@ -388,6 +411,13 @@ export function ConfigPanel() {
     agenticAttacking,
     conversationPhases,
     contextWindowChars,
+    preset,
+    maxConcurrency,
+    budgetUsd,
+    manualRunSizeOverride,
+    runSizeOverride,
+    mode,
+    strictness,
     studioOrchestration,
     joinPolicy,
     routerStrategy,
@@ -1019,6 +1049,7 @@ export function ConfigPanel() {
         preset,
         mode,
         strictness,
+        attack_count_override: manualRunSizeOverride ? Math.max(1, Math.trunc(runSizeOverride)) : null,
         baseline_run_id: baselineRunId || undefined,
         execute_now: true,
       })

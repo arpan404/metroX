@@ -411,7 +411,7 @@ class RunOrchestrator:
         )
         processed_case_ids = {attack_case_id for _, attack_case_id in existing_executions}
         benchmark_cfg_base = profile.benchmark_config if isinstance(profile.benchmark_config, dict) else {}
-        runtime_cfg = profile.runtime_config if isinstance(profile.runtime_config, dict) else {}
+        runtime_cfg: dict[str, Any] = profile.runtime_config if isinstance(profile.runtime_config, dict) else {}
         orchestration_cfg = (
             benchmark_cfg_base.get("afk_orchestration")
             if isinstance(benchmark_cfg_base.get("afk_orchestration"), dict)
@@ -472,6 +472,10 @@ class RunOrchestrator:
             self.db.commit()
             self.db.refresh(snapshot)
             run.config_snapshot_id = snapshot.id
+        elif isinstance(snapshot.snapshot, dict):
+            snapshot_runtime_cfg = snapshot.snapshot.get("runtime_config")
+            if isinstance(snapshot_runtime_cfg, dict):
+                runtime_cfg = snapshot_runtime_cfg
 
         run.thread_id = run.thread_id or f"run-{run.id}"
         run.status = "running"

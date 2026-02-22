@@ -538,6 +538,16 @@ def _parse_orchestration_config(config: Any, *, default_model: str) -> Orchestra
     if telemetry not in {"null", "inmemory", "otel"}:
         telemetry = "null"
 
+    default_runtime_provider = str(payload.get("runtime_provider", "")).strip() or None
+    default_api_key = str(payload.get("api_key", "")).strip() or None
+    default_base_url = str(payload.get("base_url", "")).strip() or None
+    default_auth_headers = (
+        payload.get("auth_headers")
+        if isinstance(payload.get("auth_headers"), dict)
+        else {}
+    )
+    default_extra = payload.get("extra") if isinstance(payload.get("extra"), dict) else {}
+
     role_payload = payload.get("roles") if isinstance(payload.get("roles"), list) else []
     roles: list[RoleConfig] = []
     for role in role_payload:
@@ -556,11 +566,22 @@ def _parse_orchestration_config(config: Any, *, default_model: str) -> Orchestra
                     str(role.get("instructions", "")).strip()
                     or DEFAULT_ROLE_INSTRUCTIONS[name]
                 ),
-                runtime_provider=str(role.get("runtime_provider", "")).strip() or None,
-                api_key=str(role.get("api_key", "")).strip() or None,
-                base_url=str(role.get("base_url", "")).strip() or None,
-                auth_headers=role.get("auth_headers") if isinstance(role.get("auth_headers"), dict) else {},
-                extra=role.get("extra") if isinstance(role.get("extra"), dict) else {},
+                runtime_provider=(
+                    str(role.get("runtime_provider", "")).strip()
+                    or default_runtime_provider
+                ),
+                api_key=str(role.get("api_key", "")).strip() or default_api_key,
+                base_url=str(role.get("base_url", "")).strip() or default_base_url,
+                auth_headers=(
+                    role.get("auth_headers")
+                    if isinstance(role.get("auth_headers"), dict)
+                    else dict(default_auth_headers)
+                ),
+                extra=(
+                    role.get("extra")
+                    if isinstance(role.get("extra"), dict)
+                    else dict(default_extra)
+                ),
             )
         )
 

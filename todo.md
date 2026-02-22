@@ -44,6 +44,7 @@
 - [ ] Update `PROJECT_PROGRESS_TRACKER.md` with milestone + status.
 
 ## Deferred (Later)
-- [ ] Add Analytics panel section to render narrative summary and advisories.
-- [ ] Add regenerate button in UI with loading/error states.
-- [ ] Add export/share options (markdown/pdf) for narrative brief.
+- [x] Add Analytics panel section to render narrative summary and advisories.
+- [x] Add regenerate button in UI with loading/error states.
+- [x] Add export option (JSON download) for narrative brief.
+- [x] Add share options (markdown/pdf) for narrative brief.

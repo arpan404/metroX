@@ -566,3 +566,13 @@ export type NarrativeSummaryPayload = {
   advisories: Array<Record<string, unknown>>
   gate_reasons: string[]
 }
+
+export type RunReportPayload = {
+  run_id: string
+  markdown: string
+  path: string
+  pdf_path?: string | null
+  json_path?: string | null
+  execution_count?: number | null
+  event_count?: number | null
+}

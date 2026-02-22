@@ -38,6 +38,11 @@ import {
   ScatterChart,
   Scatter,
   Cell,
+  ComposedChart,
+  AreaChart,
+  Area,
+  ZAxis,
+  ReferenceLine,
 } from 'recharts'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -49,8 +54,33 @@ import { PanelShell, PanelSection, MetricRow, EmptyState } from './PanelShell'
 import { useWorkspace } from '@/stores/workspace-store'
 import { api } from '@/lib/api'
 import { getChartColors } from '@/lib/chart-theme'
+import { buildVisualRunPdf } from '@/lib/visual-report-pdf'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+
+const DETECTOR_LABELS: Record<string, string> = {
+  afk_judge: 'AI Tested',
+  retrieval_consistency: 'Retrieval Consistency',
+  rule: 'Rule-Based',
+}
+
+function detectorLabel(name: string): string {
+  const key = String(name || '').trim()
+  if (!key) return 'Unknown'
+  return DETECTOR_LABELS[key] ?? key.replace(/_/g, ' ')
+}
+
+function humanizeIdentifier(value: string): string {
+  const text = String(value || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+  if (!text) return 'Unknown'
+  return text
+    .split(/\s+/)
+    .map((word) => (word.length <= 3 ? word.toUpperCase() : `${word.charAt(0).toUpperCase()}${word.slice(1)}`))
+    .join(' ')
+}
 
 export function AnalyticsPanel() {
   const { state, dispatch, actions } = useWorkspace()
@@ -71,6 +101,8 @@ export function AnalyticsPanel() {
   const [calibration, setCalibration] = useState<any>(null)
   const [inference, setInference] = useState<any>(null)
   const [cooccurrence, setCooccurrence] = useState<any>(null)
+  const [narrativeSummary, setNarrativeSummary] = useState<any>(null)
+  const [narrativeLoading, setNarrativeLoading] = useState(false)
 
   const colors = useMemo(() => getChartColors(), [])
 
@@ -93,6 +125,19 @@ export function AnalyticsPanel() {
       api.getCooccurrence(state.currentRunId).then(setCooccurrence).catch(() => {})
     }
   }, [activeTab, state.currentRunId, calibration, inference, cooccurrence])
+
+  useEffect(() => {
+    if (!state.currentRunId) {
+      setNarrativeSummary(null)
+      return
+    }
+    setNarrativeLoading(true)
+    api
+      .getNarrativeSummary(state.currentRunId)
+      .then(setNarrativeSummary)
+      .catch(() => setNarrativeSummary(null))
+      .finally(() => setNarrativeLoading(false))
+  }, [state.currentRunId])
 
   const handleCompare = async () => {
     if (!compBaselineId || !compCandidateId) return
@@ -121,8 +166,159 @@ export function AnalyticsPanel() {
   }
 
   const handleGenerateReport = async () => {
+    if (!state.currentRunId) return
     const result = await actions.generateReport()
-    if (result) toast.success(`Report saved: ${result.path}`)
+    if (!result) {
+      toast.error('Failed to generate report')
+      return
+    }
+    try {
+      const jsonBlob = await api.downloadReport(state.currentRunId, 'json')
+      let comprehensivePayload: any = null
+      try {
+        comprehensivePayload = JSON.parse(await jsonBlob.text())
+      } catch {
+        comprehensivePayload = null
+      }
+      const blob = buildVisualRunPdf({
+        runId: state.currentRunId,
+        scorecard,
+        attackSummary: state.attackSummary,
+        executionSlices,
+        detectorVotes,
+        forecasts,
+        narrativeSummary,
+        comprehensivePayload,
+      })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `run-${state.currentRunId}-visual-report.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      toast.success(`Visual report ready: ${result.execution_count ?? 0} executions`)
+    } catch (error: any) {
+      toast.error(error?.message || 'Report export failed')
+    }
+  }
+
+  const handleGenerateNarrative = async (regenerate = false) => {
+    if (!state.currentRunId) return
+    setNarrativeLoading(true)
+    try {
+      const payload = await api.generateNarrativeSummary(state.currentRunId, regenerate)
+      setNarrativeSummary(payload)
+      toast.success(regenerate ? 'Advisory regenerated' : 'Advisory generated')
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to generate advisory')
+    } finally {
+      setNarrativeLoading(false)
+    }
+  }
+
+  const handleExportNarrative = () => {
+    if (!narrativeSummary || !state.currentRunId) return
+    const blob = new Blob([JSON.stringify(narrativeSummary, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `run-${state.currentRunId}-narrative.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
+  const buildNarrativeMarkdown = () => {
+    if (!narrativeSummary || !state.currentRunId) return ''
+    const lines: string[] = []
+    const issuedAt = narrativeSummary.generated_at ? new Date(narrativeSummary.generated_at).toISOString() : new Date().toISOString()
+    lines.push(`# MetroX Advisory Summary`)
+    lines.push(``)
+    lines.push(`- Run ID: \`${state.currentRunId}\``)
+    lines.push(`- Generated At: ${issuedAt}`)
+    lines.push(``)
+    lines.push(`## Executive Summary`)
+    lines.push(String(narrativeSummary.executive_summary ?? ''))
+    lines.push(``)
+    lines.push(`## Plain-Language Explanation`)
+    lines.push(String(narrativeSummary.non_technical_explanation ?? ''))
+    lines.push(``)
+    lines.push(`## Top Vulnerabilities`)
+    if (Array.isArray(narrativeSummary.top_vulnerabilities) && narrativeSummary.top_vulnerabilities.length > 0) {
+      for (const vuln of narrativeSummary.top_vulnerabilities) {
+        lines.push(`- **${String(vuln.title ?? 'Untitled')}** (${String(vuln.severity ?? 'unknown')})`)
+        lines.push(`  - Evidence: ${String(vuln.evidence ?? 'n/a')}`)
+      }
+    } else {
+      lines.push(`- No vulnerabilities listed.`)
+    }
+    lines.push(``)
+    lines.push(`## Recommended Actions`)
+    if (Array.isArray(narrativeSummary.advisories) && narrativeSummary.advisories.length > 0) {
+      for (const adv of narrativeSummary.advisories) {
+        lines.push(`- **[P${String(adv.priority ?? '?')}] ${String(adv.action ?? 'Action')}**`)
+        lines.push(`  - Why: ${String(adv.why ?? 'n/a')}`)
+      }
+    } else {
+      lines.push(`- No advisories listed.`)
+    }
+    lines.push(``)
+    lines.push(`---`)
+    lines.push(`Generated by MetroX`)
+    return lines.join('\n')
+  }
+
+  const handleExportNarrativeMarkdown = () => {
+    if (!state.currentRunId || !narrativeSummary) return
+    const markdown = buildNarrativeMarkdown()
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `run-${state.currentRunId}-advisory.md`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
+  const handleExportNarrativePdf = () => {
+    if (!state.currentRunId || !narrativeSummary) return
+    const markdown = buildNarrativeMarkdown()
+    const win = window.open('', '_blank', 'noopener,noreferrer')
+    if (!win) {
+      toast.error('Enable popups to export PDF.')
+      return
+    }
+    const escaped = markdown
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+    win.document.open()
+    win.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>MetroX Advisory ${state.currentRunId}</title>
+          <style>
+            body { font-family: "IBM Plex Sans", "Segoe UI", sans-serif; margin: 32px; color: #111827; }
+            h1 { font-size: 24px; margin: 0 0 16px; }
+            pre { white-space: pre-wrap; font-family: "IBM Plex Mono", "SFMono-Regular", monospace; font-size: 12px; line-height: 1.5; }
+          </style>
+        </head>
+        <body>
+          <h1>MetroX Advisory Summary</h1>
+          <pre>${escaped}</pre>
+        </body>
+      </html>
+    `)
+    win.document.close()
+    win.focus()
+    setTimeout(() => win.print(), 250)
   }
 
   const { scorecard, riskCards, costSummary, costTimeseries, clusters, drift, executionSlices, features, forecasts, telemetry, nodeTelemetry, detectorVotes, policyEvents } = state
@@ -132,6 +328,7 @@ export function AnalyticsPanel() {
     () =>
       (state.attackSummary?.attack_types ?? []).map((row) => ({
         attack_type: row.attack_type,
+        attack_label: humanizeIdentifier(row.attack_type),
         blocked: row.failure,
         compromised: row.success,
       })),
@@ -149,6 +346,7 @@ export function AnalyticsPanel() {
     return Object.values(buckets)
       .map((bucket) => ({
         ...bucket,
+        detector_label: detectorLabel(bucket.detector_name),
         fail_rate_pct: (bucket.fail_votes / Math.max(bucket.votes, 1)) * 100,
       }))
       .sort((a, b) => b.fail_rate_pct - a.fail_rate_pct)
@@ -157,6 +355,7 @@ export function AnalyticsPanel() {
     () =>
       (state.attackSummary?.attack_types ?? []).map((row) => ({
         attack_type: row.attack_type,
+        attack_label: humanizeIdentifier(row.attack_type),
         avg_disagreement: row.avg_disagreement ?? 0,
         avg_uncertainty: row.avg_uncertainty ?? 0,
       })),
@@ -166,12 +365,61 @@ export function AnalyticsPanel() {
     () =>
       (nodeTelemetry?.nodes ?? []).map((row) => ({
         attack_type: row.attack_type,
+        attack_label: humanizeIdentifier(row.attack_type),
         avg_latency_ms: row.avg_latency_ms,
         effective_cost_usd: row.effective_cost_usd ?? row.cost_usd ?? 0,
         total: row.total,
       })),
     [nodeTelemetry],
   )
+  const dsKpis = useMemo(() => {
+    const attackRows = state.attackSummary?.attack_types ?? []
+    const totalCases = attackRows.reduce((acc, row) => acc + row.total, 0)
+    const totalCompromised = attackRows.reduce((acc, row) => acc + row.success, 0)
+    const avgConfidence =
+      attackRows.length > 0
+        ? attackRows.reduce((acc, row) => acc + (row.avg_confidence ?? 0), 0) / attackRows.length
+        : 0
+    const avgDisagreement = state.attackSummary?.detector_summary?.avg_disagreement ?? 0
+    const avgUncertainty = state.attackSummary?.detector_summary?.avg_uncertainty ?? 0
+    return {
+      totalCases,
+      compromisedRatePct: totalCases > 0 ? (totalCompromised / totalCases) * 100 : 0,
+      avgConfidence,
+      avgDisagreement,
+      avgUncertainty,
+    }
+  }, [state.attackSummary])
+  const attackRiskProfile = useMemo(
+    () =>
+      (state.attackSummary?.attack_types ?? [])
+        .map((row) => ({
+          attack_type: row.attack_type,
+          attack_label: humanizeIdentifier(row.attack_type),
+          asr_pct: row.success_rate * 100,
+          avg_confidence_pct: (row.avg_confidence ?? 0) * 100,
+          total: row.total,
+        }))
+        .sort((a, b) => b.asr_pct - a.asr_pct),
+    [state.attackSummary],
+  )
+  const detectorQuality = useMemo(() => {
+    const grouped: Record<string, { detector_name: string; votes: number; fail_votes: number; confidence_total: number }> = {}
+    for (const vote of detectorVotes) {
+      const key = vote.detector_name || 'unknown'
+      const existing = grouped[key] ?? { detector_name: key, votes: 0, fail_votes: 0, confidence_total: 0 }
+      existing.votes += 1
+      existing.confidence_total += vote.confidence ?? 0
+      if (Object.values(vote.failure_flags ?? {}).some(Boolean)) existing.fail_votes += 1
+      grouped[key] = existing
+    }
+    return Object.values(grouped).map((row) => ({
+      ...row,
+      detector_label: detectorLabel(row.detector_name),
+      fail_rate_pct: row.votes > 0 ? (row.fail_votes / row.votes) * 100 : 0,
+      avg_confidence_pct: row.votes > 0 ? (row.confidence_total / row.votes) * 100 : 0,
+    }))
+  }, [detectorVotes])
 
   return (
     <PanelShell
@@ -232,13 +480,13 @@ export function AnalyticsPanel() {
                   <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Composite Score</p>
                 </div>
                 <div className="space-y-0.5">
-                  {Object.entries(scorecard.metrics).filter(([k]) => k !== 'composite_score').map(([key, val]) => (
-                    <MetricRow
-                      key={key}
-                      label={key.replace(/_/g, ' ')}
-                      value={typeof val === 'number' ? (val < 1 ? `${(val * 100).toFixed(1)}%` : val.toFixed(2)) : String(val)}
-                      sub={scorecard.ci[key] ? `[${(scorecard.ci[key].low * 100).toFixed(1)}–${(scorecard.ci[key].high * 100).toFixed(1)}%]` : undefined}
-                    />
+                      {Object.entries(scorecard.metrics).filter(([k]) => k !== 'composite_score').map(([key, val]) => (
+                        <MetricRow
+                          key={key}
+                          label={humanizeIdentifier(key)}
+                          value={typeof val === 'number' ? (val < 1 ? `${(val * 100).toFixed(1)}%` : val.toFixed(2)) : String(val)}
+                          sub={scorecard.ci[key] ? `[${(scorecard.ci[key].low * 100).toFixed(1)}–${(scorecard.ci[key].high * 100).toFixed(1)}%]` : undefined}
+                        />
                   ))}
                 </div>
                 {!scorecard.gates.pass && scorecard.gates.reasons.length > 0 && (
@@ -252,6 +500,103 @@ export function AnalyticsPanel() {
                 )}
               </PanelSection>
             )}
+
+            <PanelSection
+              title="Executive Advisory"
+              description="Narrative summary for stakeholders"
+              badge={
+                <div className="flex flex-wrap items-center justify-end gap-1">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-6 rounded-full px-2.5 text-[9px]"
+                    onClick={() => handleGenerateNarrative(Boolean(narrativeSummary))}
+                    disabled={!state.currentRunId || narrativeLoading}
+                  >
+                    {narrativeLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : narrativeSummary ? 'Regenerate' : 'Generate'}
+                  </Button>
+                  {narrativeSummary ? (
+                    <>
+                      <Button variant="outline" size="sm" className="h-6 rounded-full px-2.5 text-[9px]" onClick={handleExportNarrativeMarkdown}>
+                        <FileText className="h-3 w-3 mr-1" />
+                        Markdown
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-6 rounded-full px-2.5 text-[9px]" onClick={handleExportNarrativePdf}>
+                        <Download className="h-3 w-3 mr-1" />
+                        PDF
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-6 rounded-full px-2.5 text-[9px]" onClick={handleExportNarrative}>
+                        <Download className="h-3 w-3 mr-1" />
+                        JSON
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
+              }
+            >
+              {!narrativeSummary && !narrativeLoading ? (
+                <p className="text-xs text-muted-foreground">No advisory generated yet for this run.</p>
+              ) : narrativeLoading ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Loading advisory...
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="relative overflow-hidden rounded-2xl border border-border/30 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-3.5">
+                    <div className="absolute -right-10 -top-10 h-28 w-28 rounded-full bg-primary/10 blur-2xl" />
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Executive Summary</p>
+                    <p className="mt-1.5 text-[12px] leading-relaxed text-foreground/95">{String(narrativeSummary.executive_summary ?? '')}</p>
+                  </div>
+                  <div className="rounded-xl border border-border/25 bg-background/35 px-3.5 py-3">
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Stakeholder Brief</p>
+                    <p className="mt-1.5 text-[11px] leading-6 text-foreground/90">{String(narrativeSummary.non_technical_explanation ?? '')}</p>
+                  </div>
+                  {Array.isArray(narrativeSummary.top_vulnerabilities) && narrativeSummary.top_vulnerabilities.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Top Vulnerabilities</p>
+                      {narrativeSummary.top_vulnerabilities.slice(0, 4).map((item: any, index: number) => (
+                        <div key={index} className="rounded-xl border border-border/25 bg-background/30 px-3 py-2.5">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[12px] font-semibold tracking-tight">{String(item.title ?? 'Untitled')}</p>
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                'h-5 rounded-full border px-2 text-[9px] uppercase',
+                                String(item.severity ?? '').toLowerCase() === 'high' && 'border-red-400/45 text-red-300',
+                                String(item.severity ?? '').toLowerCase() === 'medium' && 'border-amber-400/45 text-amber-300',
+                                !['high', 'medium'].includes(String(item.severity ?? '').toLowerCase()) && 'border-emerald-400/35 text-emerald-300',
+                              )}
+                            >
+                              {String(item.severity ?? 'unknown')}
+                            </Badge>
+                          </div>
+                          <p className="mt-1.5 border-l border-border/35 pl-2 text-[10px] leading-5 text-muted-foreground">
+                            {String(item.evidence ?? '')}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {Array.isArray(narrativeSummary.advisories) && narrativeSummary.advisories.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">AI Suggestions</p>
+                      {narrativeSummary.advisories.slice(0, 4).map((item: any, index: number) => (
+                        <div key={index} className="rounded-xl border border-border/25 bg-gradient-to-r from-background/40 to-transparent px-3 py-2.5">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[12px] font-semibold tracking-tight">{String(item.action ?? 'Action')}</p>
+                            <Badge variant="secondary" className="h-5 rounded-full px-2 text-[9px]">
+                              P{String(item.priority ?? index + 1)}
+                            </Badge>
+                          </div>
+                          <p className="mt-1.5 text-[10px] leading-5 text-muted-foreground">{String(item.why ?? '')}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </PanelSection>
 
             {/* Clusters */}
             {clusters && clusters.clusters.length > 0 && (
@@ -309,7 +654,7 @@ export function AnalyticsPanel() {
                     <TableBody>
                       {executionSlices.slices.slice(0, 10).map((s, i) => (
                         <TableRow key={i}>
-                          <TableCell className="text-[10px] py-1 font-mono">{s.attack_type}</TableCell>
+                          <TableCell className="text-[10px] py-1">{humanizeIdentifier(s.attack_type)}</TableCell>
                           <TableCell className="text-[10px] py-1 font-mono">{s.model}</TableCell>
                           <TableCell className="text-[10px] py-1 font-mono text-right">{s.count}</TableCell>
                           <TableCell className="text-[10px] py-1 font-mono text-right">{s.avg_latency_ms.toFixed(0)}ms</TableCell>
@@ -359,7 +704,7 @@ export function AnalyticsPanel() {
                       {Object.entries(byDetector).map(([name, { count, avgConf }]) => (
                         <MetricRow
                           key={name}
-                          label={name.replace(/_/g, ' ')}
+                          label={detectorLabel(name)}
                           value={count}
                           sub={`avg: ${(avgConf / count).toFixed(2)}`}
                         />
@@ -421,13 +766,38 @@ export function AnalyticsPanel() {
 
           {/* ─── Data Science Tab ─── */}
           <TabsContent value="data-science" className="space-y-4 mt-0">
+            <PanelSection title="Model Risk Snapshot" description="High-level DS indicators for this run">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg border border-border/40 bg-background/50 p-2">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Total Cases</p>
+                  <p className="mt-1 text-lg font-mono tabular-nums">{dsKpis.totalCases.toLocaleString()}</p>
+                </div>
+                <div className="rounded-lg border border-border/40 bg-background/50 p-2">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Compromised Rate</p>
+                  <p className={cn('mt-1 text-lg font-mono tabular-nums', dsKpis.compromisedRatePct > 10 ? 'text-red-400' : 'text-emerald-400')}>
+                    {dsKpis.compromisedRatePct.toFixed(2)}%
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border/40 bg-background/50 p-2">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Avg Detector Confidence</p>
+                  <p className="mt-1 text-lg font-mono tabular-nums">{(dsKpis.avgConfidence * 100).toFixed(1)}%</p>
+                </div>
+                <div className="rounded-lg border border-border/40 bg-background/50 p-2">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Consensus Quality</p>
+                  <p className="mt-1 text-sm font-mono tabular-nums">
+                    d={dsKpis.avgDisagreement.toFixed(3)} u={dsKpis.avgUncertainty.toFixed(3)}
+                  </p>
+                </div>
+              </div>
+            </PanelSection>
+
             <PanelSection title="Attack Outcome Distribution" description="Compromised vs blocked counts per attack type">
               {attackDistribution.length > 0 ? (
                 <div className="h-[220px] -mx-2">
                   <ResponsiveContainer width="100%" height="100%">
                     <ReBarChart data={attackDistribution}>
                       <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" />
-                      <XAxis dataKey="attack_type" tick={{ fontSize: 9, fill: colors.axis }} />
+                      <XAxis dataKey="attack_label" tick={{ fontSize: 9, fill: colors.axis }} />
                       <YAxis tick={{ fontSize: 9, fill: colors.axis }} />
                       <ReTooltip contentStyle={{ background: colors.tooltipBg, border: `1px solid ${colors.tooltipBorder}`, borderRadius: 8, fontSize: 10 }} />
                       <Bar dataKey="blocked" stackId="outcome" fill={colors.chart2} radius={[4, 4, 0, 0]} />
@@ -440,20 +810,51 @@ export function AnalyticsPanel() {
               )}
             </PanelSection>
 
-            <PanelSection title="Detector Fail Rates" description="Aggregated fail-rate by detector across the run">
-              {detectorFailRate.length > 0 ? (
-                <div className="h-[200px] -mx-2">
+            <PanelSection title="Attack-Type Risk Profile" description="ASR and confidence profile by attack type">
+              {attackRiskProfile.length > 0 ? (
+                <div className="h-[220px] -mx-2">
                   <ResponsiveContainer width="100%" height="100%">
-                    <ReBarChart data={detectorFailRate}>
+                    <ComposedChart data={attackRiskProfile}>
                       <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" />
-                      <XAxis dataKey="detector_name" tick={{ fontSize: 9, fill: colors.axis }} />
-                      <YAxis tick={{ fontSize: 9, fill: colors.axis }} tickFormatter={(v) => `${v}%`} />
+                      <XAxis dataKey="attack_label" tick={{ fontSize: 9, fill: colors.axis }} />
+                      <YAxis yAxisId="left" tick={{ fontSize: 9, fill: colors.axis }} tickFormatter={(v) => `${v}%`} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 9, fill: colors.axis }} />
                       <ReTooltip
-                        formatter={(value: number, _name, ctx: any) => [`${Number(value).toFixed(2)}%`, `${ctx?.payload?.fail_votes ?? 0}/${ctx?.payload?.votes ?? 0}`]}
                         contentStyle={{ background: colors.tooltipBg, border: `1px solid ${colors.tooltipBorder}`, borderRadius: 8, fontSize: 10 }}
                       />
-                      <Bar dataKey="fail_rate_pct" fill={colors.chart3} radius={[4, 4, 0, 0]} />
-                    </ReBarChart>
+                      <Bar yAxisId="left" dataKey="asr_pct" fill={colors.chart3} radius={[4, 4, 0, 0]} />
+                      <Line yAxisId="left" dataKey="avg_confidence_pct" stroke={colors.chart2} strokeWidth={2} dot={false} />
+                      <Line yAxisId="right" dataKey="total" stroke={colors.chart4} strokeWidth={1.5} dot={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No risk-profile data.</p>
+              )}
+            </PanelSection>
+
+            <PanelSection title="Detector Quality Matrix" description="Fail rate vs confidence, aggregated by detector">
+              {detectorQuality.length > 0 ? (
+                <div className="h-[200px] -mx-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={detectorQuality}>
+                      <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" />
+                      <XAxis dataKey="detector_label" tick={{ fontSize: 9, fill: colors.axis }} />
+                      <YAxis yAxisId="left" tick={{ fontSize: 9, fill: colors.axis }} tickFormatter={(v) => `${v}%`} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 9, fill: colors.axis }} tickFormatter={(v) => `${v}%`} />
+                      <ReTooltip
+                        formatter={(_value: number, _name: string, ctx: any) => {
+                          const row = ctx?.payload ?? {}
+                          return [
+                            `fail=${Number(row.fail_rate_pct ?? 0).toFixed(2)}%, conf=${Number(row.avg_confidence_pct ?? 0).toFixed(2)}%`,
+                            `${row.detector_label ?? ''} (${row.fail_votes ?? 0}/${row.votes ?? 0})`,
+                          ]
+                        }}
+                        contentStyle={{ background: colors.tooltipBg, border: `1px solid ${colors.tooltipBorder}`, borderRadius: 8, fontSize: 10 }}
+                      />
+                      <Bar yAxisId="left" dataKey="fail_rate_pct" fill={colors.chart3} radius={[4, 4, 0, 0]} />
+                      <Line yAxisId="right" dataKey="avg_confidence_pct" stroke={colors.chart1} strokeWidth={2} dot={false} />
+                    </ComposedChart>
                   </ResponsiveContainer>
                 </div>
               ) : (
@@ -467,11 +868,13 @@ export function AnalyticsPanel() {
                   <ResponsiveContainer width="100%" height="100%">
                     <ScatterChart margin={{ top: 10, right: 12, bottom: 8, left: 0 }}>
                       <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" />
+                      <ReferenceLine x={0.2} stroke={colors.axis} strokeDasharray="3 3" />
+                      <ReferenceLine y={0.2} stroke={colors.axis} strokeDasharray="3 3" />
                       <XAxis type="number" dataKey="avg_disagreement" name="disagreement" tick={{ fontSize: 9, fill: colors.axis }} />
                       <YAxis type="number" dataKey="avg_uncertainty" name="uncertainty" tick={{ fontSize: 9, fill: colors.axis }} />
                       <ReTooltip
                         cursor={{ strokeDasharray: '3 3' }}
-                        formatter={(_value, _name, ctx: any) => [ctx?.payload?.attack_type ?? '', `d=${ctx?.payload?.avg_disagreement?.toFixed(3)} u=${ctx?.payload?.avg_uncertainty?.toFixed(3)}`]}
+                        formatter={(_value, _name, ctx: any) => [ctx?.payload?.attack_label ?? '', `d=${ctx?.payload?.avg_disagreement?.toFixed(3)} u=${ctx?.payload?.avg_uncertainty?.toFixed(3)}`]}
                         contentStyle={{ background: colors.tooltipBg, border: `1px solid ${colors.tooltipBorder}`, borderRadius: 8, fontSize: 10 }}
                       />
                       <Scatter data={disagreementUncertainty} fill={colors.chart4} />
@@ -491,8 +894,9 @@ export function AnalyticsPanel() {
                       <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" />
                       <XAxis type="number" dataKey="avg_latency_ms" name="latency" tick={{ fontSize: 9, fill: colors.axis }} />
                       <YAxis type="number" dataKey="effective_cost_usd" name="cost" tick={{ fontSize: 9, fill: colors.axis }} />
+                      <ZAxis type="number" dataKey="total" range={[40, 260]} />
                       <ReTooltip
-                        formatter={(_value, _name, ctx: any) => [ctx?.payload?.attack_type ?? '', `latency=${ctx?.payload?.avg_latency_ms?.toFixed(1)}ms cost=$${ctx?.payload?.effective_cost_usd?.toFixed(4)}`]}
+                        formatter={(_value, _name, ctx: any) => [ctx?.payload?.attack_label ?? '', `latency=${ctx?.payload?.avg_latency_ms?.toFixed(1)}ms cost=$${ctx?.payload?.effective_cost_usd?.toFixed(4)}`]}
                         contentStyle={{ background: colors.tooltipBg, border: `1px solid ${colors.tooltipBorder}`, borderRadius: 8, fontSize: 10 }}
                       />
                       <Scatter data={latencyCostFrontier} fill={colors.chart1}>
@@ -505,6 +909,24 @@ export function AnalyticsPanel() {
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground">No latency-cost telemetry data.</p>
+              )}
+            </PanelSection>
+
+            <PanelSection title="Cost Trend Envelope" description="Cumulative spend progression over execution steps">
+              {costTimeseries && costTimeseries.points.length > 0 ? (
+                <div className="h-[200px] -mx-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={costTimeseries.points}>
+                      <CartesianGrid stroke={colors.grid} strokeDasharray="3 3" />
+                      <XAxis dataKey="step" tick={{ fontSize: 9, fill: colors.axis }} />
+                      <YAxis tick={{ fontSize: 9, fill: colors.axis }} tickFormatter={(v) => `$${Number(v).toFixed(2)}`} />
+                      <ReTooltip contentStyle={{ background: colors.tooltipBg, border: `1px solid ${colors.tooltipBorder}`, borderRadius: 8, fontSize: 10 }} />
+                      <Area type="monotone" dataKey="cumulative_cost_usd" stroke={colors.chart1} fill={colors.chart1} fillOpacity={0.22} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No cumulative cost trend available.</p>
               )}
             </PanelSection>
           </TabsContent>
@@ -599,7 +1021,7 @@ export function AnalyticsPanel() {
                     return (
                       <div key={r.failure_type} className="p-3 rounded-lg border border-border/30 space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-medium capitalize">{r.failure_type.replace(/_/g, ' ')}</span>
+                          <span className="text-[11px] font-medium">{humanizeIdentifier(r.failure_type)}</span>
                           <span className={cn('text-sm font-mono font-semibold', riskColor)}>{riskPct.toFixed(1)}%</span>
                         </div>
                         <Progress value={riskPct} className="h-1.5" />
@@ -629,7 +1051,7 @@ export function AnalyticsPanel() {
                 <div className="space-y-1">
                   {calibration.reports.map((r: any, i: number) => (
                     <div key={i} className="flex items-center justify-between text-[10px]">
-                      <span className="text-muted-foreground capitalize">{r.failure_type?.replace(/_/g, ' ')}</span>
+                      <span className="text-muted-foreground">{humanizeIdentifier(String(r.failure_type ?? ''))}</span>
                       <div className="flex gap-3 font-mono">
                         <span>ECE: {r.ece?.toFixed(3)}</span>
                         <span>Brier: {r.brier?.toFixed(3)}</span>

@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -90,7 +90,8 @@ from app.agents.orchestration_profiles import (
 from app.pipeline.orchestrator import RunOrchestrator
 from app.stats.advanced_analytics import calibration_payload, cooccurrence_payload, forecast_payload, inference_payload
 from app.runtime.providers import provider_capabilities, validate_provider
-from app.pipeline.reporting import generate_markdown_report
+from app.pipeline.reporting import generate_comprehensive_report
+from app.pipeline.reporting import get_report_download_path
 from app.pipeline.reporting import generate_narrative_summary, get_latest_narrative_summary
 from app.stats.risk import risk_cards
 from app.runtime.run_queue import RUN_QUEUE
@@ -1433,6 +1434,41 @@ def get_recent_run_events(
     return {"run_id": run_id, "events": events}
 
 
+@router.get("/events")
+def get_recent_events_legacy(
+    run_id: str | None = Query(default=None),
+    limit: int = Query(default=40, ge=1, le=1000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Compatibility endpoint for older callers that still query /v1/events."""
+    resolved_run_id = str(run_id or "").strip()
+    if not resolved_run_id:
+        latest_run = db.query(Run).order_by(Run.created_at.desc()).first()
+        if not latest_run:
+            return {"run_id": None, "events": []}
+        resolved_run_id = latest_run.id
+
+    rows = (
+        db.query(RunEvent)
+        .filter(RunEvent.run_id == resolved_run_id)
+        .order_by(RunEvent.id.desc())
+        .limit(limit)
+        .all()
+    )
+    events = [
+        {
+            "id": event.id,
+            "event_type": event.event_type,
+            "step": event.step,
+            "message": event.message,
+            "data": event.data,
+            "created_at": event.created_at.isoformat(),
+        }
+        for event in reversed(rows)
+    ]
+    return {"run_id": resolved_run_id, "events": events}
+
+
 @router.websocket("/runs/{run_id}/ws")
 async def stream_run_events_ws(websocket: WebSocket, run_id: str) -> None:
     settings = get_settings()
@@ -2116,10 +2152,31 @@ def compare(
 @router.post("/reports/{run_id}/generate", response_model=RunReportOut)
 def generate_report(run_id: str, db: Session = Depends(get_db)) -> RunReportOut:
     try:
-        markdown, path = generate_markdown_report(db, run_id)
+        payload = generate_comprehensive_report(db, run_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return RunReportOut(run_id=run_id, markdown=markdown, path=path)
+    return RunReportOut.model_validate(payload)
+
+
+@router.get("/reports/{run_id}/download")
+def download_report(
+    run_id: str,
+    format: str = Query(default="pdf"),
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    try:
+        path = get_report_download_path(db, run_id, format)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    ext = path.suffix.lower()
+    media_type = "application/octet-stream"
+    if ext == ".pdf":
+        media_type = "application/pdf"
+    elif ext == ".json":
+        media_type = "application/json"
+    elif ext in {".md", ".markdown"}:
+        media_type = "text/markdown"
+    return FileResponse(path=str(path), media_type=media_type, filename=path.name)
 
 
 @router.get("/runs/{run_id}/narrative-summary", response_model=NarrativeSummaryOut)

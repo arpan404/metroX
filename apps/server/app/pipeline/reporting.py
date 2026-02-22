@@ -1,13 +1,31 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.models import AttackCase, ConfigSnapshot, Detection, Execution, ReportArtifact, Run, ScoreCard
+from app.models import (
+    AttackCase,
+    ConfigSnapshot,
+    Detection,
+    DetectionVote,
+    Execution,
+    ExecutionCost,
+    ProbabilisticLabel,
+    ReportArtifact,
+    Run,
+    RunEvent,
+    ScoreCard,
+)
+from app.pipeline.costing import cost_timeseries, rebuild_run_cost_aggregate
 from app.runtime.adapters import TargetRequest, get_adapter
+from app.stats.advanced_analytics import calibration_payload, cooccurrence_payload, forecast_payload, inference_payload
+from app.stats.clustering import list_clusters
+from app.stats.drift import drift_payload
+from app.stats.features import feature_table_for_run
 from app.stats.risk import risk_cards
 
 
@@ -103,10 +121,11 @@ def _coerce_json(text: str) -> dict[str, Any] | None:
 
 def _fallback_narrative(payload: dict[str, Any]) -> dict[str, Any]:
     run_meta = payload["run"]
-    top_attack = payload["top_attack"]
-    risk_rows = payload["risk_rows"]
-    gate_reasons = payload["gate_reasons"]
-    score = payload["score"]
+    top_attacks = payload.get("top_attacks") if isinstance(payload.get("top_attacks"), list) else []
+    top_attack = top_attacks[0] if top_attacks else None
+    risk_rows = payload.get("risk_rows") if isinstance(payload.get("risk_rows"), list) else []
+    gate_reasons = payload.get("gate_reasons") if isinstance(payload.get("gate_reasons"), list) else []
+    score = float(payload.get("score", 0.0) or 0.0)
     risk_blurbs = [
         f"{row['failure_type'].replace('_', ' ')} ({row['risk_probability'] * 100:.1f}%)"
         for row in risk_rows[:3]
@@ -169,7 +188,7 @@ def _fallback_narrative(payload: dict[str, Any]) -> dict[str, Any]:
     ]
 
     return {
-        "run_id": run.id,
+        "run_id": str(run_meta.get("id", "")),
         "generated_by": "fallback",
         "model": "fallback",
         "provider": "fallback",
@@ -307,7 +326,14 @@ def generate_narrative_summary(
     generated_by = "llm"
     provider = "litellm"
     resolved_model = model
-    narrative, provider, resolved_model = _generate_llm_narrative(llm_input, model=model)
+    narrative: dict[str, Any] | None = None
+    try:
+        narrative, provider, resolved_model = _generate_llm_narrative(llm_input, model=model)
+    except Exception:
+        narrative = None
+        provider = "fallback"
+        resolved_model = "fallback"
+
     if not isinstance(narrative, dict):
         generated_by = "fallback"
         narrative = _fallback_narrative(llm_input)
@@ -353,3 +379,386 @@ def get_latest_narrative_summary(db: Session, run_id: str) -> dict[str, Any] | N
     if not isinstance(payload, dict):
         return None
     return payload
+
+
+def _build_execution_records(db: Session, run_id: str) -> list[dict[str, Any]]:
+    rows = (
+        db.query(Execution, AttackCase, Detection, ExecutionCost, ProbabilisticLabel)
+        .join(AttackCase, AttackCase.id == Execution.attack_case_id)
+        .outerjoin(Detection, Detection.execution_id == Execution.id)
+        .outerjoin(ExecutionCost, ExecutionCost.execution_id == Execution.id)
+        .outerjoin(ProbabilisticLabel, ProbabilisticLabel.execution_id == Execution.id)
+        .filter(Execution.run_id == run_id)
+        .all()
+    )
+    execution_ids = [execution.id for execution, *_ in rows]
+    votes_by_execution: dict[str, list[DetectionVote]] = {}
+    if execution_ids:
+        vote_rows = db.query(DetectionVote).filter(DetectionVote.execution_id.in_(execution_ids)).all()
+        for vote in vote_rows:
+            votes_by_execution.setdefault(vote.execution_id, []).append(vote)
+
+    output: list[dict[str, Any]] = []
+    for idx, (execution, attack_case, detection, execution_cost, label) in enumerate(rows, start=1):
+        failure_flags = detection.failure_flags if detection and isinstance(detection.failure_flags, dict) else {}
+        failed_keys = sorted([str(key) for key, value in failure_flags.items() if bool(value)])
+        tool_events = execution.tool_events if isinstance(execution.tool_events, list) else []
+        vote_rows = votes_by_execution.get(execution.id, [])
+        output.append(
+            {
+                "index": idx,
+                "execution_id": execution.id,
+                "attack_case_id": attack_case.id,
+                "attack_type": str(attack_case.attack_type or "unknown"),
+                "target_type": str(execution.target_type or ""),
+                "provider_name": str(execution.provider_name or "unknown"),
+                "model_resolved": str(execution.model_resolved or "unknown"),
+                "latency_ms": float(execution.latency_ms or 0.0),
+                "effective_cost_usd": float(execution_cost.effective_cost_usd if execution_cost else 0.0),
+                "provider_reported_cost_usd": float(execution_cost.provider_reported_cost_usd if execution_cost else 0.0),
+                "token_usage": execution.token_usage if isinstance(execution.token_usage, dict) else {},
+                "status": "failed" if failed_keys else "passed",
+                "failed_reasons": failed_keys,
+                "severity": str(detection.severity if detection else "low"),
+                "confidence": float(detection.confidence if detection else 0.0),
+                "disagreement_score": float(detection.disagreement_score if detection else 0.0),
+                "uncertainty": float(detection.uncertainty if detection else 0.0),
+                "failure_flags": failure_flags,
+                "detection_evidence": detection.evidence if detection and isinstance(detection.evidence, dict) else {},
+                "label": {
+                    "final_label": str(label.final_label or "") if label else "",
+                    "confidence": float(label.confidence if label else 0.0),
+                    "label_probs": label.label_probs if label and isinstance(label.label_probs, dict) else {},
+                    "method": str(label.method or "") if label else "",
+                },
+                "detector_votes": [
+                    {
+                        "vote_id": vote.id,
+                        "detector_name": str(vote.detector_name or "unknown"),
+                        "status": (
+                            "fail"
+                            if isinstance(vote.failure_flags, dict) and any(bool(v) for v in vote.failure_flags.values())
+                            else "pass"
+                        ),
+                        "failure_flags": vote.failure_flags if isinstance(vote.failure_flags, dict) else {},
+                        "confidence": float(vote.confidence or 0.0),
+                        "latency_ms": float(vote.latency_ms or 0.0),
+                        "evidence": vote.evidence if isinstance(vote.evidence, dict) else {},
+                        "created_at": vote.created_at.isoformat() if vote.created_at else None,
+                    }
+                    for vote in vote_rows
+                ],
+                "tool_calls": tool_events,
+                "retrieved_docs": execution.retrieved_docs if isinstance(execution.retrieved_docs, list) else [],
+                "prompt": str(execution.prompt or ""),
+                "response": str(execution.response or ""),
+                "raw_payload": execution.raw_payload if isinstance(execution.raw_payload, dict) else {},
+            }
+        )
+    return output
+
+
+def _collect_report_payload(db: Session, run_id: str) -> dict[str, Any]:
+    run = db.query(Run).filter(Run.id == run_id).one_or_none()
+    if not run:
+        raise ValueError("Run not found")
+    scorecard = db.query(ScoreCard).filter(ScoreCard.run_id == run_id).one_or_none()
+    if not scorecard:
+        raise ValueError("Scorecard not found")
+
+    events = (
+        db.query(RunEvent)
+        .filter(RunEvent.run_id == run_id)
+        .order_by(RunEvent.id.asc())
+        .all()
+    )
+    narrative = get_latest_narrative_summary(db, run_id)
+    if not narrative:
+        narrative = generate_narrative_summary(db, run_id, regenerate=False)
+
+    payload = {
+        "run": {
+            "id": run.id,
+            "status": run.status,
+            "preset": run.preset,
+            "mode": run.mode,
+            "strictness": run.strictness,
+            "thread_id": run.thread_id,
+            "total_attacks": int(run.total_attacks or 0),
+            "completed_attacks": int(run.completed_attacks or 0),
+            "budget_spent_usd": float(run.budget_spent_usd or 0.0),
+            "estimated_final_cost_usd": float(run.estimated_final_cost_usd or 0.0),
+            "summary_metrics": run.summary_metrics if isinstance(run.summary_metrics, dict) else {},
+            "gate_result": run.gate_result if isinstance(run.gate_result, dict) else {},
+            "cost_gate_result": run.cost_gate_result if isinstance(run.cost_gate_result, dict) else {},
+            "created_at": run.created_at.isoformat() if run.created_at else None,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "ended_at": run.ended_at.isoformat() if run.ended_at else None,
+        },
+        "scorecard": {
+            "metrics": scorecard.metrics if isinstance(scorecard.metrics, dict) else {},
+            "gates": scorecard.gates if isinstance(scorecard.gates, dict) else {},
+            "ci": scorecard.ci if isinstance(scorecard.ci, dict) else {},
+        },
+        "narrative_summary": narrative if isinstance(narrative, dict) else {},
+        "events": [
+            {
+                "id": int(event.id),
+                "event_type": str(event.event_type or ""),
+                "step": int(event.step or 0),
+                "message": str(event.message or ""),
+                "data": event.data if isinstance(event.data, dict) else {},
+                "created_at": event.created_at.isoformat() if event.created_at else None,
+            }
+            for event in events
+        ],
+        "executions": _build_execution_records(db, run_id),
+        "analytics": {
+            "risk_cards": risk_cards(db, run_id),
+            "drift": drift_payload(db, run_id),
+            "clusters": list_clusters(db, run_id),
+            "features": feature_table_for_run(db, run_id),
+            "inference": inference_payload(db, run_id),
+            "calibration": calibration_payload(db, run_id),
+            "cooccurrence_graph": cooccurrence_payload(db, run_id),
+            "forecast": forecast_payload(db, run_id),
+            "cost_summary": rebuild_run_cost_aggregate(db, run_id),
+            "cost_timeseries": cost_timeseries(db, run_id),
+        },
+    }
+    return payload
+
+
+def _to_ascii_text(text: str) -> str:
+    ascii_text = str(text or "").encode("ascii", errors="replace").decode("ascii")
+    return re.sub(r"\s+", " ", ascii_text).strip()
+
+
+def _render_report_markdown(payload: dict[str, Any]) -> str:
+    run_meta = payload.get("run", {})
+    scorecard = payload.get("scorecard", {})
+    narrative = payload.get("narrative_summary", {})
+    executions = payload.get("executions", [])
+    analytics = payload.get("analytics", {})
+    lines: list[str] = [
+        f"# MetroX Comprehensive Report: {run_meta.get('id', '')}",
+        "",
+        "## Run Summary",
+        f"- Status: {run_meta.get('status', '')}",
+        f"- Preset: {run_meta.get('preset', '')}",
+        f"- Mode: {run_meta.get('mode', '')}",
+        f"- Strictness: {run_meta.get('strictness', '')}",
+        f"- Completed Attacks: {run_meta.get('completed_attacks', 0)}/{run_meta.get('total_attacks', 0)}",
+        f"- Budget Spent (USD): {float(run_meta.get('budget_spent_usd', 0.0) or 0.0):.4f}",
+        "",
+        "## Executive Advisory",
+        f"- Summary: {_to_ascii_text(str(narrative.get('executive_summary', '')))}",
+        f"- Analysis: {_to_ascii_text(str(narrative.get('non_technical_explanation', '')))}",
+        "",
+        "## Scorecard",
+    ]
+    metrics = scorecard.get("metrics", {}) if isinstance(scorecard, dict) else {}
+    for key, value in (metrics.items() if isinstance(metrics, dict) else []):
+        lines.append(f"- {key}: {value}")
+    lines.extend(["", "## Forecasts (Predictions)"])
+    forecast_rows = (
+        analytics.get("forecast", {}).get("forecasts", [])
+        if isinstance(analytics.get("forecast", {}), dict)
+        else []
+    )
+    for row in forecast_rows:
+        if not isinstance(row, dict):
+            continue
+        lines.append(
+            f"- {row.get('metric_name', 'unknown')}: predicted={row.get('predicted_value', 0.0)} "
+            f"interval=[{row.get('low', 0.0)}, {row.get('high', 0.0)}] method={row.get('method', '')}"
+        )
+    lines.extend(["", "## Execution Records (Detailed)"])
+    for row in executions if isinstance(executions, list) else []:
+        if not isinstance(row, dict):
+            continue
+        lines.append(
+            f"### [{row.get('index', 0)}] execution={row.get('execution_id', '')} attack={row.get('attack_type', '')}"
+        )
+        lines.append(
+            f"- Status: {row.get('status', '')} severity={row.get('severity', '')} "
+            f"confidence={float(row.get('confidence', 0.0) or 0.0):.3f} "
+            f"disagreement={float(row.get('disagreement_score', 0.0) or 0.0):.3f} "
+            f"uncertainty={float(row.get('uncertainty', 0.0) or 0.0):.3f}"
+        )
+        lines.append(
+            f"- Runtime: provider={row.get('provider_name', '')} model={row.get('model_resolved', '')} "
+            f"latency_ms={float(row.get('latency_ms', 0.0) or 0.0):.2f} cost_usd={float(row.get('effective_cost_usd', 0.0) or 0.0):.6f}"
+        )
+        lines.append(f"- Failed Reasons: {', '.join(row.get('failed_reasons', [])) if row.get('failed_reasons') else 'none'}")
+        tool_calls = row.get("tool_calls", [])
+        lines.append(f"- Tool Calls: {len(tool_calls) if isinstance(tool_calls, list) else 0}")
+        for vote in row.get("detector_votes", []):
+            if not isinstance(vote, dict):
+                continue
+            lines.append(
+                f"  - Detector {vote.get('detector_name', 'unknown')}: status={vote.get('status', '')} "
+                f"confidence={float(vote.get('confidence', 0.0) or 0.0):.3f}"
+            )
+        lines.append(f"- Prompt: {_to_ascii_text(str(row.get('prompt', '')))[:800]}")
+        lines.append(f"- Response: {_to_ascii_text(str(row.get('response', '')))[:800]}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _pdf_escape(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _render_text_pdf(lines: list[str]) -> bytes:
+    page_width = 612
+    page_height = 792
+    left_margin = 36
+    top = 756
+    line_height = 12
+    lines_per_page = 58
+    pages: list[list[str]] = []
+    for i in range(0, len(lines), lines_per_page):
+        pages.append(lines[i : i + lines_per_page])
+    if not pages:
+        pages = [["MetroX report has no content."]]
+
+    objects: list[bytes] = []
+    objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
+    objects.append(b"<< /Type /Pages /Kids [] /Count 0 >>")
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>")
+
+    page_refs: list[int] = []
+    for page_lines in pages:
+        page_obj_id = len(objects) + 1
+        content_obj_id = page_obj_id + 1
+        page_refs.append(page_obj_id)
+        escaped_lines = [_pdf_escape(_to_ascii_text(line))[:160] for line in page_lines]
+        stream_lines = ["BT", "/F1 9 Tf", f"{left_margin} {top} Td"]
+        for idx, line in enumerate(escaped_lines):
+            if idx == 0:
+                stream_lines.append(f"({line}) Tj")
+            else:
+                stream_lines.append(f"0 -{line_height} Td ({line}) Tj")
+        stream_lines.append("ET")
+        stream_payload = "\n".join(stream_lines).encode("ascii", errors="replace")
+        content = (
+            f"<< /Length {len(stream_payload)} >>\nstream\n".encode("ascii")
+            + stream_payload
+            + b"\nendstream"
+        )
+        page = (
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_width} {page_height}] "
+            f"/Resources << /Font << /F1 3 0 R >> >> /Contents {content_obj_id} 0 R >>"
+        ).encode("ascii")
+        objects.append(page)
+        objects.append(content)
+
+    kids = " ".join(f"{obj_id} 0 R" for obj_id in page_refs)
+    objects[1] = f"<< /Type /Pages /Kids [{kids}] /Count {len(page_refs)} >>".encode("ascii")
+
+    output = bytearray(b"%PDF-1.4\n")
+    xref_offsets = [0]
+    for idx, obj in enumerate(objects, start=1):
+        xref_offsets.append(len(output))
+        output.extend(f"{idx} 0 obj\n".encode("ascii"))
+        output.extend(obj)
+        output.extend(b"\nendobj\n")
+    xref_start = len(output)
+    output.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+    output.extend(b"0000000000 65535 f \n")
+    for offset in xref_offsets[1:]:
+        output.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    output.extend(
+        (
+            f"trailer << /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{xref_start}\n%%EOF\n"
+        ).encode("ascii")
+    )
+    return bytes(output)
+
+
+def generate_comprehensive_report(db: Session, run_id: str) -> dict[str, Any]:
+    payload = _collect_report_payload(db, run_id)
+    markdown = _render_report_markdown(payload)
+    json_blob = json.dumps(payload, indent=2, ensure_ascii=True)
+
+    reports_dir = Path("reports")
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    md_path = reports_dir / f"run-{run_id}-comprehensive.md"
+    json_path = reports_dir / f"run-{run_id}-comprehensive.json"
+    pdf_path = reports_dir / f"run-{run_id}-comprehensive.pdf"
+    md_path.write_text(markdown, encoding="utf-8")
+    json_path.write_text(json_blob, encoding="utf-8")
+    pdf_lines = markdown.splitlines()
+    pdf_path.write_bytes(_render_text_pdf(pdf_lines))
+
+    artifacts = [
+        ReportArtifact(
+            run_id=run_id,
+            kind="comprehensive_markdown",
+            path=str(md_path),
+            meta={"bytes": len(markdown), "executions": len(payload.get("executions", []))},
+        ),
+        ReportArtifact(
+            run_id=run_id,
+            kind="comprehensive_json",
+            path=str(json_path),
+            meta={"bytes": len(json_blob), "executions": len(payload.get("executions", []))},
+        ),
+        ReportArtifact(
+            run_id=run_id,
+            kind="comprehensive_pdf",
+            path=str(pdf_path),
+            meta={"bytes": int(pdf_path.stat().st_size), "executions": len(payload.get("executions", []))},
+        ),
+    ]
+    for artifact in artifacts:
+        db.add(artifact)
+    db.commit()
+    return {
+        "run_id": run_id,
+        "markdown": markdown,
+        "path": str(md_path),
+        "pdf_path": str(pdf_path),
+        "json_path": str(json_path),
+        "execution_count": len(payload.get("executions", [])),
+        "event_count": len(payload.get("events", [])),
+    }
+
+
+def get_report_download_path(db: Session, run_id: str, fmt: str) -> Path:
+    run = db.query(Run).filter(Run.id == run_id).one_or_none()
+    if not run:
+        raise ValueError("Run not found")
+    kind_map = {
+        "pdf": "comprehensive_pdf",
+        "json": "comprehensive_json",
+        "md": "comprehensive_markdown",
+        "markdown": "comprehensive_markdown",
+    }
+    key = str(fmt or "pdf").strip().lower()
+    kind = kind_map.get(key)
+    if not kind:
+        raise ValueError("Unsupported report format")
+    artifact = (
+        db.query(ReportArtifact)
+        .filter(ReportArtifact.run_id == run_id, ReportArtifact.kind == kind)
+        .order_by(ReportArtifact.created_at.desc())
+        .first()
+    )
+    if not artifact:
+        result = generate_comprehensive_report(db, run_id)
+        generated_path = (
+            result.get("pdf_path")
+            if kind == "comprehensive_pdf"
+            else result.get("json_path")
+            if kind == "comprehensive_json"
+            else result.get("path")
+        )
+        path = Path(str(generated_path or "")).resolve()
+    else:
+        path = Path(str(artifact.path)).resolve()
+    if not path.exists():
+        raise ValueError("Report artifact file missing")
+    return path

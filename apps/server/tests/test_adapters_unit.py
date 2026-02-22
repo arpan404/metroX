@@ -415,6 +415,50 @@ class TestHttpTargetAdapter:
         resp = adapter.invoke(req)
         assert resp.provider_name == "my_provider"
 
+    def test_prefers_model_and_provider_from_response_payload(self, monkeypatch) -> None:
+        class MockResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {
+                    "response_text": "ok",
+                    "provider": "litellm",
+                    "model": "ollama_chat/gpt-oss:20b",
+                }
+
+        class MockClient:
+            def __init__(self, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+            def post(self, url, headers=None, json=None):
+                return MockResponse()
+
+        import httpx
+
+        monkeypatch.setattr(httpx, "Client", MockClient)
+
+        adapter = HttpTargetAdapter()
+        req = TargetRequest(
+            run_id="r-1",
+            attack_id="a-1",
+            prompt="probe",
+            target_type="agent_http",
+            endpoint="http://127.0.0.1:8001/agents/refund/chat",
+            model="gpt-4.1-mini",
+        )
+        resp = adapter.invoke(req)
+        assert resp.provider_name == "litellm"
+        assert resp.model_resolved == "ollama_chat/gpt-oss:20b"
+
     def test_agent_http_payload_contains_message_and_thread(self, monkeypatch) -> None:
         captured: dict[str, object] = {}
 

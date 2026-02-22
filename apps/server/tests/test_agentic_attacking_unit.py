@@ -524,6 +524,28 @@ class TestParseOrchestrationConfig:
         assert "reject low-signal or duplicate outputs" in config.coordinator_instructions
         assert "final_prompt" in config.coordinator_instructions
 
+    def test_roles_inherit_top_level_runtime_settings(self) -> None:
+        config = _parse_orchestration_config(
+            {
+                "runtime_provider": "openai",
+                "base_url": "https://example-compat.local/v1",
+                "api_key": "sk-test",
+                "roles": [
+                    {"name": "attacker", "enabled": True},
+                    {"name": "critic", "enabled": True, "runtime_provider": "litellm"},
+                ],
+            },
+            default_model="gpt-4.1-mini",
+        )
+        attacker = next(role for role in config.roles if role.name == "attacker")
+        critic = next(role for role in config.roles if role.name == "critic")
+        assert attacker.runtime_provider == "openai"
+        assert attacker.base_url == "https://example-compat.local/v1"
+        assert attacker.api_key == "sk-test"
+        assert critic.runtime_provider == "litellm"
+        assert critic.base_url == "https://example-compat.local/v1"
+        assert critic.api_key == "sk-test"
+
 
 # ---------------------------------------------------------------------------
 # _instruction_kwargs

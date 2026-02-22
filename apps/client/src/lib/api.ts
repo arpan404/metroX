@@ -31,6 +31,7 @@ import type {
   SecretKey,
   SecretKeyEvent,
   RiskCards,
+  RunReportPayload,
   RunTelemetryPayload,
   RunOut,
   RunListPayload,
@@ -519,9 +520,24 @@ export const api = {
   /* ---------------------------------------------------------------- */
 
   generateReport(runId: string) {
-    return request<{ run_id: string; markdown: string; path: string }>(`/v1/reports/${runId}/generate`, {
+    return request<RunReportPayload>(`/v1/reports/${runId}/generate`, {
       method: 'POST',
     })
+  },
+
+  async downloadReport(runId: string, format: 'pdf' | 'json' | 'md' = 'pdf') {
+    const params = new URLSearchParams({ format })
+    const response = await fetch(`${API_BASE}/v1/reports/${runId}/download?${params.toString()}`, {
+      method: 'GET',
+      headers: {
+        'X-API-Key': API_KEY,
+      },
+    })
+    if (!response.ok) {
+      const body = await response.text()
+      throw new Error(body || `Request failed with ${response.status}`)
+    }
+    return response.blob()
   },
 
   /* ---------------------------------------------------------------- */

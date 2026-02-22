@@ -23,7 +23,7 @@ from app.models import (
     ScoreCard,
     SecretAccessAudit,
 )
-from app.runtime.adapters import TargetRequest, get_adapter, normalize_target_type
+from app.runtime.adapters import TargetRequest, TargetResponse, get_adapter, normalize_target_type
 from app.stats.advanced_analytics import (
     build_cooccurrence_graph,
     build_forecast,
@@ -234,6 +234,64 @@ def _build_multi_turn_followup_prompt(
     )
 
 
+def _build_break_context_payload(
+    *,
+    run_id: str,
+    execution_id: str,
+    attack_case: AttackCase,
+    request: TargetRequest,
+    response: TargetResponse,
+    detection: Detection,
+    votes: list[DetectionVote],
+    raw_payload: dict[str, Any],
+    conversation_trace: list[dict[str, Any]],
+    token_usage: dict[str, float],
+    retrieved_docs: list[dict[str, Any]],
+    tool_events: list[dict[str, Any]],
+    analysis_response_text: str,
+) -> dict[str, Any]:
+    nested_raw = raw_payload.get("raw_payload") if isinstance(raw_payload.get("raw_payload"), dict) else {}
+    last_trace_thread = ""
+    if conversation_trace:
+        last_trace_thread = str(conversation_trace[-1].get("thread_id") or "").strip()
+    thread_id = str(
+        raw_payload.get("thread_id")
+        or nested_raw.get("thread_id")
+        or last_trace_thread
+        or ""
+    ).strip()
+    failed_detectors = [
+        str(vote.detector_name)
+        for vote in votes
+        if isinstance(vote.failure_flags, dict) and any(bool(flag) for flag in vote.failure_flags.values())
+    ]
+    return {
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "run_id": run_id,
+        "execution_id": execution_id,
+        "attack_case_id": attack_case.id,
+        "attack_type": attack_case.attack_type,
+        "attack_family": attack_case.family,
+        "target_type": request.target_type,
+        "provider_name": response.provider_name,
+        "model_resolved": response.model_resolved,
+        "thread_id": thread_id or None,
+        "failure_flags": dict(detection.failure_flags or {}),
+        "severity": str(detection.severity or "low"),
+        "confidence": float(detection.confidence or 0.0),
+        "disagreement_score": float(detection.disagreement_score or 0.0),
+        "uncertainty": float(detection.uncertainty or 0.0),
+        "failed_detectors": failed_detectors,
+        "prompt_excerpt": str(attack_case.prompt or "")[:1600],
+        "response_excerpt": str(analysis_response_text or "")[:2200],
+        "conversation_phases": len(conversation_trace) if conversation_trace else 1,
+        "conversation_trace": conversation_trace[-4:] if conversation_trace else [],
+        "token_usage": token_usage,
+        "retrieved_docs_count": len(retrieved_docs or []),
+        "tool_events_count": len(tool_events or []),
+    }
+
+
 class RunOrchestrator:
     def __init__(self, db: Session):
         self.db = db
@@ -284,6 +342,18 @@ class RunOrchestrator:
         orchestration = config.get("afk_orchestration")
         if not isinstance(orchestration, dict):
             return config
+        global_api_key_ref = str(orchestration.get("api_key_ref", "") or "").strip()
+        global_api_key = str(orchestration.get("api_key", "") or "").strip()
+        resolved_global_api_key: str | None = global_api_key or None
+        if global_api_key_ref and not resolved_global_api_key:
+            resolved_global_api_key = self._resolve_api_key_ref(
+                global_api_key_ref,
+                run_id,
+                source="orchestration_global",
+            )
+            if resolved_global_api_key:
+                orchestration["api_key"] = resolved_global_api_key
+
         roles = orchestration.get("roles")
         if not isinstance(roles, list):
             return config
@@ -305,6 +375,18 @@ class RunOrchestrator:
             resolved = resolved_cache.get(api_key_ref)
             if resolved:
                 role["api_key"] = resolved
+            elif resolved_global_api_key and not str(role.get("api_key", "") or "").strip():
+                role["api_key"] = resolved_global_api_key
+                role["api_key_ref"] = role.get("api_key_ref") or global_api_key_ref
+        if resolved_global_api_key:
+            for role in roles:
+                if not isinstance(role, dict):
+                    continue
+                if str(role.get("api_key", "") or "").strip():
+                    continue
+                role["api_key"] = resolved_global_api_key
+                if global_api_key_ref and not str(role.get("api_key_ref", "") or "").strip():
+                    role["api_key_ref"] = global_api_key_ref
         return config
 
     def execute_run(self, run_id: str) -> None:
@@ -641,7 +723,7 @@ class RunOrchestrator:
                         target_type=normalize_target_type(target_cfg.get("target_type", "managed_llm_runtime")),
                         endpoint=target_cfg.get("endpoint"),
                         auth_headers=target_cfg.get("auth_headers", {}),
-                        model=target_cfg.get("model", "gpt-4.1-mini"),
+                        model=target_cfg.get("model", "ollama_chat/gpt-oss:20b"),
                         extra={
                             **target_cfg.get("extra", {}),
                             "provider_name": target_cfg.get("provider_name", target_cfg.get("target_type", "unknown")),
@@ -810,6 +892,55 @@ class RunOrchestrator:
                 executions.append(execution)
                 processed_case_ids.add(case.id)
                 execution_failure = bool(any(bool(value) for value in (detection.failure_flags or {}).values()))
+                if execution_failure:
+                    break_context = _build_break_context_payload(
+                        run_id=run.id,
+                        execution_id=execution.id,
+                        attack_case=case,
+                        request=request,
+                        response=response,
+                        detection=detection,
+                        votes=votes,
+                        raw_payload=execution_raw_payload,
+                        conversation_trace=conversation_trace,
+                        token_usage=execution_token_usage,
+                        retrieved_docs=execution_docs,
+                        tool_events=execution_tool_events,
+                        analysis_response_text=analysis_response_text,
+                    )
+                    execution_raw_payload = dict(execution_raw_payload)
+                    execution_raw_payload["break_context"] = break_context
+                    execution.raw_payload = execution_raw_payload
+                    detection_evidence = dict(detection.evidence) if isinstance(detection.evidence, dict) else {}
+                    detection_evidence["break_context"] = {
+                        "captured_at": break_context.get("captured_at"),
+                        "attack_type": break_context.get("attack_type"),
+                        "thread_id": break_context.get("thread_id"),
+                        "failure_flags": break_context.get("failure_flags"),
+                        "failed_detectors": break_context.get("failed_detectors"),
+                        "prompt_excerpt": break_context.get("prompt_excerpt"),
+                        "response_excerpt": break_context.get("response_excerpt"),
+                        "conversation_phases": break_context.get("conversation_phases"),
+                    }
+                    detection.evidence = detection_evidence
+                    log_event(
+                        self.db,
+                        run_id=run.id,
+                        event_type="break_context_captured",
+                        step=2,
+                        message=f"Captured break context for {case.attack_type}",
+                        data={
+                            "execution_id": execution.id,
+                            "attack_case_id": case.id,
+                            "attack_type": case.attack_type,
+                            "severity": detection.severity,
+                            "confidence": detection.confidence,
+                            "thread_id": break_context.get("thread_id"),
+                            "failure_flags": detection.failure_flags,
+                            "failed_detectors": break_context.get("failed_detectors"),
+                        },
+                        auto_commit=False,
+                    )
                 severity = str(detection.severity or "low").lower()
                 if severity not in {"critical", "high", "medium", "low"}:
                     severity = "low"

@@ -150,6 +150,17 @@ const asRecord = (value: unknown): Record<string, unknown> => {
   return value as Record<string, unknown>
 }
 
+const normalizeForCompare = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(normalizeForCompare)
+  if (!value || typeof value !== 'object') return value
+  const obj = value as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const key of Object.keys(obj).sort()) {
+    out[key] = normalizeForCompare(obj[key])
+  }
+  return out
+}
+
 /* ------------------------------------------------------------------ */
 /*  ConfigPanel                                                       */
 /* ------------------------------------------------------------------ */
@@ -229,60 +240,6 @@ export function ConfigPanel() {
         : [],
     [sessionRunHistory, state.configProfileId],
   )
-  const profileConfigDirty = useMemo(() => {
-    if (!selectedProfile) return false
-    const selectedTarget = (selectedProfile.target_config ?? {}) as Record<string, unknown>
-    const selectedBenchmark = (selectedProfile.benchmark_config ?? {}) as Record<string, unknown>
-    const profileTaxonomy = Array.isArray(selectedBenchmark.taxonomy)
-      ? selectedBenchmark.taxonomy.map((entry) => String(entry).trim()).filter(Boolean)
-      : []
-    const sameTaxonomy =
-      taxonomy.length === profileTaxonomy.length
-      && taxonomy.every((entry) => profileTaxonomy.includes(entry))
-    const profileCuratedRatio = typeof selectedBenchmark.curated_ratio === 'number'
-      ? selectedBenchmark.curated_ratio
-      : Number(selectedBenchmark.curated_ratio ?? 0.6)
-    const profileSeed = typeof selectedBenchmark.seed === 'number'
-      ? selectedBenchmark.seed
-      : Number(selectedBenchmark.seed ?? 42)
-    const profileAgenticAttacking = Boolean(selectedBenchmark.agentic_attacking ?? true)
-    const profileMultiTurn = asRecord(selectedBenchmark.multi_turn)
-    const profilePhasePolicy = String(profileMultiTurn.phase_policy ?? '').trim().toLowerCase()
-    const profilePhaseValue = profilePhasePolicy === 'adaptive' || profilePhasePolicy === 'random'
-      ? profileMultiTurn.max_phases
-      : profileMultiTurn.phases
-    const profileConversationPhases =
-      typeof profilePhaseValue === 'number' && Number.isFinite(profilePhaseValue)
-        ? Math.max(1, Math.trunc(profilePhaseValue))
-        : 3
-    const profileContextWindowChars =
-      typeof profileMultiTurn.context_window_chars === 'number' && Number.isFinite(profileMultiTurn.context_window_chars)
-        ? Math.max(120, Math.trunc(profileMultiTurn.context_window_chars))
-        : 320
-
-    return !(
-      String(selectedTarget.agent_id ?? '') === agentId
-      && String(selectedTarget.agent_name ?? '') === agentName
-      && String(selectedTarget.agent_description ?? '') === agentDescription
-      && sameTaxonomy
-      && Math.abs(Number(profileCuratedRatio) - curatedRatio) < 0.001
-      && Number(profileSeed) === seed
-      && profileAgenticAttacking === agenticAttacking
-      && profileConversationPhases === conversationPhases
-      && profileContextWindowChars === contextWindowChars
-    )
-  }, [
-    selectedProfile,
-    taxonomy,
-    agentId,
-    agentName,
-    agentDescription,
-    curatedRatio,
-    seed,
-    agenticAttacking,
-    conversationPhases,
-    contextWindowChars,
-  ])
 
   const studioOrchestration = useMemo(() => {
     const baseModel = (agenticModel || model || STUDIO_BASE_MODEL).trim() || STUDIO_BASE_MODEL
@@ -340,6 +297,94 @@ export function ConfigPanel() {
       graph: { nodes: graphNodes, edges: graphEdges },
     }
   }, [agenticModel, model, state.studioNodes, state.studioEdges])
+
+  const profileConfigDirty = useMemo(() => {
+    if (!selectedProfile) return false
+    const selectedTarget = (selectedProfile.target_config ?? {}) as Record<string, unknown>
+    const selectedBenchmark = (selectedProfile.benchmark_config ?? {}) as Record<string, unknown>
+    const selectedOrchestration = asRecord(selectedBenchmark.afk_orchestration)
+    const profileTaxonomy = Array.isArray(selectedBenchmark.taxonomy)
+      ? selectedBenchmark.taxonomy.map((entry) => String(entry).trim()).filter(Boolean)
+      : []
+    const sameTaxonomy =
+      taxonomy.length === profileTaxonomy.length
+      && taxonomy.every((entry) => profileTaxonomy.includes(entry))
+    const profileCuratedRatio = typeof selectedBenchmark.curated_ratio === 'number'
+      ? selectedBenchmark.curated_ratio
+      : Number(selectedBenchmark.curated_ratio ?? 0.6)
+    const profileSeed = typeof selectedBenchmark.seed === 'number'
+      ? selectedBenchmark.seed
+      : Number(selectedBenchmark.seed ?? 42)
+    const profileAgenticAttacking = Boolean(selectedBenchmark.agentic_attacking ?? true)
+    const profileMultiTurn = asRecord(selectedBenchmark.multi_turn)
+    const profilePhasePolicy = String(profileMultiTurn.phase_policy ?? '').trim().toLowerCase()
+    const profilePhaseValue = profilePhasePolicy === 'adaptive' || profilePhasePolicy === 'random'
+      ? profileMultiTurn.max_phases
+      : profileMultiTurn.phases
+    const profileConversationPhases =
+      typeof profilePhaseValue === 'number' && Number.isFinite(profilePhaseValue)
+        ? Math.max(1, Math.trunc(profilePhaseValue))
+        : 3
+    const profileContextWindowChars =
+      typeof profileMultiTurn.context_window_chars === 'number' && Number.isFinite(profileMultiTurn.context_window_chars)
+        ? Math.max(120, Math.trunc(profileMultiTurn.context_window_chars))
+        : 320
+    const profileOrchestrationSnapshot = normalizeForCompare({
+      model: typeof selectedOrchestration.model === 'string' ? selectedOrchestration.model : '',
+      join_policy: typeof selectedOrchestration.join_policy === 'string' ? selectedOrchestration.join_policy : 'all_required',
+      subagent_router_strategy:
+        typeof selectedOrchestration.subagent_router_strategy === 'string'
+          ? selectedOrchestration.subagent_router_strategy
+          : 'taxonomy',
+      max_concurrent_subagents:
+        typeof selectedOrchestration.max_concurrent_subagents === 'number'
+          ? Math.max(1, Math.trunc(selectedOrchestration.max_concurrent_subagents))
+          : 3,
+      execution_order: Array.isArray(selectedOrchestration.execution_order)
+        ? selectedOrchestration.execution_order.map((value) => String(value))
+        : [],
+      roles: Array.isArray(selectedOrchestration.roles) ? selectedOrchestration.roles : [],
+      graph: asRecord(selectedOrchestration.graph),
+    })
+    const currentOrchestrationSnapshot = normalizeForCompare({
+      model: studioOrchestration.baseModel,
+      join_policy: joinPolicy,
+      subagent_router_strategy: routerStrategy,
+      max_concurrent_subagents: Math.max(1, Math.trunc(maxSubagents)),
+      execution_order: studioOrchestration.executionOrder,
+      roles: studioOrchestration.roles,
+      graph: studioOrchestration.graph,
+    })
+    const orchestrationDirty = JSON.stringify(profileOrchestrationSnapshot) !== JSON.stringify(currentOrchestrationSnapshot)
+
+    return !(
+      String(selectedTarget.agent_id ?? '') === agentId
+      && String(selectedTarget.agent_name ?? '') === agentName
+      && String(selectedTarget.agent_description ?? '') === agentDescription
+      && sameTaxonomy
+      && Math.abs(Number(profileCuratedRatio) - curatedRatio) < 0.001
+      && Number(profileSeed) === seed
+      && profileAgenticAttacking === agenticAttacking
+      && profileConversationPhases === conversationPhases
+      && profileContextWindowChars === contextWindowChars
+      && !orchestrationDirty
+    )
+  }, [
+    selectedProfile,
+    taxonomy,
+    agentId,
+    agentName,
+    agentDescription,
+    curatedRatio,
+    seed,
+    agenticAttacking,
+    conversationPhases,
+    contextWindowChars,
+    studioOrchestration,
+    joinPolicy,
+    routerStrategy,
+    maxSubagents,
+  ])
 
   const hydrateStudioGraphFromOrchestration = (orchestrationConfig: Record<string, unknown>, baseModel: string) => {
     const rolesRaw = Array.isArray(orchestrationConfig.roles) ? orchestrationConfig.roles : []

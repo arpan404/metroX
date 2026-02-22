@@ -95,6 +95,26 @@ class HttpTargetAdapter(TargetAdapter):
                 normalized_payload["raw_payload"] = {"thread_id": resolved_thread_id}
 
         latency_ms = (perf_counter() - start) * 1000
+        response_provider = (
+            normalized_payload.get("provider_name")
+            or normalized_payload.get("provider")
+            or (
+                normalized_payload.get("raw_payload", {}).get("provider_name")
+                if isinstance(normalized_payload.get("raw_payload"), dict)
+                else None
+            )
+            or request.extra.get("provider_name", "http")
+        )
+        response_model = (
+            normalized_payload.get("model_resolved")
+            or normalized_payload.get("model")
+            or (
+                normalized_payload.get("raw_payload", {}).get("model_resolved")
+                if isinstance(normalized_payload.get("raw_payload"), dict)
+                else None
+            )
+            or request.model
+        )
         return TargetResponse(
             response_text=normalized_payload.get("response_text", ""),
             retrieved_docs=normalized_payload.get("retrieved_docs", []),
@@ -102,8 +122,8 @@ class HttpTargetAdapter(TargetAdapter):
             latency_ms=normalized_payload.get("latency_ms", latency_ms),
             token_usage=normalized_payload.get("token_usage", {}),
             raw_payload=normalized_payload,
-            provider_name=str(normalized_payload.get("provider_name", request.extra.get("provider_name", "http"))),
-            model_resolved=str(normalized_payload.get("model_resolved", request.model)),
+            provider_name=str(response_provider),
+            model_resolved=str(response_model),
         )
 
 

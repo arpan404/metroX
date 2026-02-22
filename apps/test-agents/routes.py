@@ -82,5 +82,7 @@ async def chat(agent_name: str, req: ChatRequest):
         response_text=result.final_text,
         thread_id=thread_id,
         run_id=result.run_id,
+        provider_name="litellm",
+        model_resolved=str(getattr(agent, "model", "") or ""),
         tool_events=tool_events,
     )

@@ -410,6 +410,10 @@ class RunReportOut(BaseModel):
     run_id: str
     markdown: str
     path: str
+    pdf_path: str | None = None
+    json_path: str | None = None
+    execution_count: int | None = None
+    event_count: int | None = None
 
 
 class NarrativeSummaryOut(BaseModel):

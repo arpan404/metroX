@@ -22,4 +22,6 @@ class ChatResponse(BaseModel):
     response_text: str
     thread_id: str
     run_id: str
+    provider_name: str = "litellm"
+    model_resolved: str = ""
     tool_events: list[dict[str, Any]] = Field(default_factory=list)

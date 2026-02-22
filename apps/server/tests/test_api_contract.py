@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Generator
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -9,6 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 import app.api.v1 as v1
+import app.pipeline.reporting as reporting
 from app.api.v1 import router
 from app.db import get_db
 from app.models import (
@@ -330,6 +332,18 @@ def test_create_run_contract(api_client) -> None:
     assert payload["status"] == "queued"
 
 
+def test_legacy_events_endpoint_returns_recent_events(api_client) -> None:
+    client, _ = api_client
+    session_id, profile_id = _create_session_and_profile(client)
+    run_id = _create_run(client, session_id, profile_id)
+
+    recent = client.get("/v1/events?limit=40", headers=_headers())
+    assert recent.status_code == 200
+    payload = recent.json()
+    assert payload["run_id"] == run_id
+    assert isinstance(payload["events"], list)
+
+
 def test_queue_center_controls_contract(api_client, monkeypatch) -> None:
     client, _ = api_client
     session_id, profile_id = _create_session_and_profile(client)
@@ -597,6 +611,64 @@ def test_provider_and_pricing_contract(api_client) -> None:
     got = client.get(f"/v1/pricing-profiles/{profile_id}", headers=_headers())
     assert got.status_code == 200
     assert got.json()["id"] == profile_id
+
+
+def test_narrative_summary_endpoint_falls_back_when_llm_generation_throws(api_client, monkeypatch) -> None:
+    client, _ = api_client
+    session_id, profile_id = _create_session_and_profile(client)
+    run_id = _create_run(client, session_id, profile_id)
+
+    def _explode(*_args, **_kwargs):
+        raise RuntimeError("llm unavailable")
+
+    monkeypatch.setattr(reporting, "_generate_llm_narrative", _explode)
+
+    generated = client.post(f"/v1/runs/{run_id}/narrative-summary", headers=_headers())
+    assert generated.status_code == 200
+    payload = generated.json()
+    assert payload["run_id"] == run_id
+    assert payload["generated_by"] == "fallback"
+    assert isinstance(payload["executive_summary"], str)
+    assert payload["executive_summary"]
+
+    cached = client.get(f"/v1/runs/{run_id}/narrative-summary", headers=_headers())
+    assert cached.status_code == 200
+    assert cached.json()["run_id"] == run_id
+
+
+def test_comprehensive_report_generate_and_download_contract(api_client, monkeypatch, tmp_path: Path) -> None:
+    client, _ = api_client
+    session_id, profile_id = _create_session_and_profile(client)
+    run_id = _create_run(client, session_id, profile_id)
+
+    pdf_path = tmp_path / f"run-{run_id}-comprehensive.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n%%EOF\n")
+
+    def _fake_generate(_db, _run_id: str):
+        return {
+            "run_id": _run_id,
+            "markdown": "# Report",
+            "path": str(tmp_path / "report.md"),
+            "pdf_path": str(pdf_path),
+            "json_path": str(tmp_path / "report.json"),
+            "execution_count": 10,
+            "event_count": 5,
+        }
+
+    monkeypatch.setattr(v1, "generate_comprehensive_report", _fake_generate)
+    monkeypatch.setattr(v1, "get_report_download_path", lambda _db, _run_id, _fmt: pdf_path)
+
+    generated = client.post(f"/v1/reports/{run_id}/generate", headers=_headers())
+    assert generated.status_code == 200
+    payload = generated.json()
+    assert payload["run_id"] == run_id
+    assert payload["pdf_path"].endswith(".pdf")
+    assert payload["execution_count"] == 10
+
+    downloaded = client.get(f"/v1/reports/{run_id}/download?format=pdf", headers=_headers())
+    assert downloaded.status_code == 200
+    assert downloaded.headers["content-type"].startswith("application/pdf")
+    assert downloaded.content.startswith(b"%PDF")
 
 
 def test_provider_credential_lifecycle(api_client) -> None:

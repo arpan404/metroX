@@ -35,13 +35,37 @@ import { useWorkspace } from '@/stores/workspace-store'
 import { toast } from 'sonner'
 import { EmptyState, MetricRow, PanelSection, PanelShell } from './PanelShell'
 
+const DETECTOR_LABELS: Record<string, string> = {
+  afk_judge: 'AI Tested',
+  retrieval_consistency: 'Retrieval Consistency',
+  rule: 'Rule-Based',
+}
+
 function hasFailure(flags: Record<string, boolean> | undefined): boolean {
   return Object.values(flags ?? {}).some(Boolean)
 }
 
+function detectorLabel(name: string): string {
+  const key = String(name || '').trim()
+  if (!key) return 'Unknown'
+  return DETECTOR_LABELS[key] ?? key.replace(/_/g, ' ')
+}
+
+function humanizeIdentifier(value: string): string {
+  const text = String(value || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+  if (!text) return 'Unknown'
+  return text
+    .split(/\s+/)
+    .map((word) => (word.length <= 3 ? word.toUpperCase() : `${word.charAt(0).toUpperCase()}${word.slice(1)}`))
+    .join(' ')
+}
+
 function failureLabel(flags: Record<string, boolean> | undefined): string {
   const found = Object.entries(flags ?? {}).find(([, value]) => Boolean(value))
-  return found ? found[0].replace(/_/g, ' ') : 'none'
+  return found ? humanizeIdentifier(found[0]) : 'none'
 }
 
 export function AttackDetailPanel() {
@@ -115,6 +139,7 @@ export function AttackDetailPanel() {
     () =>
       (summary?.detectors ?? []).map((detector) => ({
         detector_name: detector.detector_name,
+        detector_label: detectorLabel(detector.detector_name),
         fail_rate_pct: Number((detector.fail_rate * 100).toFixed(2)),
         votes: detector.votes,
       })),
@@ -147,7 +172,7 @@ export function AttackDetailPanel() {
       open={isOpen}
       onClose={() => dispatch({ type: 'CLOSE_PANEL' })}
       position="left"
-      title={attackData ? `Attack: ${attackData.attack_type}` : 'Attack Detail'}
+      title={attackData ? `Attack: ${humanizeIdentifier(attackData.attack_type)}` : 'Attack Detail'}
       icon={<Target className="h-4 w-4" />}
       width="w-[420px] lg:w-[500px]"
     >
@@ -174,7 +199,7 @@ export function AttackDetailPanel() {
               }
             >
               <div className="space-y-0.5">
-                <MetricRow label="Attack Type" value={attackData.attack_type} />
+                <MetricRow label="Attack Type" value={humanizeIdentifier(attackData.attack_type)} />
                 <MetricRow label="Total Attempts" value={attackData.total} />
                 <MetricRow label="Blocked (Pass)" value={attackData.failure} color="text-emerald-400" />
                 <MetricRow label="Compromised (Fail)" value={attackData.success} color="text-red-400" />
@@ -256,7 +281,7 @@ export function AttackDetailPanel() {
                     <ResponsiveContainer width="100%" height="100%">
                       <ReBarChart data={detectorChartData} margin={{ left: 0, right: 12, top: 8, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
-                        <XAxis dataKey="detector_name" tick={{ fontSize: 10, fill: 'currentColor' }} tickLine={false} axisLine={false} />
+                        <XAxis dataKey="detector_label" tick={{ fontSize: 10, fill: 'currentColor' }} tickLine={false} axisLine={false} />
                         <YAxis tick={{ fontSize: 10, fill: 'currentColor' }} tickLine={false} axisLine={false} />
                         <ReTooltip formatter={(value: number) => `${value.toFixed(2)}%`} />
                         <Bar dataKey="fail_rate_pct" fill={colors.chart3} radius={[6, 6, 0, 0]} />
@@ -278,7 +303,7 @@ export function AttackDetailPanel() {
                       <TableBody>
                         {(summary?.detectors ?? []).map((detector) => (
                           <TableRow key={detector.detector_name}>
-                            <TableCell className="py-1 font-mono text-[10px]">{detector.detector_name}</TableCell>
+                            <TableCell className="py-1 text-[10px]">{detectorLabel(detector.detector_name)}</TableCell>
                             <TableCell className="py-1 text-right font-mono text-[10px]">{detector.votes}</TableCell>
                             <TableCell className="py-1 text-right font-mono text-[10px]">
                               {(detector.fail_rate * 100).toFixed(2)}%
@@ -327,7 +352,7 @@ export function AttackDetailPanel() {
                         const failed = hasFailure(vote.failure_flags)
                         return (
                           <TableRow key={vote.id}>
-                            <TableCell className="py-1 font-mono text-[10px]">{vote.detector_name}</TableCell>
+                            <TableCell className="py-1 text-[10px]">{detectorLabel(vote.detector_name)}</TableCell>
                             <TableCell className="py-1 text-[10px]">
                               <Badge variant={failed ? 'destructive' : 'default'} className="h-4 text-[9px]">
                                 {failed ? `fail (${failureLabel(vote.failure_flags)})` : 'pass'}
@@ -424,7 +449,7 @@ export function AttackDetailPanel() {
             <PanelSection title="Node Telemetry" description="Latency, cost, and policy counters for this attack type">
               {telemetryRow ? (
                 <div className="space-y-0.5">
-                  <MetricRow label="Attack Type" value={telemetryRow.attack_type} />
+                  <MetricRow label="Attack Type" value={humanizeIdentifier(telemetryRow.attack_type)} />
                   <MetricRow label="Executions" value={telemetryRow.total} />
                   <MetricRow label="Blocked (Pass)" value={telemetryRow.failure} color="text-emerald-400" />
                   <MetricRow label="Compromised (Fail)" value={telemetryRow.success} color="text-red-400" />

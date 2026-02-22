@@ -227,6 +227,7 @@ class RuntimeConfig(BaseModel):
     preset: Literal["quick", "standard", "deep"] = "standard"
     max_concurrency: int = 8
     budget_usd: float = 5.0
+    attack_count_override: int | None = None
     cost_tracking_enabled: bool = True
     cost_gate_usd: float | None = None
     abort_on_cost_breach: bool = False

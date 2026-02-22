@@ -137,6 +137,12 @@ const PRESET_ATTACK_ESTIMATE: Record<string, number> = {
   deep: 12000,
 }
 
+const PRESET_RUNTIME_DEFAULTS: Record<string, { budgetUsd: number; maxConcurrency: number }> = {
+  quick: { budgetUsd: 1, maxConcurrency: 4 },
+  standard: { budgetUsd: 5, maxConcurrency: 8 },
+  deep: { budgetUsd: 20, maxConcurrency: 16 },
+}
+
 const DEFAULT_STUDIO_POSITIONS = createStudioMapFromTemplate('fraud_triage').nodes.reduce<Record<string, { x: number; y: number }>>(
   (acc, node) => {
     acc[String(node.data.role)] = { x: node.position.x, y: node.position.y }
@@ -216,6 +222,9 @@ export function ConfigPanel() {
   const [mode, setMode] = useState('deterministic_ci')
   const [budgetUsd, setBudgetUsd] = useState(5)
   const [maxConcurrency, setMaxConcurrency] = useState(8)
+  const [manualRunSizeOverride, setManualRunSizeOverride] = useState(false)
+  const [runSizeOverride, setRunSizeOverride] = useState(PRESET_ATTACK_ESTIMATE.quick)
+  const [manualRuntimeOverride, setManualRuntimeOverride] = useState(false)
   const [baselineRunId, setBaselineRunId] = useState(state.baselineRunId ?? '')
 
   const [isLaunching, setIsLaunching] = useState(false)
@@ -546,12 +555,28 @@ export function ConfigPanel() {
     if (typeof runtimeConfig.preset === 'string' && PRESET_OPTIONS.some((row) => row.value === runtimeConfig.preset)) {
       setPreset(runtimeConfig.preset)
     }
-    if (typeof runtimeConfig.max_concurrency === 'number' && Number.isFinite(runtimeConfig.max_concurrency)) {
-      setMaxConcurrency(Math.max(1, Math.trunc(runtimeConfig.max_concurrency)))
-    }
-    if (typeof runtimeConfig.budget_usd === 'number' && Number.isFinite(runtimeConfig.budget_usd)) {
-      setBudgetUsd(Math.max(0, runtimeConfig.budget_usd))
-    }
+    const runtimePreset = typeof runtimeConfig.preset === 'string' ? runtimeConfig.preset : 'standard'
+    const presetDefaults = PRESET_RUNTIME_DEFAULTS[runtimePreset] ?? PRESET_RUNTIME_DEFAULTS.standard
+    const runtimeRunSizeOverride =
+      typeof runtimeConfig.attack_count_override === 'number' && Number.isFinite(runtimeConfig.attack_count_override)
+        ? Math.max(1, Math.trunc(runtimeConfig.attack_count_override))
+        : null
+    const nextMaxConcurrency =
+      typeof runtimeConfig.max_concurrency === 'number' && Number.isFinite(runtimeConfig.max_concurrency)
+        ? Math.max(1, Math.trunc(runtimeConfig.max_concurrency))
+        : presetDefaults.maxConcurrency
+    const nextBudgetUsd =
+      typeof runtimeConfig.budget_usd === 'number' && Number.isFinite(runtimeConfig.budget_usd)
+        ? Math.max(0, runtimeConfig.budget_usd)
+        : presetDefaults.budgetUsd
+    setMaxConcurrency(nextMaxConcurrency)
+    setBudgetUsd(nextBudgetUsd)
+    setManualRuntimeOverride(
+      Math.abs(nextBudgetUsd - presetDefaults.budgetUsd) > 0.001
+      || nextMaxConcurrency !== presetDefaults.maxConcurrency,
+    )
+    setManualRunSizeOverride(runtimeRunSizeOverride !== null)
+    setRunSizeOverride(runtimeRunSizeOverride ?? (PRESET_ATTACK_ESTIMATE[runtimePreset] ?? PRESET_ATTACK_ESTIMATE.standard))
     if (typeof runtimeConfig.live_mode === 'boolean') {
       setMode(runtimeConfig.live_mode ? 'live_nightly' : 'deterministic_ci')
     }
@@ -722,6 +747,13 @@ export function ConfigPanel() {
     setMode(t.config.mode)
     setBudgetUsd(t.config.budgetUsd)
     setMaxConcurrency(t.config.maxConcurrency)
+    setManualRunSizeOverride(false)
+    setRunSizeOverride(PRESET_ATTACK_ESTIMATE[t.config.preset] ?? PRESET_ATTACK_ESTIMATE.standard)
+    const presetDefaults = PRESET_RUNTIME_DEFAULTS[t.config.preset] ?? PRESET_RUNTIME_DEFAULTS.standard
+    setManualRuntimeOverride(
+      Math.abs(t.config.budgetUsd - presetDefaults.budgetUsd) > 0.001
+      || t.config.maxConcurrency !== presetDefaults.maxConcurrency,
+    )
     setLaunchProfileMode('new')
     setLastLoadedProfileId(null)
     const matchingScenario = SCENARIO_PRESETS.find((presetOption) => {
@@ -793,6 +825,13 @@ export function ConfigPanel() {
     applyTemplate(starter)
     setTemplateBootstrapped(true)
   }, [templateBootstrapped, state.configProfileId])
+
+  useEffect(() => {
+    if (manualRuntimeOverride) return
+    const defaults = PRESET_RUNTIME_DEFAULTS[preset] ?? PRESET_RUNTIME_DEFAULTS.standard
+    setBudgetUsd(defaults.budgetUsd)
+    setMaxConcurrency(defaults.maxConcurrency)
+  }, [preset, manualRuntimeOverride])
 
   const helpLabel = (label: string, help: string) => (
     <span className="inline-flex items-center gap-1">
@@ -947,6 +986,7 @@ export function ConfigPanel() {
       preset,
       max_concurrency: maxConcurrency,
       budget_usd: budgetUsd,
+      attack_count_override: manualRunSizeOverride ? Math.max(1, Math.trunc(runSizeOverride)) : null,
       cost_tracking_enabled: true,
       cost_gate_usd: null,
       abort_on_cost_breach: false,
@@ -1045,7 +1085,9 @@ export function ConfigPanel() {
     resolvedAgentUrl.trim().length > 0,
   ]
   const readinessPercent = (readiness.filter(Boolean).length / readiness.length) * 100
-  const estimatedAttacks = PRESET_ATTACK_ESTIMATE[preset] ?? PRESET_ATTACK_ESTIMATE.quick
+  const estimatedAttacks = manualRunSizeOverride
+    ? Math.max(1, Math.trunc(runSizeOverride))
+    : (PRESET_ATTACK_ESTIMATE[preset] ?? PRESET_ATTACK_ESTIMATE.quick)
 
   const toggleChip = (arr: string[], item: string, setter: (v: string[]) => void) => {
     const next = arr.includes(item) ? arr.filter((x) => x !== item) : [...arr, item]
@@ -1445,13 +1487,58 @@ export function ConfigPanel() {
         </FieldGroup>
 
         <div className="grid grid-cols-2 gap-2">
-          <FieldGroup label={helpLabel('Budget ($)', 'Soft budget used for cost tracking and score gates.')}>
-            <Input type="number" value={budgetUsd} onChange={(e) => setBudgetUsd(+e.target.value)} min={0} step={1} className="h-7 text-xs font-mono" />
+          <FieldGroup label={helpLabel('Manual Run Size Override', 'Set a custom attack count instead of preset defaults.')} horizontal>
+            <Switch
+              checked={manualRunSizeOverride}
+              onCheckedChange={(checked) => {
+                setManualRunSizeOverride(checked)
+                if (checked) {
+                  setRunSizeOverride(PRESET_ATTACK_ESTIMATE[preset] ?? PRESET_ATTACK_ESTIMATE.standard)
+                }
+              }}
+            />
           </FieldGroup>
-          <FieldGroup label={helpLabel('Parallel Jobs', 'Max parallel executions during the run.')}>
-            <Input type="number" value={maxConcurrency} onChange={(e) => setMaxConcurrency(+e.target.value)} min={1} max={64} className="h-7 text-xs font-mono" />
+          <FieldGroup label={helpLabel('Run Cases', 'Total generated attack cases for this run.')} hint="attack count">
+            <Input
+              type="number"
+              value={runSizeOverride}
+              onChange={(e) => setRunSizeOverride(Math.max(1, Math.trunc(Number(e.target.value) || 1)))}
+              min={1}
+              step={1}
+              disabled={!manualRunSizeOverride}
+              className="h-7 text-xs font-mono disabled:opacity-70"
+            />
           </FieldGroup>
         </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <FieldGroup label={helpLabel('Budget ($)', 'Soft budget used for cost tracking and score gates.')}>
+            <Input
+              type="number"
+              value={budgetUsd}
+              onChange={(e) => setBudgetUsd(+e.target.value)}
+              min={0}
+              step={1}
+              disabled={!manualRuntimeOverride}
+              className="h-7 text-xs font-mono disabled:opacity-70"
+            />
+          </FieldGroup>
+          <FieldGroup label={helpLabel('Parallel Jobs', 'Max parallel executions during the run.')}>
+            <Input
+              type="number"
+              value={maxConcurrency}
+              onChange={(e) => setMaxConcurrency(+e.target.value)}
+              min={1}
+              max={64}
+              disabled={!manualRuntimeOverride}
+              className="h-7 text-xs font-mono disabled:opacity-70"
+            />
+          </FieldGroup>
+        </div>
+
+        <FieldGroup label={helpLabel('Manual Value Override', 'Enable custom runtime values instead of preset defaults.')} horizontal>
+          <Switch checked={manualRuntimeOverride} onCheckedChange={setManualRuntimeOverride} />
+        </FieldGroup>
 
         <FieldGroup label={helpLabel('Manual Review Queue', 'Send uncertain or disputed cases for human review.')} horizontal>
           <Switch checked={activeAdjudication} onCheckedChange={setActiveAdjudication} />

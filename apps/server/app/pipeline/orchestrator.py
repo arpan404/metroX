@@ -411,6 +411,7 @@ class RunOrchestrator:
         )
         processed_case_ids = {attack_case_id for _, attack_case_id in existing_executions}
         benchmark_cfg_base = profile.benchmark_config if isinstance(profile.benchmark_config, dict) else {}
+        runtime_cfg = profile.runtime_config if isinstance(profile.runtime_config, dict) else {}
         orchestration_cfg = (
             benchmark_cfg_base.get("afk_orchestration")
             if isinstance(benchmark_cfg_base.get("afk_orchestration"), dict)
@@ -521,7 +522,7 @@ class RunOrchestrator:
             missing_coverage = _missing_taxonomy_coverage(attack_cases, expected_taxonomy)
             if attack_cases and missing_coverage and not processed_case_ids:
                 # Safety net for stale/partial benchmark snapshots: rebuild before first execution.
-                attack_count = self._attack_count(run.preset)
+                attack_count = self._attack_count(run.preset, runtime_cfg)
                 benchmark_cfg = self._resolve_orchestration_credentials(profile.benchmark_config, run.id)
                 benchmark_cfg["target_type"] = normalized_target_type
                 benchmark_cfg["target_under_test"] = {
@@ -565,7 +566,7 @@ class RunOrchestrator:
                 )
 
             if not attack_cases:
-                attack_count = self._attack_count(run.preset)
+                attack_count = self._attack_count(run.preset, runtime_cfg)
                 benchmark_cfg = self._resolve_orchestration_credentials(profile.benchmark_config, run.id)
                 benchmark_cfg["target_type"] = normalized_target_type
                 benchmark_cfg["target_under_test"] = {
@@ -605,7 +606,6 @@ class RunOrchestrator:
 
             resolved_api_key = self._resolve_credential(target_cfg, run.id)
             adapter = get_adapter(target_cfg.get("target_type", "managed_llm_runtime"))
-            runtime_cfg = profile.runtime_config or {}
             budget_usd = float(runtime_cfg.get("budget_usd", 0.0) or 0.0)
             abort_on_cost_breach = bool(runtime_cfg.get("abort_on_cost_breach", False))
             checkpoint_interval = max(1, int(runtime_cfg.get("batch_size", self.settings.run_batch_size)))
@@ -1172,7 +1172,13 @@ class RunOrchestrator:
                 self.db.rollback()
             raise exc
 
-    def _attack_count(self, preset: str) -> int:
+    def _attack_count(self, preset: str, runtime_cfg: dict[str, Any] | None = None) -> int:
+        if isinstance(runtime_cfg, dict):
+            manual_override = runtime_cfg.get("attack_count_override")
+            if isinstance(manual_override, (int, float)):
+                override_value = int(manual_override)
+                if override_value > 0:
+                    return override_value
         if preset == "quick":
             return self.settings.quick_attack_count
         if preset == "deep":
